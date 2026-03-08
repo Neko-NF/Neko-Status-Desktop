@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Debug
+npm-debug.log*
+
+# Temp files
+temp.css
+split_css.js
+test.js
+
+# Android sub-project (tracked separately)
+neko-status-android/
+.github_bak/

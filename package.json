@@ -1,0 +1,59 @@
+{
+  "name": "neko-status-desktop",
+  "version": "1.0.0",
+  "description": "Neko Status Desktop Client — Windows 状态监控工具",
+  "main": "src/main/main.js",
+  "author": "NF Team",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "build:nsis": "electron-builder --win nsis --x64",
+    "build:zip": "electron-builder --win zip --x64",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "devDependencies": {
+    "electron": "^40.8.0",
+    "electron-builder": "^25.1.8",
+    "electron-reload": "^2.0.0-alpha.1"
+  },
+  "build": {
+    "appId": "com.koirin.neko-status",
+    "productName": "NekoStatus",
+    "copyright": "Copyright © 2026 NF Team",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip",  "arch": ["x64"] }
+      ],
+      "icon": "assets/app_icon.ico",
+      "artifactName": "NekoStatus-${version}-win.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/app_icon.ico",
+      "uninstallerIcon": "assets/app_icon.ico",
+      "installerHeaderIcon": "assets/app_icon.ico",
+      "shortcutName": "NekoStatus",
+      "artifactName": "NekoStatus-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": null
+  }
+}
