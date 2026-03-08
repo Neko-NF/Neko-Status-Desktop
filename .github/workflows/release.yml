@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"            # 稳定版: v1.0.0
+      - "v*.*.*-beta.*"     # Beta:   v1.1.0-beta.1
+      - "v*.*.*-nightly.*"  # Nightly: v1.2.0-nightly.20260310
+
+permissions:
+  contents: write   # 创建 Release 需要写权限
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 1. 检出代码 ─────────────────────────────────────────────────
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      # ── 2. 安装 Node.js ─────────────────────────────────────────────
+      - name: 安装 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # ── 3. 安装依赖 ─────────────────────────────────────────────────
+      - name: 安装依赖
+        run: npm ci
+
+      # ── 4. 构建 Electron 应用 ───────────────────────────────────────
+      - name: 构建 Electron 应用（NSIS + ZIP）
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 5. 计算 SHA256 校验值 ────────────────────────────────────────
+      - name: 计算 SHA256 并生成 SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          $distDir = "dist"
+
+          $sumsPath = "$distDir\SHA256SUMS.txt"
+          if (Test-Path $sumsPath) { Remove-Item $sumsPath }
+
+          Get-ChildItem -Path $distDir -Include "*.exe","*.zip" -Recurse | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Out-File -FilePath $sumsPath -Append -Encoding utf8
+            Write-Host "SHA256[$($_.Name)] = $hash"
+          }
+
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+
+      # ── 6. 判断是否为预发布版本 ──────────────────────────────────────
+      - name: 设置预发布标志
+        id: prerelease_flag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -match '-beta\.' -or $tag -match '-nightly\.') {
+            echo "IS_PRERELEASE=true" >> $env:GITHUB_ENV
+          } else {
+            echo "IS_PRERELEASE=false" >> $env:GITHUB_ENV
+          }
+
+      # ── 7. 创建 GitHub Release 并上传产物 ──────────────────────────
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Neko Status ${{ github.ref_name }}"
+          prerelease: ${{ env.IS_PRERELEASE }}
+          generate_release_notes: true
+          files: |
+            dist/NekoStatus-Setup-${{ env.VERSION }}.exe
+            dist/NekoStatus-${{ env.VERSION }}-win.zip
+            dist/SHA256SUMS.txt
+          body: |
+            ## Neko Status ${{ github.ref_name }}
+
+            ### 安装说明
+
+            - **推荐**：下载 `NekoStatus-Setup-${{ env.VERSION }}.exe` 双击安装
+            - **覆盖更新**：下载 `NekoStatus-${{ env.VERSION }}-win.zip` 解压覆盖安装目录
+
+            ### 文件完整性
+
+            校验文件 `SHA256SUMS.txt` 已随 Release 上传，可使用以下命令验证：
+
+            ```powershell
+            # PowerShell 验证安装包
+            (Get-FileHash "NekoStatus-Setup-${{ env.VERSION }}.exe" -Algorithm SHA256).Hash
+            ```
+
+  # ── Nightly 定时构建（每天 UTC 02:00） ──────────────────────────────
+  nightly-build:
+    if: github.event_name == 'schedule'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: 生成 Nightly Tag 并构建
+        shell: pwsh
+        run: |
+          $date = Get-Date -Format "yyyyMMdd"
+          $baseVer = (node -e "process.stdout.write(require('./package.json').version)") -replace '-.*',''
+          $tag = "v${baseVer}-nightly.${date}"
+          git config user.email "ci@neko.status"
+          git config user.name "Neko CI"
+          git tag $tag
+          git push origin $tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# 定时任务触发（Nightly 构建）
+# 注意：需在 on: 中添加 schedule 触发器才能启用
+# on:
+#   schedule:
+#     - cron: "0 2 * * *"   # UTC 每天 02:00
