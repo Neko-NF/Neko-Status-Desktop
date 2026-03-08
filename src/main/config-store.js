@@ -29,8 +29,8 @@ const DEFAULTS = {
   seedColor: '#06b6d4',
   debugEnabled: false,
   // 更新配置
-  githubOwner: '',
-  githubRepo: '',
+  githubOwner: 'Neko-NF',
+  githubRepo: 'Neko-Status-Desktop',
   githubToken: '',
   autoCheckUpdate: true,
   updateChannel: 'stable',         // 'stable' | 'beta' | 'nightly'
