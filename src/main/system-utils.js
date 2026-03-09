@@ -30,20 +30,35 @@ function runPowerShell(script) {
 /**
  * 获取当前前台活动窗口信息
  * 返回 { title: string, processName: string }
- * 注：通过 MainWindowHandle 排序近似前台窗口，无需 C# 编译
+ * 注：使用 Win32 GetForegroundWindow API 精确获取当前前台窗口
  */
 async function getActiveWindow() {
   const script = `
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 try {
-  $procs = Get-Process | Where-Object { $_.MainWindowTitle -ne "" -and $_.MainWindowHandle -ne 0 }
-  if ($procs) {
-    # 取最高句柄值的进程（近似最新弹到前台的窗口）
-    $p = $procs | Sort-Object { $_.MainWindowHandle.ToInt64() } -Descending | Select-Object -First 1
-    @{ title = $p.MainWindowTitle; processName = ($p.ProcessName + ".exe") } | ConvertTo-Json -Compress
-  } else {
-    '{"title":"","processName":""}'
+  Add-Type @"
+    using System;
+    using System.Text;
+    using System.Runtime.InteropServices;
+    public class FGWin {
+      [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+      [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+      [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+      public static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int maxCount);
+    }
+"@
+  $hwnd = [FGWin]::GetForegroundWindow()
+  $sb = New-Object System.Text.StringBuilder 512
+  [void][FGWin]::GetWindowText($hwnd, $sb, 512)
+  $title = $sb.ToString()
+  $procPid = 0
+  [void][FGWin]::GetWindowThreadProcessId($hwnd, [ref]$procPid)
+  $procName = ''
+  if ($procPid -gt 0) {
+    $p = Get-Process -Id $procPid -ErrorAction SilentlyContinue
+    if ($p) { $procName = $p.ProcessName + '.exe' }
   }
+  @{ title = $title; processName = $procName } | ConvertTo-Json -Compress
 } catch {
   '{"title":"","processName":""}'
 }
@@ -139,4 +154,195 @@ async function captureScreen() {
   }
 }
 
-module.exports = { getActiveWindow, getBatteryInfo, getIdleTimeMs, captureScreen };
+/**
+ * 获取当前正在播放的媒体信息（SMTC）
+ * 通过 PowerShell 调用 Windows Runtime GlobalSystemMediaTransportControlsSessionManager
+ * 返回 { isPlaying, title, artist, appName, position, duration } 或 null
+ */
+async function getMediaInfo() {
+  const script = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+try {
+  Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction Stop
+  $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
+
+  # 异步获取 SessionManager
+  $asyncOp = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
+  $taskType = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.IsGenericMethod
+  } | Select-Object -First 1
+  $task = $taskType.MakeGenericMethod([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]).Invoke($null, @($asyncOp))
+  $null = $task.Wait(3000)
+  $mgr = $task.Result
+  if (-not $mgr) { '{}'; exit }
+
+  $session = $mgr.GetCurrentSession()
+  if (-not $session) { '{}'; exit }
+
+  # 获取播放状态
+  $pbInfo = $session.GetPlaybackInfo()
+  $isPlaying = $pbInfo.PlaybackStatus -eq 'Playing'
+
+  # 获取媒体属性
+  $asyncMedia = $session.TryGetMediaPropertiesAsync()
+  $taskMedia = $taskType.MakeGenericMethod([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]).Invoke($null, @($asyncMedia))
+  $null = $taskMedia.Wait(2000)
+  $media = $taskMedia.Result
+
+  # 获取时间线
+  $tl = $session.GetTimelineProperties()
+  $posMs  = [int]$tl.Position.TotalMilliseconds
+  $durMs  = [int]$tl.EndTime.TotalMilliseconds
+
+  $appId = $session.SourceAppUserModelId
+  @{
+    isPlaying   = [bool]$isPlaying
+    title       = [string]$media.Title
+    artist      = [string]$media.Artist
+    album       = [string]$media.AlbumTitle
+    appName     = [string]$appId
+    positionMs  = $posMs
+    durationMs  = $durMs
+  } | ConvertTo-Json -Compress
+} catch {
+  '{}'
+}
+`.trim();
+
+  try {
+    const raw = await runPowerShell(script);
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.title) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 将毫秒转换为 mm:ss 字符串
+ */
+function formatDuration(ms) {
+  const totalSec = Math.floor((ms || 0) / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * 提取友好的应用名称
+ */
+function extractAppName(pkgName) {
+  if (!pkgName) return 'Unknown';
+  if (pkgName.endsWith('.exe')) return pkgName.slice(0, -4);
+  const parts = pkgName.split('_');
+  if (parts.length > 1) {
+    const app = parts[0];
+    if (app.includes('.')) return app.split('.').pop() || app;
+    return app;
+  }
+  return pkgName;
+}
+
+/**
+ * 获取系统实时指标（CPU 负载、内存、网络延迟、网络速度）
+ */
+let _prevNetStats = null;
+let _prevNetTime = 0;
+
+async function getSystemMetrics() {
+  const os = require('os');
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  const memPct = Math.round(usedMem / totalMem * 1000) / 10;
+
+  // CPU 使用率：两次采样间隔 500ms 的差值
+  const cpuPct = await new Promise((resolve) => {
+    const cpus1 = os.cpus();
+    setTimeout(() => {
+      const cpus2 = os.cpus();
+      let idleDelta = 0, totalDelta = 0;
+      for (let i = 0; i < cpus2.length; i++) {
+        const t1 = cpus1[i].times, t2 = cpus2[i].times;
+        idleDelta += t2.idle - t1.idle;
+        totalDelta += (t2.user + t2.nice + t2.sys + t2.irq + t2.idle) -
+                      (t1.user + t1.nice + t1.sys + t1.irq + t1.idle);
+      }
+      resolve(totalDelta > 0 ? Math.round((1 - idleDelta / totalDelta) * 1000) / 10 : 0);
+    }, 500);
+  });
+
+  // 网络延迟：ping 配置的服务器
+  let networkLatency = -1;
+  try {
+    const configStore = require('./config-store');
+    const serverUrl = configStore.getServerUrl();
+    const { URL } = require('url');
+    const host = new URL(serverUrl).hostname;
+    const start = Date.now();
+    const dns = require('dns');
+    await new Promise((resolve, reject) => {
+      dns.lookup(host, (err) => err ? reject(err) : resolve());
+    });
+    networkLatency = Date.now() - start;
+  } catch { /* 网络检测失败 */ }
+
+  // 网络速度：通过 PowerShell 读取网络接口计数器
+  let netDownBps = 0, netUpBps = 0;
+  try {
+    const netScript = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+try {
+  $stats = Get-NetAdapterStatistics -ErrorAction SilentlyContinue | Where-Object { $_.ReceivedBytes -gt 0 } | Select-Object -First 1
+  if ($stats) {
+    @{ rx = [long]$stats.ReceivedBytes; tx = [long]$stats.SentBytes } | ConvertTo-Json -Compress
+  } else { '{"rx":0,"tx":0}' }
+} catch { '{"rx":0,"tx":0}' }
+`.trim();
+    const raw = await runPowerShell(netScript);
+    const cur = JSON.parse(raw);
+    const now = Date.now();
+    if (_prevNetStats && _prevNetTime > 0) {
+      const dt = (now - _prevNetTime) / 1000;
+      if (dt > 0) {
+        netDownBps = Math.max(0, (cur.rx - _prevNetStats.rx) / dt);
+        netUpBps = Math.max(0, (cur.tx - _prevNetStats.tx) / dt);
+      }
+    }
+    _prevNetStats = cur;
+    _prevNetTime = now;
+  } catch { /* 网络速度检测失败 */ }
+
+  return {
+    cpuPct,
+    memPct,
+    memUsed: usedMem,
+    memTotal: totalMem,
+    networkLatency,
+    netDownBps,
+    netUpBps,
+    cpuModel: os.cpus()[0]?.model || '',
+    cpuCores: os.cpus().length,
+    uptime: os.uptime(),
+    hostname: os.hostname(),
+    platform: os.platform(),
+    arch: os.arch(),
+    osRelease: os.release(),
+    osFriendlyName: _getWindowsFriendlyName(),
+  };
+}
+
+// 解析 Windows 版本号 — Build >= 22000 为 Win 11
+function _getWindowsFriendlyName() {
+  const os = require('os');
+  if (os.platform() !== 'win32') return `${os.platform()} ${os.release()}`;
+  const rel = os.release(); // e.g. '10.0.22631'
+  const parts = rel.split('.');
+  const build = parseInt(parts[2], 10) || 0;
+  if (parts[0] === '10' && build >= 22000) return `Windows 11 (${rel})`;
+  if (parts[0] === '10') return `Windows 10 (${rel})`;
+  return `Windows ${rel}`;
+}
+
+module.exports = { getActiveWindow, getBatteryInfo, getIdleTimeMs, captureScreen, getMediaInfo, formatDuration, extractAppName, getSystemMetrics };

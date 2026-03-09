@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -35,8 +35,18 @@
     "extraResources": [],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "zip",  "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/app_icon.ico",
       "artifactName": "NekoStatus-${version}-win.${ext}"
@@ -55,5 +65,8 @@
       "createStartMenuShortcut": true
     },
     "publish": null
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1"
   }
 }

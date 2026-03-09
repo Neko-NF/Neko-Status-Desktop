@@ -17,6 +17,8 @@
 7. [三通道发布流程](#7-三通道发布流程)
 8. [用户更新流程（客户端视角）](#8-用户更新流程客户端视角)
 9. [FAQ 故障排查](#9-faq-故障排查)
+10. [在线更新日志规范](#10-在线更新日志规范)
+11. [清理缓存规范](#11-清理缓存规范)
 
 ---
 
@@ -376,3 +378,105 @@ $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
 $env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-builder-binaries/"
 npm install
 ```
+
+---
+
+## 10. 在线更新日志规范
+
+### 工作机制
+
+应用启动时，主进程通过 `update:getChangelog` IPC 请求从 GitHub Releases API 拉取最新的 **6 个已发布版本**，提取如下字段并返回给渲染层：
+
+| 字段           | 来源                   | 说明                       |
+| -------------- | ---------------------- | -------------------------- |
+| `version`      | `release.tag_name`     | 版本号，如 `v1.2.0`        |
+| `date`         | `release.published_at` | 发布日期，ISO 8601 格式    |
+| `notes`        | `release.body`         | Release Body 原始 Markdown |
+| `isPreRelease` | `release.prerelease`   | 是否为预发布版本           |
+
+渲染层的 `renderChangelogEntries(entries)` 将这些条目渲染为"更新中心 → 更新日志"时间线。
+
+### 本地缓存策略
+
+- **缓存键**：`changelogCache`（存储于 `userData/neko-config.json`）
+- **缓存时机**：成功拉取后立即写入
+- **缓存大小**：固定 6 条（最近 6 个版本）
+- **回退行为**：网络请求失败时自动读取本地缓存，离线环境下仍可展示历史日志
+
+### GitHub Release Body 书写规范
+
+为保证更新日志在客户端渲染正常，**Release Body** 请遵循以下格式：
+
+```markdown
+## 新功能
+
+- 功能描述 A
+- 功能描述 B
+
+## 修复
+
+- 修复了某问题
+- 修复了另一个问题
+
+## 改进
+
+- 性能优化项目
+```
+
+> - 每个章节使用 `## 标题` 二级标题，客户端会原样展示 Markdown 纯文本
+> - 避免使用嵌套列表或大段代码块，影响小窗口阅读
+> - 无发布说明时留空，客户端会回退显示"暂无更新说明"
+
+### 版本 Tag 命名规则
+
+| 通道    | Tag 格式                  | Release 设置          |
+| ------- | ------------------------- | --------------------- |
+| stable  | `v1.2.0`                  | Pre-release：**关闭** |
+| beta    | `v1.2.0-beta.1`           | Pre-release：**开启** |
+| nightly | `v1.2.0-nightly.YYYYMMDD` | Pre-release：**开启** |
+
+> 客户端会根据用户在设置页选择的更新通道（稳定 / 测试 / 夜间）筛选对应版本。
+
+---
+
+## 11. 清理缓存规范
+
+### 现有可清理缓存类型
+
+| 缓存类型          | 清理 IPC / 方式                    | 持久化位置                          |
+| ----------------- | ---------------------------------- | ----------------------------------- |
+| Chromium 会话缓存 | `cache:clear` → `ses.clearCache()` | userData/Session Storage 等         |
+| 更新日志缓存      | 随 `cache:clear` 一并清除          | `neko-config.json → changelogCache` |
+
+### 为未来新功能添加可清理缓存
+
+若新功能产生缓存（如截图缩略图、日志文件、API 响应缓存等），请遵循以下步骤将其纳入统一清理入口：
+
+**Step 1：在 `main.js` 中注册清理逻辑**
+
+在 `cache:clear` 的 IPC handler 中添加清理操作：
+
+```javascript
+ipcMain.handle("cache:clear", async () => {
+  // 已有：Chromium session cache
+  await win.webContents.session.clearCache();
+
+  // 新增：清理 configStore 中的缓存键
+  configStore.delete("changelogCache");
+  configStore.delete("yourFeatureCacheKey"); // ← 新功能在此添加
+
+  // 新增：清理磁盘文件缓存（如有）
+  const cacheDir = path.join(app.getPath("userData"), "feature_cache");
+  if (fs.existsSync(cacheDir)) fs.rmSync(cacheDir, { recursive: true });
+
+  return { success: true };
+});
+```
+
+**Step 2：在设置页"本地缓存"卡片描述中注明**
+
+`index.html` 中 `#cacheClearDesc` 的文案已描述为"清除本次会话缓存"，如果新增了持久化缓存，请更新描述说明清理范围。
+
+**Step 3：不需要单独清理入口**
+
+所有缓存统一通过设置页的"清除缓存"按钮一次性清理，无需为每种缓存单独设置按钮，保持 UI 简洁。

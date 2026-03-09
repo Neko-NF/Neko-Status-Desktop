@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="./css/main.css">
 </head>
 <body>
+    <!-- 灵动岛通知容器（固定顶部居中，动态弹出） -->
+    <div id="nekoIsland" class="neko-island-host"></div>
 
     <!-- 悬浮编辑保存栏 -->
     <div class="edit-action-bar" id="editActionBar">
@@ -130,10 +132,10 @@
                     <div class="glass-card metric-card" id="card-battery" data-w="3" data-h="3" style="grid-column: span 3; grid-row: span 3;" draggable="false">
                         <div class="metric-header">
                             <span>设备电量 / 供电</span>
-                            <i class="ph ph-battery-charging metric-icon theme"></i>
+                            <i class="ph ph-battery-charging metric-icon theme" id="batteryIcon"></i>
                         </div>
-                        <div class="metric-value">85%</div>
-                        <div class="metric-trend"><i class="ph ph-plug"></i> 交流电已连接</div>
+                        <div class="metric-value" id="batteryValue">—%</div>
+                        <div class="metric-trend" id="batteryTrend"><i class="ph ph-plug"></i> 检测中…</div>
                     </div>
 
                     <!-- 卡片4: 健康度 -->
@@ -142,26 +144,26 @@
                             <span>上传健康度</span>
                             <i class="ph ph-activity metric-icon theme"></i>
                         </div>
-                        <div class="metric-value">99.8%</div>
-                        <div class="metric-trend" style="color:var(--text-secondary)">过去 24 小时平均</div>
+                        <div class="metric-value" id="healthValue">—%</div>
+                        <div class="metric-trend" id="healthTrend">计算中…</div>
                     </div>
                 </div>
 
                 <!-- 2. 中部区域网格 -->
                 <div class="dashboard-section" data-section="middle">
                     <!-- 卡片5: 趋势图表 - 宽一点 -->
-                    <div class="glass-card" id="card-chart" data-w="9" data-h="6" style="grid-column: span 9; grid-row: span 6;" draggable="false">
+                    <div class="glass-card" id="card-chart" data-w="9" data-h="6"
+                         style="grid-column: span 9; grid-row: span 6; display:flex; flex-direction:column;" draggable="false">
                         <div class="chart-header">
                             <div class="chart-title">CPU与内存使用趋势</div>
-                            <div class="toggle-group">
-                                <button class="toggle-btn active">1h</button>
-                                <button class="toggle-btn">6h</button>
-                                <button class="toggle-btn">24h</button>
+                            <div class="toggle-group" id="trendRangeGroup">
+                                <button class="toggle-btn active" data-range="1m">1m</button>
+                                <button class="toggle-btn" data-range="1h">1h</button>
+                                <button class="toggle-btn" data-range="12h">12h</button>
                             </div>
                         </div>
-                        <div class="chart-placeholder">
-                            <i class="ph ph-chart-line-up" style="margin-right:8px; font-size: 18px;"></i>
-                            [ECharts / Chart.js 图表渲染区域]
+                        <div class="chart-canvas-wrap">
+                            <canvas id="trendChart"></canvas>
                         </div>
                     </div>
 
@@ -190,6 +192,19 @@
                                 </div>
                                 <div class="toggle-switch" id="toggleConsole"></div>
                             </div>
+                            <div class="action-btn" id="quickIntervalCard" style="cursor: pointer; padding: 10px;">
+                                <i class="ph ph-timer"></i>
+                                <div style="flex:1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
+                                    <div style="font-weight: 500;">上报间隔</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary)" id="quickIntervalLabel">自动</div>
+                                </div>
+                                <div class="neko-stepper" id="quickIntervalStepper" style="transform:scale(0.85);transform-origin:right center; display:none;">
+                                    <button class="neko-stepper-btn" id="quickIntervalDown"><i class="ph ph-minus"></i></button>
+                                    <input type="number" class="neko-stepper-input" id="quickIntervalInput" min="5" max="3600" value="10" style="width:42px;">
+                                    <button class="neko-stepper-btn" id="quickIntervalUp"><i class="ph ph-plus"></i></button>
+                                </div>
+                                <span id="quickIntervalHint" style="font-size:11px; color:var(--theme-color); opacity:0.85; white-space:nowrap;">点击前往设置修改 →</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -199,26 +214,10 @@
                     <!-- 卡片7: 事件列表 -->
                     <div class="glass-card" id="card-events" data-w="6" data-h="6" style="grid-column: span 6; grid-row: span 6;" draggable="false">
                         <div class="list-header">最近事件</div>
-                        <div class="event-list glass-card-body">
-                            <div class="event-item">
-                                <span class="event-time">10:42</span>
-                                <div class="event-dot info"></div>
-                                <span class="event-desc">成功上传屏幕截图 (screen_001.png)</span>
-                            </div>
-                            <div class="event-item">
-                                <span class="event-time">10:30</span>
-                                <div class="event-dot warn"></div>
-                                <span class="event-desc">网络波动，重试上报数据成功 (延迟 800ms)</span>
-                            </div>
-                            <div class="event-item">
-                                <span class="event-time">09:00</span>
-                                <div class="event-dot info"></div>
-                                <span class="event-desc">服务已开机自启并连接到服务器</span>
-                            </div>
-                            <div class="event-item" style="opacity: 0.6;">
-                                <span class="event-time">昨日</span>
-                                <div class="event-dot"></div>
-                                <span class="event-desc">收到云端配置更新，已重载配置。</span>
+                        <div class="event-list glass-card-body" id="dashEventList">
+                            <div class="event-item event-empty-hint" style="justify-content:center;opacity:0.5;">
+                                <i class="ph ph-clock"></i>
+                                <span class="event-desc">暂无事件，等待服务启动…</span>
                             </div>
                         </div>
                     </div>
@@ -235,24 +234,34 @@
                                 核心权限与服务
                                 <span class="rating-badge">评级: S</span>
                             </div>
-                            <div style="font-size: 13px; color: var(--text-secondary); padding: 0 10px;">
+                            <div style="font-size: 13px; color: var(--text-secondary); padding: 0 10px;" id="dashPermDesc">
                                 所需权限（开机自启、屏幕捕获、进程读取、网络隧道）均已授予并检测通过。
                             </div>
-                            <button class="action-btn" style="margin-top: auto; justify-content: center; width: 100%; border: 1px dashed rgba(255,255,255,0.2);">重新运行权限诊断</button>
+                            <div id="dashDeniedList" style="display:none;width:100%;padding:0 10px;">
+                                <div style="font-size:12px;color:var(--warning-amber);display:flex;flex-wrap:wrap;gap:6px;justify-content:center;" id="dashDeniedItems"></div>
+                            </div>
+                            <button class="action-btn" id="dashDiagBtn" style="margin-top: auto; justify-content: center; width: 100%; border: 1px dashed rgba(255,255,255,0.2);">重新运行权限诊断</button>
                         </div>
 
                         <!-- 视图2 (替换图) -->
                         <div class="card-view view-swapped" style="display: none; flex-direction: column; height: 100%;">
-                            <div style="display:flex; justify-content:space-between; width:100%; margin-bottom:12px;">
-                                <span style="font-weight:500; font-size:15px;"><i class="ph ph-image" style="color:var(--theme-color); margin-right:6px;"></i>最近截图活动</span>
-                                <span style="font-size:12px; color:var(--text-secondary);">10分钟前</span>
+                            <div class="metric-header" style="font-weight:500;">
+                                <span>最近截图活动</span>
+                                <i class="ph ph-image metric-icon theme" style="font-size:16px; padding:6px;"></i>
                             </div>
-                            <div style="flex:1; width:100%; background:var(--glass-bg); border-radius:8px; border:1px dashed color-mix(in srgb, var(--theme-color) 30%, transparent); display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                                <img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?auto=format&fit=crop&w=400&q=80" style="width:100%; height:100%; object-fit:cover; opacity:0.8; mix-blend-mode:luminosity;">
+                            <div class="screenshot-preview-area" id="dashScreenshotArea">
+                                <div class="screenshot-preview-empty" id="dashScreenshotEmpty">
+                                    <i class="ph ph-camera-slash"></i>
+                                    <span>暂无截图</span>
+                                    <button class="action-btn primary" id="dashCaptureNowBtn">
+                                        <i class="ph ph-camera"></i> 立即截图
+                                    </button>
+                                </div>
+                                <img class="screenshot-preview-img" id="dashScreenshotImg" style="display:none;">
                             </div>
-                            <div style="font-size:12px; color:var(--text-secondary); margin-top:8px; display:flex; gap:12px;">
-                                <span><i class="ph ph-hard-drive"></i> screen_004.png</span>
-                                <span><i class="ph ph-arrows-out"></i> 1920x1080</span>
+                            <div class="metric-trend screenshot-meta-gap" id="dashScreenshotMeta">
+                                <span id="dashScreenshotName"><i class="ph ph-hard-drive"></i> —</span>
+                                <span id="dashScreenshotSize"><i class="ph ph-arrows-out"></i> —</span>
                             </div>
                         </div>
 
@@ -317,7 +326,7 @@
                             </div>
                             <div class="kpi-value-row">
                                 <div class="kpi-value">12.4<small>%</small></div>
-                                <div class="kpi-chart">[Sparkline]</div>
+                                <div class="kpi-chart"><canvas id="sparkCpu"></canvas></div>
                             </div>
                             <div class="kpi-footer">温度: 45°C / 频率: 3.2GHz</div>
                         </div>
@@ -329,7 +338,7 @@
                             </div>
                             <div class="kpi-value-row">
                                 <div class="kpi-value">85.2<small>%</small></div>
-                                <div class="kpi-chart">[Sparkline]</div>
+                                <div class="kpi-chart"><canvas id="sparkMem"></canvas></div>
                             </div>
                             <div class="kpi-footer">27.3 GB / 32.0 GB</div>
                         </div>
@@ -342,7 +351,7 @@
                             <div class="kpi-value-row">
                                 <div class="kpi-value kpi-value-sm">12 <span class="kpi-value-unit">ms 延迟</span></div>
                             </div>
-                            <div class="kpi-footer"><i class="ph ph-arrow-down"></i> 2.4 MB/s &nbsp;&nbsp; <i class="ph ph-arrow-up"></i> 0.8 MB/s</div>
+                            <div class="kpi-footer" id="netSpeedFooter"><i class="ph ph-arrow-down"></i> — &nbsp;&nbsp; <i class="ph ph-arrow-up"></i> —</div>
                         </div>
 
                         <div class="glass-card kpi-card">
@@ -363,39 +372,48 @@
                         
                         <div class="meta-item">
                             <div class="meta-label">操作系统</div>
-                            <div class="meta-value">Windows 11 Pro 22H2 (Build 22621)</div>
+                            <div class="meta-value" id="metaOS">加载中...</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">设备指纹 (ID)</div>
-                            <div class="meta-value" style="font-family: monospace;">DEVICE-WIN-1094-X86</div>
+                            <div class="meta-value" id="metaFingerprint" style="font-family: monospace;">加载中...</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">核心服务进程</div>
-                            <div class="meta-value" style="display:flex; align-items:center; gap:6px;">NekoDaemon.exe <span class="status-dot info" style="width:8px;height:8px;"></span></div>
+                            <div class="meta-value" id="metaProcess" style="display:flex; align-items:center; gap:6px;">加载中...</div>
                         </div>
                         <div class="meta-item">
                             <div class="meta-label">当前运行权限</div>
-                            <div class="meta-value">
-                                <span class="privilege-tag success">管理员</span>
-                                <span class="privilege-tag success">后台常驻</span>
-                            </div>
+                            <div class="meta-value" id="metaPrivilege">加载中...</div>
                         </div>
 
                         <div class="dropdown-divider" style="margin: 24px 0;"></div>
 
-                        <div class="list-header" style="margin-bottom: 16px; font-size: 14px;"><i class="ph ph-shield-check"></i> 关键权限详情</div>
-                        <div class="auth-list">
-                            <div class="auth-item">
-                                <div>开机自启</div><i class="ph ph-check-circle text-theme"></i>
+                        <div class="auth-list-header" id="authListToggle">
+                            <div class="list-header"><i class="ph ph-shield-check"></i> 关键权限详情</div>
+                            <div class="auth-collapse-hint" id="authCollapseHint">
+                                <span id="authGrantedCount" class="auth-count-ok">已全部授权</span>
+                                <i class="ph ph-caret-down auth-collapse-icon collapsed" id="authCollapseIcon"></i>
                             </div>
-                            <div class="auth-item">
-                                <div>屏幕捕获 API</div><i class="ph ph-check-circle text-theme"></i>
+                        </div>
+                        <div class="auth-list auth-list-collapsible collapsed" id="metaAuthList">
+                            <div class="auth-item" id="metaAuthAutoStart">
+                                <div>开机自启</div><i class="ph ph-spinner"></i>
                             </div>
-                            <div class="auth-item">
-                                <div>进程遍历(WMI)</div><i class="ph ph-check-circle text-theme"></i>
+                            <div class="auth-item" id="metaAuthScreenCapture">
+                                <div>屏幕捕获 API</div><i class="ph ph-spinner"></i>
                             </div>
-                            <div class="auth-item">
-                                <div>系统电源控制</div><i class="ph ph-warning text-warn"></i>
+                            <div class="auth-item" id="metaAuthProcessEnum">
+                                <div>进程遍历(WMI)</div><i class="ph ph-spinner"></i>
+                            </div>
+                            <div class="auth-item" id="metaAuthPowerControl">
+                                <div>系统电源控制</div><i class="ph ph-spinner"></i>
+                            </div>
+                            <div class="auth-item" id="metaAuthNetwork">
+                                <div>网络访问</div><i class="ph ph-spinner"></i>
+                            </div>
+                            <div class="auth-item" id="metaAuthFileIO">
+                                <div>文件读写</div><i class="ph ph-spinner"></i>
                             </div>
                         </div>
                     </div>
@@ -523,7 +541,7 @@
                                             </div>
                                             <!-- 自动模式提示（仅自动模式） -->
                                             <div class="interval-auto-hint" id="intervalAutoHint">
-                                                <i class="ph ph-info"></i> 随上报间隔自动触发（约每 30s）
+                                                <i class="ph ph-info"></i> 随上报间隔自动触发（约每 <span id="intervalAutoHintValue">10</span>s）
                                             </div>
                                         </div>
                                     </div>
@@ -567,7 +585,7 @@
                                 <div class="activity-feed-title">
                                     <i class="ph ph-activity"></i> 实时活动流
                                 </div>
-                                <span class="status-badge success">直播</span>
+                                <span class="status-badge success" id="activityLiveBadge"><i class="ph ph-pulse"></i> 实时</span>
                             </div>
                             <div class="activity-tabs" id="activityTabGroup">
                                 <button class="activity-tab active" data-tab="all">全部</button>
@@ -576,69 +594,9 @@
                                 <button class="activity-tab" data-tab="app">应用</button>
                             </div>
                             <div class="activity-list" id="activityList">
-                                <div class="activity-item" data-type="app">
-                                    <div class="activity-icon app"><i class="ph ph-code"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">Visual Studio Code</div>
-                                        <div class="activity-sub">main.ts · 45分钟专注时段</div>
-                                    </div>
-                                    <div class="activity-time">NOW</div>
-                                </div>
-                                <div class="activity-item" data-type="capture">
-                                    <div class="activity-icon capture"><i class="ph ph-camera"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">截图完成</div>
-                                        <div class="activity-sub">screen_20260308_104522.png · 854 KB</div>
-                                    </div>
-                                    <div class="activity-time">10:45</div>
-                                </div>
-                                <div class="activity-item" data-type="upload">
-                                    <div class="activity-icon upload"><i class="ph ph-cloud-arrow-up"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">上传成功</div>
-                                        <div class="activity-sub">screen_20260308_104222.png · 耗时 1.2s</div>
-                                    </div>
-                                    <div class="activity-time">10:42</div>
-                                </div>
-                                <div class="activity-item" data-type="app">
-                                    <div class="activity-icon app"><i class="ph ph-globe"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">Google Chrome</div>
-                                        <div class="activity-sub">Research: UI Design Trends</div>
-                                    </div>
-                                    <div class="activity-time">10:30</div>
-                                </div>
-                                <div class="activity-item" data-type="capture">
-                                    <div class="activity-icon capture"><i class="ph ph-camera"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">截图完成</div>
-                                        <div class="activity-sub">screen_20260308_103922.png · 1.1 MB</div>
-                                    </div>
-                                    <div class="activity-time">10:39</div>
-                                </div>
-                                <div class="activity-item" data-type="upload">
-                                    <div class="activity-icon upload error"><i class="ph ph-cloud-slash"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">上传失败</div>
-                                        <div class="activity-sub">网络超时，已加入重试队列</div>
-                                    </div>
-                                    <div class="activity-time">10:15</div>
-                                </div>
-                                <div class="activity-item" data-type="app">
-                                    <div class="activity-icon app"><i class="ph ph-chat-circle-dots"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">Slack</div>
-                                        <div class="activity-sub">#design-team · 团队沟通</div>
-                                    </div>
-                                    <div class="activity-time">10:15</div>
-                                </div>
-                                <div class="activity-item" data-type="upload">
-                                    <div class="activity-icon upload"><i class="ph ph-cloud-arrow-up"></i></div>
-                                    <div class="activity-content">
-                                        <div class="activity-main">上传成功</div>
-                                        <div class="activity-sub">screen_20260308_100022.png · 耗时 0.8s</div>
-                                    </div>
-                                    <div class="activity-time">10:00</div>
+                                <div class="activity-empty" id="activityEmpty">
+                                    <i class="ph ph-clock-afternoon"></i>
+                                    <span>暂无活动记录，启动上报服务后将自动记录</span>
                                 </div>
                             </div>
                         </div>
@@ -646,20 +604,20 @@
 
                     <!-- 底部：隐私防护横幅（紧凑单行） -->
                     <div class="glass-card privacy-bar-card">
-                        <div class="privacy-bar-icon"><i class="ph ph-shield-check"></i></div>
+                        <div class="privacy-bar-icon" id="privacyBarIcon"><i class="ph ph-shield-check"></i></div>
                         <div class="privacy-bar-content">
-                            <div class="privacy-bar-title">隐私防护已启用</div>
-                            <div class="privacy-bar-desc">银行类及私聊窗口自动模糊，截图均以 AES-256 加密存储于本地，不上传至第三方。</div>
+                            <div class="privacy-bar-title" id="privacyBarTitle">隐私防护已启用</div>
+                            <div class="privacy-bar-desc" id="privacyBarDesc">匹配隐私规则的前台应用截图将自动模糊后再上传，截图仅上传至已配置的自有服务器。</div>
                         </div>
-                        <button class="action-btn">设置隐私规则</button>
+                        <button class="action-btn" id="openPrivacyRulesBtn">设置隐私规则</button>
                         <div class="privacy-bar-stats">
                             <div class="privacy-stat">
                                 <span class="privacy-stat-label">本地保留</span>
-                                <span class="privacy-stat-value">最近 7 天</span>
+                                <span class="privacy-stat-value" id="privacyRetentionDays">最近 7 天</span>
                             </div>
                             <div class="privacy-stat">
-                                <span class="privacy-stat-label">已用空间</span>
-                                <span class="privacy-stat-value">384 MB / 2 GB</span>
+                                <span class="privacy-stat-label">已模糊截图</span>
+                                <span class="privacy-stat-value" id="privacyBlurCount">0 张</span>
                             </div>
                             <div class="privacy-stat">
                                 <span class="privacy-stat-label">传输加密</span>
@@ -678,27 +636,21 @@
                     <!-- 顶部：服务健康状态卡 -->
                     <div class="glass-card svc-health-card">
                         <div class="svc-health-title">
-                            <i class="ph ph-heartbeat"></i> 核心服务状态
+                            <i class="ph ph-heartbeat"></i>
+                            <span>核心服务状态</span>
                         </div>
                         <div class="svc-health-pills">
 
-                            <!-- NekoDaemon 守护进程 -->
+                            <!-- 主进程 (Electron) -->
                             <div class="svc-pill" id="pillDaemon">
-                                <div class="svc-pill-icon"><i class="ph ph-robot"></i></div>
+                                <div class="svc-pill-icon"><i class="ph ph-app-window"></i></div>
                                 <div class="svc-pill-info">
-                                    <div class="svc-pill-name">NekoDaemon.exe</div>
+                                    <div class="svc-pill-name" id="daemonProcessName">Neko Status</div>
                                     <div class="svc-pill-status running" id="daemonStatus">
-                                        <i class="ph ph-check-circle"></i> 运行中
+                                        <i class="ph ph-check-circle"></i> <span>运行中</span>
                                     </div>
                                 </div>
-                                <div class="svc-pill-actions">
-                                    <button class="svc-action-btn warn" id="btnRestartDaemon" data-confirm="重启守护进程？" title="重启服务">
-                                        <i class="ph ph-arrow-clockwise"></i>
-                                    </button>
-                                    <button class="svc-action-btn danger" id="btnStopDaemon" data-confirm="停止守护进程？" title="停止服务">
-                                        <i class="ph ph-stop-circle"></i>
-                                    </button>
-                                </div>
+                                <div class="svc-pill-meta" id="daemonPidBadge">PID —</div>
                             </div>
 
                             <div class="svc-pill-divider"></div>
@@ -709,15 +661,15 @@
                                 <div class="svc-pill-info">
                                     <div class="svc-pill-name">上报服务</div>
                                     <div class="svc-pill-status running" id="reporterStatus">
-                                        <i class="ph ph-check-circle"></i> 上报中
+                                        <i class="ph ph-check-circle"></i> <span>上报中</span>
                                     </div>
                                 </div>
                                 <div class="svc-pill-actions">
-                                    <button class="svc-action-btn warn" id="btnRestartReporter" data-confirm="重启上报服务？" title="重启">
+                                    <button class="svc-action-btn warn" id="btnRestartReporter" title="重启上报服务">
                                         <i class="ph ph-arrow-clockwise"></i>
                                     </button>
-                                    <button class="svc-action-btn warn" id="btnPauseReporter" data-confirm="暂停上报服务？" title="暂停">
-                                        <i class="ph ph-pause-circle"></i>
+                                    <button class="svc-action-btn danger" id="btnStopReporter" title="停止上报服务">
+                                        <i class="ph ph-stop-circle"></i>
                                     </button>
                                 </div>
                             </div>
@@ -729,13 +681,13 @@
                                 <div class="svc-pill-icon"><i class="ph ph-camera"></i></div>
                                 <div class="svc-pill-info">
                                     <div class="svc-pill-name">屏幕捕获</div>
-                                    <div class="svc-pill-status error" id="captureStatus">
-                                        <i class="ph ph-x-circle"></i> 权限拒绝
+                                    <div class="svc-pill-status running" id="captureStatus">
+                                        <i class="ph ph-circle-dashed"></i> <span>检测中</span>
                                     </div>
                                 </div>
                                 <div class="svc-pill-actions">
-                                    <button class="svc-action-btn primary" title="修复权限">
-                                        <i class="ph ph-wrench"></i>
+                                    <button class="svc-action-btn primary" id="btnTestCapture" title="测试截图">
+                                        <i class="ph ph-aperture"></i>
                                     </button>
                                 </div>
                             </div>
@@ -752,23 +704,23 @@
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">开机自启动</div>
-                                    <div class="svc-setting-desc">随 Windows 启动时自动运行</div>
+                                    <div class="svc-setting-desc">通过注册表 Run 键随 Windows 启动</div>
                                 </div>
-                                <div class="toggle-switch on" id="autoStartSwitch"></div>
+                                <div class="toggle-switch" id="autoStartSwitch"></div>
                             </div>
 
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
-                                    <div class="svc-setting-name">上报服务自启</div>
-                                    <div class="svc-setting-desc">软件启动后延迟自动开启上报服务</div>
+                                    <div class="svc-setting-name">启动后自动上报</div>
+                                    <div class="svc-setting-desc">软件启动后自动开启上报服务</div>
                                 </div>
-                                <div class="toggle-switch on" id="reportAutoStartSwitch"></div>
+                                <div class="toggle-switch" id="reportAutoStartSwitch"></div>
                             </div>
 
-                            <div class="svc-setting-row" id="reportAutoDelayRow">
+                            <div class="svc-setting-row" id="reportAutoDelayRow" style="display:none;">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">上报延迟</div>
-                                    <div class="svc-setting-desc">软件就绪后等待若干秒再启动上报</div>
+                                    <div class="svc-setting-desc">启动后等待若干秒再开启上报</div>
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
@@ -785,13 +737,13 @@
                                     <div class="svc-setting-name">当前权限级别</div>
                                     <div class="svc-setting-desc">影响屏幕捕获、进程读取能力</div>
                                 </div>
-                                <span class="status-badge success" id="privLevelBadge">管理员</span>
+                                <span class="status-badge" id="privLevelBadge">检测中</span>
                             </div>
 
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">启动延迟</div>
-                                    <div class="svc-setting-desc">系统就绪后等待若干秒再启动</div>
+                                    <div class="svc-setting-desc">开机自启后等待系统就绪</div>
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
@@ -805,7 +757,7 @@
 
                             <div class="svc-info-note">
                                 <i class="ph ph-info"></i>
-                                屏幕捕获等特权操作需要管理员权限，建议保持 UAC 提升运行。
+                                开机自启通过 Windows 注册表实现，无需管理员权限。
                             </div>
                         </div>
 
@@ -813,56 +765,61 @@
                         <div class="glass-card svc-cfg-card">
                             <div class="svc-cfg-title"><i class="ph ph-shield-check"></i> 后台服务权限</div>
 
-                            <div class="perm-list">
-                                <div class="perm-row">
+                            <div class="perm-list" id="permList">
+                                <div class="perm-row" data-perm="screenCapture">
                                     <i class="ph ph-camera perm-icon"></i>
                                     <div class="perm-info">
                                         <div class="perm-name">屏幕捕获 API</div>
-                                        <div class="perm-desc">截图功能核心依赖</div>
+                                        <div class="perm-desc">desktopCapturer 截图能力</div>
                                     </div>
-                                    <span class="perm-status error"><i class="ph ph-x-circle"></i> 拒绝</span>
-                                    <button class="svc-action-btn primary perm-fix-btn" title="申请权限"><i class="ph ph-plus"></i></button>
+                                    <span class="perm-status" id="permScreenCapture"><i class="ph ph-circle-dashed"></i> 检测中</span>
+                                    <span class="perm-fix-placeholder"></span>
                                 </div>
 
-                                <div class="perm-row">
+                                <div class="perm-row" data-perm="processEnum">
                                     <i class="ph ph-tree-structure perm-icon"></i>
                                     <div class="perm-info">
                                         <div class="perm-name">进程遍历 (WMI)</div>
                                         <div class="perm-desc">获取前台应用名称与路径</div>
                                     </div>
-                                    <span class="perm-status success"><i class="ph ph-check-circle"></i> 已授权</span>
+                                    <span class="perm-status" id="permProcessEnum"><i class="ph ph-circle-dashed"></i> 检测中</span>
                                     <span class="perm-fix-placeholder"></span>
                                 </div>
 
-                                <div class="perm-row">
-                                    <i class="ph ph-lightning perm-icon warn-icon"></i>
+                                <div class="perm-row" data-perm="powerControl">
+                                    <i class="ph ph-lightning perm-icon"></i>
                                     <div class="perm-info">
                                         <div class="perm-name">系统电源控制</div>
-                                        <div class="perm-desc">监控睡眠/唤醒事件</div>
+                                        <div class="perm-desc">Electron powerMonitor 事件</div>
                                     </div>
-                                    <span class="perm-status warn"><i class="ph ph-warning"></i> 受限</span>
+                                    <span class="perm-status" id="permPowerControl"><i class="ph ph-circle-dashed"></i> 检测中</span>
                                     <span class="perm-fix-placeholder"></span>
                                 </div>
 
-                                <div class="perm-row">
+                                <div class="perm-row" data-perm="network">
                                     <i class="ph ph-wifi-high perm-icon"></i>
                                     <div class="perm-info">
                                         <div class="perm-name">网络访问</div>
-                                        <div class="perm-desc">上报数据、WebSocket 连接</div>
+                                        <div class="perm-desc">HTTP/WebSocket 上报连接</div>
                                     </div>
-                                    <span class="perm-status success"><i class="ph ph-check-circle"></i> 已授权</span>
+                                    <span class="perm-status" id="permNetwork"><i class="ph ph-circle-dashed"></i> 检测中</span>
                                     <span class="perm-fix-placeholder"></span>
                                 </div>
 
-                                <div class="perm-row">
+                                <div class="perm-row" data-perm="fileIO">
                                     <i class="ph ph-hard-drive perm-icon"></i>
                                     <div class="perm-info">
                                         <div class="perm-name">本地文件读写</div>
-                                        <div class="perm-desc">截图缓存与配置持久化</div>
+                                        <div class="perm-desc">配置持久化与截图缓存</div>
                                     </div>
-                                    <span class="perm-status success"><i class="ph ph-check-circle"></i> 已授权</span>
+                                    <span class="perm-status" id="permFileIO"><i class="ph ph-circle-dashed"></i> 检测中</span>
                                     <span class="perm-fix-placeholder"></span>
                                 </div>
+                            </div>
+
+                            <div class="svc-info-note">
+                                <i class="ph ph-info"></i>
+                                Electron 在 Windows 上拥有完整的桌面应用权限，无需额外授权即可使用上述功能。
                             </div>
                         </div>
 
@@ -873,15 +830,15 @@
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">崩溃自动重启</div>
-                                    <div class="svc-setting-desc">服务异常退出后自动重新启动</div>
+                                    <div class="svc-setting-desc">上报连续失败后自动重启服务</div>
                                 </div>
-                                <div class="toggle-switch on" id="autoRestartSwitch"></div>
+                                <div class="toggle-switch" id="autoRestartSwitch"></div>
                             </div>
 
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">最大重启次数</div>
-                                    <div class="svc-setting-desc">超限后停止并等待手动处理</div>
+                                    <div class="svc-setting-desc">超限后停止自动恢复</div>
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
@@ -896,37 +853,36 @@
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">重启间隔</div>
-                                    <div class="svc-setting-desc">两次重启尝试之间的等待时长</div>
+                                    <div class="svc-setting-desc">两次自动重启之间的等待时长</div>
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
                                         <button class="neko-stepper-btn" data-target="restartIntervalInput" data-dir="-1"><i class="ph ph-minus"></i></button>
-                                        <input type="number" class="neko-stepper-input" id="restartIntervalInput" min="5" value="30">
+                                        <input type="number" class="neko-stepper-input" id="restartIntervalInput" min="5" max="300" value="30">
                                         <button class="neko-stepper-btn" data-target="restartIntervalInput" data-dir="1"><i class="ph ph-plus"></i></button>
                                     </div>
-                                    <select class="glass-select" id="restartIntervalUnit">
-                                        <option value="s" selected>秒</option>
-                                        <option value="m">分</option>
-                                    </select>
+                                    <span class="svc-number-unit">秒</span>
                                 </div>
                             </div>
 
                             <div class="svc-setting-row">
                                 <div class="svc-setting-info">
                                     <div class="svc-setting-name">看门狗超时</div>
-                                    <div class="svc-setting-desc">无响应超时后触发强制重启</div>
+                                    <div class="svc-setting-desc">周期性检查服务健康状态</div>
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
                                         <button class="neko-stepper-btn" data-target="watchdogTimeoutInput" data-dir="-1"><i class="ph ph-minus"></i></button>
-                                        <input type="number" class="neko-stepper-input" id="watchdogTimeoutInput" min="10" value="60">
+                                        <input type="number" class="neko-stepper-input" id="watchdogTimeoutInput" min="10" max="600" value="60">
                                         <button class="neko-stepper-btn" data-target="watchdogTimeoutInput" data-dir="1"><i class="ph ph-plus"></i></button>
                                     </div>
-                                    <select class="glass-select" id="watchdogUnit">
-                                        <option value="s" selected>秒</option>
-                                        <option value="m">分</option>
-                                    </select>
+                                    <span class="svc-number-unit">秒</span>
                                 </div>
+                            </div>
+
+                            <div class="svc-info-note">
+                                <i class="ph ph-info"></i>
+                                连续上报失败超过 3 次后触发自动重启，重启计数器在服务正常运行后自动清零。
                             </div>
                         </div>
                     </div>
@@ -969,19 +925,30 @@
                             <div class="update-ver-number">v1.0.0</div>
                             <div class="update-ver-tag">Stable</div>
                         </div>
-                        <div class="update-ver-desc">运行在 Neko Engine Core 1.0。所有组件运行正常，上次安全更新：2 天前。</div>
-                        <div class="update-progress-row">
-                            <span class="update-progress-label">系统同步</span>
-                            <span class="update-progress-pct">98%</span>
+                        <div class="update-ver-desc" id="updateVerDesc">Loading...</div>
+                        <!-- 进度条（仅在检查/下载时显示） -->
+                        <div class="update-progress-row" id="updateProgressRow" style="display:none">
+                            <span class="update-progress-label" id="updateProgressLabel">检查中...</span>
+                            <span class="update-progress-pct" id="updateProgressPct">—</span>
                         </div>
-                        <div class="update-progress-bar-wrap">
-                            <div class="update-progress-fill" style="width:98%"></div>
+                        <div class="update-progress-bar-wrap" id="updateProgressBar" style="display:none">
+                            <div class="update-progress-fill" id="updateProgressFill" style="width:0%"></div>
                         </div>
                         <div class="update-action-row">
                             <button class="action-btn primary" id="checkUpdateBtn">
-                                <i class="ph ph-arrows-clockwise" id="checkUpdateIcon"></i> 检查更新
+                                <i class="ph ph-arrows-clockwise" id="checkUpdateIcon"></i>
+                                <span id="checkUpdateLabel">检查更新</span>
                             </button>
-                            <span class="update-status-badge success" id="updateStatusBadge">
+                            <!--<button class="update-side-btn" id="forceUpdateBtn" title="强制重新下载并安装当前最新版本">
+                                <i class="ph ph-cloud-arrow-down"></i><span>强制更新</span>
+                            </button>-->
+                            <button class="update-side-btn" id="updateIntegrityBtn" title="检查系统文件完整性">
+                                <i class="ph ph-heartbeat"></i><span>完整性检查</span>
+                            </button>
+                            <button class="update-side-btn danger" id="rollbackBtn" title="回滚到上一稳定版本">
+                                <i class="ph ph-arrow-counter-clockwise"></i><span>版本回滚</span>
+                            </button>
+                            <span class="update-status-badge success" id="updateStatusBadge" style="margin-left:auto">
                                 <i class="ph ph-check-circle"></i> 已是最新
                             </span>
                         </div>
@@ -1057,27 +1024,24 @@
                     </div>
                 </div>
 
-                <!-- 右列：手动控制 + 更新通道 + 更新源 -->
+                <!-- 右列：更新选项 + 更新通道 + 更新源 -->
                 <div class="update-right-col">
-                    <!-- 手动控制 -->
+                    <!-- 更新选项（自动下载 + 本地安装） -->
                     <div class="glass-card update-controls-card">
-                        <div class="svc-cfg-title"><i class="ph ph-sliders-horizontal"></i> 手动控制</div>
-                        <div class="update-ctrl-list">
-                            <button class="update-ctrl-row" id="forceUpdateBtn">
-                                <div class="update-ctrl-icon"><i class="ph ph-cloud-arrow-down"></i></div>
-                                <span class="update-ctrl-label">强制更新</span>
-                                <i class="ph ph-caret-right update-ctrl-arrow"></i>
-                            </button>
-                            <button class="update-ctrl-row" id="updateIntegrityBtn">
-                                <div class="update-ctrl-icon"><i class="ph ph-heartbeat"></i></div>
-                                <span class="update-ctrl-label">完整性检查</span>
-                                <i class="ph ph-caret-right update-ctrl-arrow"></i>
-                            </button>
-                            <button class="update-ctrl-row danger" id="rollbackBtn" data-confirm="确认回滚至上一版本？">
-                                <div class="update-ctrl-icon danger"><i class="ph ph-arrow-counter-clockwise"></i></div>
-                                <span class="update-ctrl-label">版本回滚</span>
-                                <i class="ph ph-caret-right update-ctrl-arrow"></i>
-                            </button>
+                        <div class="svc-cfg-title"><i class="ph ph-sliders-horizontal"></i> 更新选项</div>
+                        <div class="svc-setting-row">
+                            <div class="svc-setting-info">
+                                <div class="svc-setting-name">自动下载新版本</div>
+                                <div class="svc-setting-desc">发现更新时自动下载安装包</div>
+                            </div>
+                            <div class="toggle-switch" id="stgAutoDownloadSwitch"></div>
+                        </div>
+                        <div class="svc-setting-row">
+                            <div class="svc-setting-info">
+                                <div class="svc-setting-name">本地安装包</div>
+                                <div class="svc-setting-desc">选择 .exe / .zip 手动安装</div>
+                            </div>
+                            <button class="settings-link-btn" id="localInstallBtn"><i class="ph ph-caret-right" style="font-size:14px;"></i></button>
                         </div>
                     </div>
 
@@ -1117,7 +1081,7 @@
                         <div class="svc-cfg-title" style="margin-bottom: 12px;"><i class="ph ph-github-logo"></i> 更新源</div>
                         <div class="update-source-current-wrap" id="updateSourceCurrent">
                             <i class="ph ph-check-circle" style="color:var(--success-mint);font-size:14px;flex-shrink:0;"></i>
-                            <span class="update-source-current-url">github.com/neko-status/releases</span>
+                            <span class="update-source-current-url">github.com/Neko-NF/Neko-Status-Desktop</span>
                         </div>
                         <div class="update-source-input-wrap">
                             <input type="text" class="glass-input" id="updateSourceInput" placeholder="填写 GitHub 仓库地址，如：https://github.com/user/repo">
@@ -1201,10 +1165,34 @@
                                     <i class="ph ph-moon settings-row-icon"></i>
                                     <div class="settings-row-info">
                                         <div class="settings-row-name">深色模式</div>
-                                        <div class="settings-row-desc">切换界面深浅配色方案</div>
+                                        <div class="settings-row-desc" id="stgDarkModeDesc">开启后界面切换为深色配色</div>
                                     </div>
                                 </div>
-                                <div class="toggle-switch on" id="stgDarkModeSwitch"></div>
+                                <div class="toggle-switch" id="stgDarkSwitch"></div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-clock settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">定时自动切换</div>
+                                        <div class="settings-row-desc">在指定时间段内自动开启深色模式</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="stgDarkScheduleSwitch"></div>
+                            </div>
+                            <div class="settings-row" id="stgDarkTimeRow" style="display:none;">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-sun-horizon settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">深色时间段</div>
+                                        <div class="settings-row-desc">起始 → 结束（支持跨日）</div>
+                                    </div>
+                                </div>
+                                <div class="stg-time-range">
+                                    <input type="time" class="glass-time-input" id="stgDarkStartTime" value="18:00">
+                                    <span class="stg-time-sep">—</span>
+                                    <input type="time" class="glass-time-input" id="stgDarkEndTime" value="07:00">
+                                </div>
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
@@ -1215,11 +1203,20 @@
                                 </div>
                                 <div class="settings-color-swatches" id="stgColorSwatches">
                                     <span class="settings-swatch" data-color="#06b6d4" style="background:#06b6d4"></span>
-                                    <span class="settings-swatch" data-color="#a855f7" style="background:#a855f7"></span>
-                                    <span class="settings-swatch" data-color="#ec4899" style="background:#ec4899"></span>
+                                    <span class="settings-swatch" data-color="#10b981" style="background:#10b981"></span>
+                                    <span class="settings-swatch" data-color="#f43f5e" style="background:#f43f5e"></span>
+                                    <span class="settings-swatch" data-color="#8b5cf6" style="background:#8b5cf6"></span>
                                     <span class="settings-swatch" data-color="#f59e0b" style="background:#f59e0b"></span>
-                                    <span class="settings-swatch" data-color="#22c55e" style="background:#22c55e"></span>
+                                    <button class="settings-swatch-custom" id="stgCustomColorBtn" title="自定义颜色">
+                                        <i class="ph ph-plus"></i>
+                                    </button>
+                                    <input type="color" id="stgCustomColorInput" style="display:none" value="#06b6d4">
                                 </div>
+                            </div>
+                            <div class="settings-color-custom-row" id="stgCustomColorRow" style="display:none;">
+                                <div class="stg-custom-color-preview" id="stgCustomColorPreview"></div>
+                                <input type="text" class="glass-input stg-custom-color-hex" id="stgCustomColorHex" maxlength="7" placeholder="#RRGGBB">
+                                <button class="action-btn primary stg-custom-color-apply" id="stgCustomColorApply">应用</button>
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
@@ -1248,66 +1245,74 @@
                                     <i class="ph ph-arrows-in settings-row-icon"></i>
                                     <div class="settings-row-info">
                                         <div class="settings-row-name">界面缩放</div>
+                                        <div class="settings-row-desc" id="stgScaleDesc">高清屏可调至 150%–200%</div>
                                     </div>
                                 </div>
-                                <select class="glass-select" id="stgScaleSelect">
-                                    <option value="90">90%</option>
-                                    <option value="100" selected>100%</option>
-                                    <option value="110">110%</option>
-                                    <option value="125">125%</option>
-                                </select>
+                                <div class="neko-stepper">
+                                    <button class="neko-stepper-btn" id="stgScaleDown" title="缩小"><i class="ph ph-minus"></i></button>
+                                    <span class="neko-stepper-label" id="stgScaleLabel">100%</span>
+                                    <button class="neko-stepper-btn" id="stgScaleUp" title="放大"><i class="ph ph-plus"></i></button>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="settings-group-label"><i class="ph ph-download-simple"></i> 更新设置</div>
-                        <div class="glass-card settings-group-card">
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-cloud-arrow-down settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">自动下载最新安装包</div>
-                                        <div class="settings-row-desc">发现新版本时自动下载到本地，下载完成后提示安装喵～</div>
-                                    </div>
-                                </div>
-                                <div class="toggle-switch" id="stgAutoDownloadSwitch"></div>
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-folder-open settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">从本地文件安装</div>
-                                        <div class="settings-row-desc">选择已下载的 .zip 或 .7z 更新包进行安装</div>
-                                    </div>
-                                </div>
-                                <button class="settings-link-btn" id="localInstallBtn"><i class="ph ph-caret-right" style="font-size:14px;"></i></button>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- 右列 -->
                     <div class="settings-col">
 
-                        <div class="settings-group-label"><i class="ph ph-cloud-arrow-up"></i> 数据与上传</div>
+                        <div class="settings-group-label"><i class="ph ph-cloud-arrow-up"></i> 数据与上报</div>
                         <div class="glass-card settings-group-card">
                             <div class="settings-row">
                                 <div class="settings-row-left">
-                                    <i class="ph ph-cloud-check settings-row-icon"></i>
+                                    <i class="ph ph-timer settings-row-icon"></i>
                                     <div class="settings-row-info">
-                                        <div class="settings-row-name">自动上传截图</div>
-                                        <div class="settings-row-desc">截图完成后自动同步至服务端</div>
+                                        <div class="settings-row-name">上报时间间隔</div>
+                                        <div class="settings-row-desc" id="stgReportIntervalDesc">自动模式: 每 10s 自动上报</div>
                                     </div>
                                 </div>
-                                <div class="toggle-switch on" id="stgAutoUploadSwitch"></div>
+                                <div class="toggle-group" id="stgReportModeGroup" style="min-width:120px;">
+                                    <button class="toggle-btn active" data-mode="auto">自动</button>
+                                    <button class="toggle-btn" data-mode="custom">自定义</button>
+                                </div>
+                            </div>
+                            <div class="settings-row" id="stgCustomIntervalRow" style="display:none;">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-clock-countdown settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">自定义间隔</div>
+                                        <div class="settings-row-desc">修改后点击保存生效</div>
+                                    </div>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <div class="neko-stepper">
+                                        <button class="neko-stepper-btn" data-target="stgReportIntervalInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <input type="number" class="neko-stepper-input" id="stgReportIntervalInput" min="5" max="3600" value="10">
+                                        <button class="neko-stepper-btn" data-target="stgReportIntervalInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                    </div>
+                                    <span style="font-size:12px;color:var(--text-secondary)">秒</span>
+                                    <button class="action-btn primary" id="stgSaveIntervalBtn" style="padding:6px 14px;font-size:12px;white-space:nowrap;"><i class="ph ph-floppy-disk"></i> 保存</button>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-link settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">截图间隔同步</div>
+                                        <div class="settings-row-desc">开启后截图上传间隔与上报间隔保持一致</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch on" id="stgSyncScreenshotSwitch"></div>
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
                                     <i class="ph ph-hard-drive settings-row-icon"></i>
                                     <div class="settings-row-info">
                                         <div class="settings-row-name">本地缓存</div>
-                                        <div class="settings-row-desc">当前占用 384 MB</div>
+                                        <div class="settings-row-desc" id="cacheSizeDesc">会话缓存（图片、脚本等组件）</div>
                                     </div>
                                 </div>
-                                <button class="settings-link-btn" id="clearCacheBtn">清理缓存</button>
+                                <button class="settings-link-btn" id="clearCacheBtn"><i class="ph ph-broom" id="clearCacheIcon"></i> 清理缓存</button>
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
@@ -1393,10 +1398,10 @@
                                 Neko Status 是一款基于 Electron 构建的本地设备状态监控客户端，实时采集 CPU、内存、截图、进程等系统数据，通过玻璃拟态 UI 优雅呈现。支持云端同步、开机自启与远程监控，是你的设备向世界实时汇报的小助手喵～
                             </div>
                             <div class="about-btn-row">
-                                <a class="action-btn primary about-github-btn" id="aboutGithubBtn" href="https://github.com/" target="_blank">
+                                <a class="action-btn primary about-github-btn" id="aboutGithubBtn" href="https://github.com/Neko-NF/Neko-Status-Desktop" target="_blank">
                                     <i class="ph ph-github-logo"></i> GitHub 仓库
                                 </a>
-                                <a class="action-btn about-release-btn" id="aboutReleaseBtn" href="https://github.com/" target="_blank">
+                                <a class="action-btn about-release-btn" id="aboutReleaseBtn" href="https://github.com/Neko-NF/Neko-Status-Desktop/releases" target="_blank">
                                     <i class="ph ph-package"></i> Releases
                                 </a>
                             </div>
@@ -1587,7 +1592,68 @@
         </div>
     </div>
 
+    <!-- 隐私规则弹窗 -->
+    <div class="modal-overlay" id="privacyRulesModal">
+        <div class="glass-card modal-container" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3><i class="ph ph-shield-check" style="color: var(--theme-color);"></i> 隐私模糊规则</h3>
+                <button class="icon-btn close-modal" id="closePrivacyRulesBtn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="privacy-rules-hint">
+                    <i class="ph ph-info"></i>
+                    当检测到前台应用匹配以下规则时，截图将自动高斯模糊后再上传至服务器。
+                </div>
+
+                <!-- 添加规则 -->
+                <div class="privacy-rule-add-row">
+                    <input type="text" class="glass-input" id="privacyRuleInput" placeholder="输入进程名，如 WeChat.exe、chrome.exe">
+                    <button class="action-btn primary" id="addPrivacyRuleBtn" style="white-space:nowrap;">
+                        <i class="ph ph-plus"></i> 添加
+                    </button>
+                </div>
+
+                <!-- 快捷预设 -->
+                <div class="privacy-presets">
+                    <span class="privacy-preset-label">快捷添加：</span>
+                    <button class="privacy-preset-btn" data-process="WeChat.exe">微信</button>
+                    <button class="privacy-preset-btn" data-process="QQ.exe">QQ</button>
+                    <button class="privacy-preset-btn" data-process="DingTalk.exe">钉钉</button>
+                    <button class="privacy-preset-btn" data-process="Telegram.exe">Telegram</button>
+                    <button class="privacy-preset-btn" data-process="msedge.exe">Edge</button>
+                    <button class="privacy-preset-btn" data-process="chrome.exe">Chrome</button>
+                </div>
+
+                <!-- 已添加的规则列表 -->
+                <div class="privacy-rules-list" id="privacyRulesList">
+                    <!-- JS 动态填充 -->
+                </div>
+
+                <div class="privacy-rules-empty" id="privacyRulesEmpty">
+                    <i class="ph ph-shield-slash"></i>
+                    <span>暂未添加任何隐私规则</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div style="border-top:var(--glass-border);padding-top:14px;margin-top:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <div style="font-size:13px;font-weight:500;color:var(--text-main);display:flex;align-items:center;gap:6px;"><i class="ph ph-eye-slash" style="color:var(--theme-color);"></i> 全局截图模糊</div>
+                            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">开启后无论前台应用，所有截图均模糊处理后上传</div>
+                        </div>
+                        <div class="toggle-switch" id="blurAllSwitch"></div>
+                    </div>
+                </div>
+                <div class="privacy-rules-footer-info" style="margin-top:12px;">
+                    <i class="ph ph-link"></i> 与设置页「隐身模式」联动，关闭隐身模式后规则不生效
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 交互逻辑脚本 -->
+    <!-- 0. Chart.js 图表库 -->
+    <script src="../../node_modules/chart.js/dist/chart.umd.min.js"></script>
     <!-- 1. IPC 桥接层（必须在 app.js 之前加载，挂载 window.nekoIPC） -->
     <script src="./js/ipc-bridge.js"></script>
     <!-- 2. 原有 UI 交互逻辑 -->

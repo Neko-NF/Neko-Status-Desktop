@@ -22,6 +22,7 @@ function withTimeout(ms) {
  * @param {string} [params.status]        'online' | 'away' | 'offline'
  * @param {Buffer|null} [params.screenshotBuffer] PNG/JPG Buffer
  * @param {object|null} [params.music]
+ * @param {Buffer|null} [params.iconBuffer] 应用图标 PNG Buffer
  */
 async function reportStatusV2(params) {
   const {
@@ -34,6 +35,7 @@ async function reportStatusV2(params) {
     status = 'online',
     screenshotBuffer = null,
     music = null,
+    iconBuffer = null,
   } = params;
 
   const serverUrl = configStore.getServerUrl();
@@ -61,17 +63,56 @@ async function reportStatusV2(params) {
     formData.append('screenshot', blob, 'screenshot.png');
   }
 
+  if (iconBuffer && iconBuffer.length > 0) {
+    const blob = new Blob([iconBuffer], { type: 'image/png' });
+    formData.append('file', blob, 'icon.png');
+  }
+
   const response = await fetch(`${serverUrl}/api/v2/status/report`, {
     method: 'POST',
+    headers: { 'Authorization': `Bearer ${deviceKey}` },
     body: formData,
     signal: withTimeout(15000),
   });
+
+  if (response.status === 401) {
+    const body = await response.json().catch(() => ({}));
+    const err = new Error(body.message || '设备密钥无效');
+    err.code = body.code || 'INVALID_KEY';
+    err.status = 401;
+    throw err;
+  }
 
   if (response.status === 403) {
     const body = await response.json().catch(() => ({}));
     const err = new Error(body.message || '设备密钥无效或已被撤销');
     err.code = body.code || 'KEY_REVOKED';
     err.status = 403;
+    throw err;
+  }
+
+  if (response.status === 404) {
+    const body = await response.json().catch(() => ({}));
+    const err = new Error(body.message || '设备不存在');
+    err.code = body.code || 'DEVICE_NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+    const err = new Error('请求频率过高，请稍后重试');
+    err.code = 'RATE_LIMITED';
+    err.status = 429;
+    err.retryAfter = retryAfter;
+    throw err;
+  }
+
+  // 5xx 网关/服务器错误 — 数据大概率已被上游处理，标记为瞬时错误
+  if (response.status >= 500 && response.status < 600) {
+    const err = new Error(`服务器暂时异常 (HTTP ${response.status})，数据可能已送达`);
+    err.status = response.status;
+    err.transient = true;
     throw err;
   }
 
@@ -139,4 +180,44 @@ async function testConnection(serverUrl) {
   }
 }
 
-module.exports = { reportStatusV2, performHandshake, testConnection };
+module.exports = { reportStatusV2, performHandshake, testConnection, validateDeviceKey };
+
+/**
+ * 验证设备密钥: GET /api/device/validate
+ * @param {string} deviceKey
+ * @param {string} [fingerprint]
+ * @returns {Promise<{valid: boolean, deviceId?: number, warning?: string, ...}>}
+ */
+async function validateDeviceKey(deviceKey, fingerprint) {
+  const serverUrl = configStore.getServerUrl();
+  const params = new URLSearchParams();
+  if (fingerprint) params.set('fingerprint', fingerprint);
+
+  const response = await fetch(`${serverUrl}/api/device/validate?${params.toString()}`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${deviceKey}` },
+    signal: withTimeout(10000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (response.status === 403) {
+    const err = new Error(json.message || '密钥已被撤销');
+    err.code = json.errorCode || 'KEY_REVOKED';
+    err.status = 403;
+    throw err;
+  }
+
+  if (response.status === 404) {
+    const err = new Error(json.message || '密钥不存在');
+    err.code = json.errorCode || 'KEY_NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  if (!response.ok) {
+    throw new Error(json.message || `验证失败 HTTP ${response.status}`);
+  }
+
+  return json;
+}

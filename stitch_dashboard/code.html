@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#2badee",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101c22",
+                        "card-bg": "rgba(35, 60, 72, 0.4)",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "2xl": "20px",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        .frosted {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 min-h-screen">
+<div class="flex h-screen overflow-hidden">
+<!-- Left Navigation Rail -->
+<aside class="w-20 lg:w-64 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center lg:items-start py-6 bg-background-light/50 dark:bg-background-dark/50 frosted z-10">
+<div class="px-6 mb-10 flex items-center gap-3 w-full">
+<div class="size-10 bg-primary rounded-lg flex items-center justify-center text-white shrink-0">
+<span class="material-symbols-outlined text-2xl">settings_input_component</span>
+</div>
+<span class="hidden lg:block text-xl font-bold tracking-tight">Neko Status</span>
+</div>
+<nav class="flex-1 w-full px-3 space-y-2">
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl bg-primary/20 text-primary transition-colors group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:scale-110">dashboard</span>
+<span class="hidden lg:block font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:scale-110">devices</span>
+<span class="hidden lg:block font-medium">Devices</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:scale-110">analytics</span>
+<span class="hidden lg:block font-medium">Analytics</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:scale-110">receipt_long</span>
+<span class="hidden lg:block font-medium">Logs</span>
+</a>
+</nav>
+<div class="px-3 w-full">
+<a class="flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-colors group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:scale-110">settings</span>
+<span class="hidden lg:block font-medium">Settings</span>
+</a>
+</div>
+</aside>
+<div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+<!-- Top Nav Bar -->
+<header class="h-20 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 bg-background-light/50 dark:bg-background-dark/50 frosted shrink-0">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-3">
+<div class="size-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+<span class="text-sm font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase">Device ID: NEKO-99-X</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="hidden md:flex bg-slate-200 dark:bg-slate-800 rounded-full px-4 py-2 items-center gap-2">
+<span class="material-symbols-outlined text-sm">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-40" placeholder="Quick search..." type="text"/>
+</div>
+<button class="size-10 flex items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-primary/20 hover:text-primary transition-all">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="size-10 flex items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-primary/20 hover:text-primary transition-all">
+<span class="material-symbols-outlined">add</span>
+</button>
+<div class="h-10 w-[1px] bg-slate-200 dark:border-slate-800 mx-2"></div>
+<div class="size-10 rounded-full overflow-hidden border-2 border-primary/20">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Abstract blue avatar icon" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQq8YTPfL3Y2C8FNcgrwbvlMGWEGXebUUdqfjIYYP663qLjXVCe4L7yDYJTiAsmW6yI74sXqmFU8gSXt7bPAQ5MOghABLnYAEte6b2IxNcJuRvXdAQhb9G1kOPVSiTNzjGKNl00V2QQi9OCAmzE7UDDDC3zTufXvL12IaOBmwCDDym0xnI2G2eBg5r9SfZZBc26TPWYkF49zxM7Alb5fOZWt_8kjni2H66VvHZx4YLYTmtQNoUe3NoM05skljGAUeNhcwtfTc5sXy3"/>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto p-8 space-y-8">
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+<!-- Metric Cards -->
+<div class="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+<div class="bg-card-bg frosted border border-slate-200/10 p-6 rounded-2xl flex flex-col justify-between hover:border-primary/40 transition-all group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-500 dark:text-slate-400 text-sm font-medium uppercase tracking-wider">Online Status</span>
+<span class="material-symbols-outlined text-primary">sensors</span>
+</div>
+<div>
+<h3 class="text-3xl font-bold mb-1">Active</h3>
+<p class="text-emerald-500 text-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">trending_up</span> 100% Uptime
+                                </p>
+</div>
+</div>
+<div class="bg-card-bg frosted border border-slate-200/10 p-6 rounded-2xl flex flex-col justify-between hover:border-primary/40 transition-all group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-500 dark:text-slate-400 text-sm font-medium uppercase tracking-wider">Last Report</span>
+<span class="material-symbols-outlined text-primary">history</span>
+</div>
+<div>
+<h3 class="text-3xl font-bold mb-1">2m ago</h3>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Syncing stable</p>
+</div>
+</div>
+<div class="bg-card-bg frosted border border-slate-200/10 p-6 rounded-2xl flex flex-col justify-between hover:border-primary/40 transition-all group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-500 dark:text-slate-400 text-sm font-medium uppercase tracking-wider">Battery</span>
+<span class="material-symbols-outlined text-primary">battery_5_bar</span>
+</div>
+<div>
+<h3 class="text-3xl font-bold mb-1">88%</h3>
+<p class="text-orange-500 text-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">trending_down</span> -2% p/h
+                                </p>
+</div>
+</div>
+<div class="bg-card-bg frosted border border-slate-200/10 p-6 rounded-2xl flex flex-col justify-between hover:border-primary/40 transition-all group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-500 dark:text-slate-400 text-sm font-medium uppercase tracking-wider">Health</span>
+<span class="material-symbols-outlined text-primary">favorite</span>
+</div>
+<div>
+<h3 class="text-3xl font-bold mb-1">Optimal</h3>
+<p class="text-emerald-500 text-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">check_circle</span> All systems go
+                                </p>
+</div>
+</div>
+</div>
+<!-- Right Quick Actions Stack -->
+<div class="lg:row-span-2 space-y-6">
+<div class="bg-card-bg frosted border border-slate-200/10 p-6 rounded-2xl">
+<h4 class="font-bold text-lg mb-4">Quick Actions</h4>
+<div class="space-y-3">
+<button class="w-full flex items-center gap-3 p-3 rounded-xl bg-primary text-white font-bold hover:opacity-90 transition-all">
+<span class="material-symbols-outlined">restart_alt</span>
+<span>Restart Device</span>
+</button>
+<button class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-200 dark:bg-slate-800 font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all">
+<span class="material-symbols-outlined">terminal</span>
+<span>Open Console</span>
+</button>
+<button class="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-200 dark:bg-slate-800 font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all">
+<span class="material-symbols-outlined">download</span>
+<span>Export Logs</span>
+</button>
+<button class="w-full flex items-center gap-3 p-3 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/20 hover:bg-red-500/20 transition-all">
+<span class="material-symbols-outlined">power_settings_new</span>
+<span>Emergency Shutdown</span>
+</button>
+</div>
+</div>
+<div class="bg-primary/10 border border-primary/20 p-6 rounded-2xl">
+<div class="flex items-center gap-3 mb-3">
+<span class="material-symbols-outlined text-primary">info</span>
+<span class="font-bold">System V2.4.0</span>
+</div>
+<p class="text-sm text-slate-500 dark:text-slate-400">Stable release candidate. Your device is running the latest security patch.</p>
+</div>
+</div>
+<!-- Middle: Status Timeline -->
+<div class="lg:col-span-3 bg-card-bg frosted border border-slate-200/10 p-8 rounded-2xl">
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+<div>
+<h3 class="text-xl font-bold">Real-time Status Timeline</h3>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Network Latency &amp; Resource Utilization</p>
+</div>
+<div class="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
+<button class="px-4 py-1.5 rounded-md bg-background-light dark:bg-background-dark shadow-sm text-sm font-bold">24h</button>
+<button class="px-4 py-1.5 rounded-md text-sm font-medium text-slate-500">7d</button>
+<button class="px-4 py-1.5 rounded-md text-sm font-medium text-slate-500">30d</button>
+</div>
+</div>
+<div class="relative h-[240px] w-full">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 1000 240">
+<defs>
+<lineargradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#2badee" stop-opacity="0.3"></stop>
+<stop offset="100%" stop-color="#2badee" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<path d="M0,180 Q50,160 100,170 T200,120 T300,140 T400,80 T500,100 T600,60 T700,90 T800,40 T900,70 T1000,50 L1000,240 L0,240 Z" fill="url(#chartGradient)"></path>
+<path d="M0,180 Q50,160 100,170 T200,120 T300,140 T400,80 T500,100 T600,60 T700,90 T800,40 T900,70 T1000,50" fill="none" stroke="#2badee" stroke-linecap="round" stroke-width="4"></path>
+<!-- Decorative grid lines -->
+<line stroke="currentColor" stroke-opacity="0.05" x1="0" x2="1000" y1="60" y2="60"></line>
+<line stroke="currentColor" stroke-opacity="0.05" x1="0" x2="1000" y1="120" y2="120"></line>
+<line stroke="currentColor" stroke-opacity="0.05" x1="0" x2="1000" y1="180" y2="180"></line>
+</svg>
+<div class="absolute inset-0 flex flex-col justify-between pointer-events-none text-[10px] text-slate-500 font-bold uppercase tracking-widest pb-1">
+<span>High</span>
+<span>Mid</span>
+<span>Low</span>
+</div>
+</div>
+<div class="flex justify-between mt-4 text-xs font-bold text-slate-500 tracking-tighter">
+<span>00:00</span>
+<span>04:00</span>
+<span>08:00</span>
+<span>12:00</span>
+<span>16:00</span>
+<span>20:00</span>
+<span>23:59</span>
+</div>
+</div>
+<!-- Bottom: Recent Events List -->
+<div class="lg:col-span-4 bg-card-bg frosted border border-slate-200/10 p-8 rounded-2xl">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-xl font-bold">Recent Events</h3>
+<button class="text-primary text-sm font-bold hover:underline">View All Logs</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead class="border-b border-slate-200/10">
+<tr class="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">
+<th class="pb-4 px-4">Event</th>
+<th class="pb-4 px-4">Type</th>
+<th class="pb-4 px-4">Timestamp</th>
+<th class="pb-4 px-4">Status</th>
+<th class="pb-4 px-4 text-right">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-200/5">
+<tr class="group hover:bg-slate-200/5 transition-colors">
+<td class="py-4 px-4 font-medium">Memory Usage Spiked</td>
+<td class="py-4 px-4"><span class="bg-orange-500/10 text-orange-500 px-2.5 py-1 rounded-full text-xs font-bold">Warning</span></td>
+<td class="py-4 px-4 text-sm text-slate-500">2023-11-24 14:22:01</td>
+<td class="py-4 px-4"><span class="flex items-center gap-1.5 text-slate-400 text-sm font-medium"><span class="size-1.5 rounded-full bg-slate-400"></span> Resolved</span></td>
+<td class="py-4 px-4 text-right"><span class="material-symbols-outlined text-slate-400 group-hover:text-primary cursor-pointer">more_horiz</span></td>
+</tr>
+<tr class="group hover:bg-slate-200/5 transition-colors">
+<td class="py-4 px-4 font-medium">Network Handshake Success</td>
+<td class="py-4 px-4"><span class="bg-emerald-500/10 text-emerald-500 px-2.5 py-1 rounded-full text-xs font-bold">Info</span></td>
+<td class="py-4 px-4 text-sm text-slate-500">2023-11-24 14:15:45</td>
+<td class="py-4 px-4"><span class="flex items-center gap-1.5 text-emerald-500 text-sm font-medium"><span class="size-1.5 rounded-full bg-emerald-500"></span> Active</span></td>
+<td class="py-4 px-4 text-right"><span class="material-symbols-outlined text-slate-400 group-hover:text-primary cursor-pointer">more_horiz</span></td>
+</tr>
+<tr class="group hover:bg-slate-200/5 transition-colors">
+<td class="py-4 px-4 font-medium">System Backup Completed</td>
+<td class="py-4 px-4"><span class="bg-emerald-500/10 text-emerald-500 px-2.5 py-1 rounded-full text-xs font-bold">Success</span></td>
+<td class="py-4 px-4 text-sm text-slate-500">2023-11-24 12:00:00</td>
+<td class="py-4 px-4"><span class="flex items-center gap-1.5 text-slate-400 text-sm font-medium"><span class="size-1.5 rounded-full bg-slate-400"></span> Archived</span></td>
+<td class="py-4 px-4 text-right"><span class="material-symbols-outlined text-slate-400 group-hover:text-primary cursor-pointer">more_horiz</span></td>
+</tr>
+<tr class="group hover:bg-slate-200/5 transition-colors">
+<td class="py-4 px-4 font-medium">Failed SSH Attempt</td>
+<td class="py-4 px-4"><span class="bg-red-500/10 text-red-500 px-2.5 py-1 rounded-full text-xs font-bold">Security</span></td>
+<td class="py-4 px-4 text-sm text-slate-500">2023-11-24 11:45:12</td>
+<td class="py-4 px-4"><span class="flex items-center gap-1.5 text-red-500 text-sm font-medium"><span class="size-1.5 rounded-full bg-red-500"></span> Action Required</span></td>
+<td class="py-4 px-4 text-right"><span class="material-symbols-outlined text-slate-400 group-hover:text-primary cursor-pointer">more_horiz</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</div>
+</div>
+</body></html>

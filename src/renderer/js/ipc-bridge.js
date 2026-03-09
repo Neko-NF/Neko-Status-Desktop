@@ -24,12 +24,23 @@ const nekoIPC = {
   disableAutoStart: () => ipcRenderer.invoke('autostart:disable'),
   isAutoStartEnabled: () => ipcRenderer.invoke('autostart:isEnabled'),
 
+  // ── 服务页 ──────────────────────────────────────────────────────────
+  getProcessInfo:   () => ipcRenderer.invoke('service:getProcessInfo'),
+  checkPermissions: () => ipcRenderer.invoke('service:checkPermissions'),
+  runHealthCheck:   () => ipcRenderer.invoke('service:healthCheck'),
+
   // ── 截图 ─────────────────────────────────────────────────────────────
   captureScreen: () => ipcRenderer.invoke('screenshot:capture'),
+
+  // ── 前台窗口 ─────────────────────────────────────────────────────────
+  getActiveWindow: () => ipcRenderer.invoke('system:activeWindow'),
 
   // ── 系统信息 ─────────────────────────────────────────────────────────
   getSystemInfo: () => ipcRenderer.invoke('system:info'),
   getBattery:    () => ipcRenderer.invoke('system:battery'),
+  getMetrics:    () => ipcRenderer.invoke('system:metrics'),
+  getMetricsHistory: () => ipcRenderer.invoke('system:metricsHistory'),
+  getFingerprint: () => ipcRenderer.invoke('system:fingerprint'),
 
   // ── 设备配对 ─────────────────────────────────────────────────────────
   handshake: (token, model) => ipcRenderer.invoke('pairing:handshake', { token, model }),
@@ -37,12 +48,31 @@ const nekoIPC = {
   // ── 连接测试 ─────────────────────────────────────────────────────────
   testConnection: (serverUrl) => ipcRenderer.invoke('api:testConnection', serverUrl),
 
+  // ── 设备验证 ───────────────────────────────────────────────────────────
+  validateKey: () => ipcRenderer.invoke('api:validateKey'),
+
   // ── 更新 ─────────────────────────────────────────────────────────────
   checkUpdate:      () => ipcRenderer.invoke('update:check'),
+  getChangelog:     () => ipcRenderer.invoke('update:getChangelog'),
+  checkIntegrity:   () => ipcRenderer.invoke('update:integrity'),
+  rollbackInfo:     () => ipcRenderer.invoke('update:rollback'),
   getUpdateChannel: () => ipcRenderer.invoke('update:getChannel'),
   setUpdateChannel: (channel) => ipcRenderer.invoke('update:setChannel', channel),
   downloadUpdate:   (url) => ipcRenderer.invoke('update:download', { url }),
   installUpdate:    (filePath, expectedSha256) => ipcRenderer.invoke('update:install', { filePath, expectedSha256 }),
+
+  // ── 文件选择 ─────────────────────────────────────────────────────────
+  selectFile: (options) => ipcRenderer.invoke('dialog:selectFile', options),
+
+  // ── 缓存管理 ─────────────────────────────────────────────────────────
+  clearCache: () => ipcRenderer.invoke('cache:clear'),
+  getCacheSize: () => ipcRenderer.invoke('cache:getSize'),
+
+  // ── 界面缩放 ─────────────────────────────────────────────────────────
+  setZoom: (factor) => ipcRenderer.invoke('app:setZoom', factor),
+
+  // ── 系统字体 ─────────────────────────────────────────────────────────
+  getSystemFonts: () => ipcRenderer.invoke('system:fonts'),
 
   // ── 应用控制 ─────────────────────────────────────────────────────────
   getVersion:    () => ipcRenderer.invoke('app:getVersion'),
@@ -54,6 +84,10 @@ const nekoIPC = {
 
   // ── 系统通知 ─────────────────────────────────────────────────────────
   notify: (title, body) => ipcRenderer.invoke('notification:show', { title, body }),
+
+  // ── Windows 免打扰 (Focus Assist) ────────────────────────────────────
+  getFocusAssist: () => ipcRenderer.invoke('system:getFocusAssist'),
+  setFocusAssist: (enabled) => ipcRenderer.invoke('system:setFocusAssist', enabled),
 
   // ── 事件监听 ─────────────────────────────────────────────────────────
   /**

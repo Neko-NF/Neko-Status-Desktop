@@ -18,6 +18,7 @@ const DEFAULTS = {
   // 功能开关
   enableScreenshot: false,
   screenshotInterval: 60,
+  screenshotMode: 'auto',         // 'auto' | 'interval' | 'manual'
   syncScreenshotInterval: true,   // 截图间隔是否与上报同步
   enableAutoStart: false,
   startupDelayMs: 5000,           // 自启动延迟 (ms)
@@ -25,9 +26,28 @@ const DEFAULTS = {
   // 关闭行为: 'ask' | 'minimize' | 'exit'
   closeAction: 'ask',
   // 界面配置
-  themeMode: 0,                   // 0=系统, 1=浅色, 2=深色
+  themeMode: 'light',             // 'light' | 'dark' | 'auto' | 'system'
+  darkModeStart: '18:00',         // 定时深色模式起始时间
+  darkModeEnd: '07:00',           // 定时深色模式结束时间
   seedColor: '#06b6d4',
+  glassEffect: true,              // 玻璃拟态效果
+  uiScale: 100,                   // 界面缩放百分比
+  uiFont: '',                     // 界面字体
   debugEnabled: false,
+  // 通知 & 隐私
+  enableNotification: true,       // 系统推送通知
+  doNotDisturb: false,            // 勿扰模式
+  enableIncognito: false,         // 隐身模式（截图模糊、隐藏敏感窗口）
+  blurAllScreenshots: false,      // 全局截图模糊（无论前台应用）
+  enable2FA: false,               // 双重认证
+  restoreLastState: false,        // 启动时恢复上次页面
+  authListCollapsed: false,       // 权限列表折叠状态持久化
+  reportIntervalMode: 'auto',     // 'auto' | 'custom'
+  // 故障恢复
+  enableAutoRestart: true,        // 崩溃自动重启
+  maxRestarts: 3,                 // 最大重启次数
+  restartIntervalSec: 30,         // 重启间隔（秒）
+  watchdogTimeoutSec: 60,         // 看门狗超时（秒）
   // 更新配置
   githubOwner: 'Neko-NF',
   githubRepo: 'Neko-Status-Desktop',

@@ -1,130 +1,58 @@
-# Neko Status — 待完善功能清单
+# Neko Status — 功能完成度清单
 
 > **文档目的**：帮助后续开发者快速了解 Electron 客户端的当前完成度与尚待实现的部分。  
-> **最后更新**：2026-03-09
+> **最后更新**：2026-03-09（P0/P1/P2 已全部完成）
 
 ---
 
 ## 已完成 ✅
 
-| 模块             | 说明                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| **项目骨架**     | Electron 主进程/渲染进程分离，CommonJS 模块化结构                                                 |
-| **UI 全页面**    | 仪表盘 / 设备状态 / 截图与活动 / 服务与自启动 / 更新中心 / 设置 / 关于 全部 HTML+CSS 静态结构完成 |
-| **玻璃拟态主题** | 深/浅色模式切换 + 5色主题色切换，储存于 `localStorage`                                            |
-| **系统托盘**     | 托盘图标、右键菜单（停止/启动服务、显示窗口、退出）、单击显示窗口                                 |
-| **关闭行为**     | `ask`（弹窗询问）/ `minimize`（最小化到托盘）/ `exit`（直接退出）三种模式                         |
-| **开机自启动**   | `app.setLoginItemSettings` 封装，含延迟启动参数 `--autostart`                                     |
-| **上报服务**     | `StatusService`：定时器驱动、`online`/`away` 状态切换、日志回调、Tick 回调                        |
-| **活动窗口检测** | PowerShell `Get-Process` 近似前台窗口，返回 title 与 processName                                  |
-| **用户空闲检测** | PowerShell `GetLastInputInfo` 获取空闲毫秒数                                                      |
-| **电池信息**     | PowerShell `Win32_Battery` WMI 查询，返回电量与充电状态                                           |
-| **屏幕截图**     | Electron `desktopCapturer` 封装，返回 PNG Buffer                                                  |
-| **API 上报 V2**  | `multipart/form-data` 上报，含截图、音乐、设备指纹字段                                            |
-| **设备配对握手** | POST `/api/pair/handshake`，写入 `deviceKey` / `deviceId`                                         |
-| **配置持久化**   | `ConfigStore`：基于本地 JSON 文件，含完整默认值                                                   |
-| **IPC 完整封装** | `ipc-bridge.js` + `app-ipc.js` 双层架构，控制台日志实时推送                                       |
-| **基础更新检查** | `checkForUpdates()` 对接 GitHub API `/releases/latest`                                            |
+| 模块                 | 说明                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| **项目骨架**         | Electron 主进程/渲染进程分离，CommonJS 模块化结构                                                 |
+| **UI 全页面**        | 仪表盘 / 设备状态 / 截图与活动 / 服务与自启动 / 更新中心 / 设置 / 关于 全部 HTML+CSS 静态结构完成 |
+| **玻璃拟态主题**     | 深/浅色模式切换 + 5色主题色切换，储存于 `localStorage`                                            |
+| **系统托盘**         | 托盘图标、右键菜单（停止/启动服务、显示窗口、退出）、单击显示窗口                                 |
+| **关闭行为**         | `ask`（弹窗询问）/ `minimize`（最小化到托盘）/ `exit`（直接退出）三种模式，设置页可切换           |
+| **开机自启动**       | `app.setLoginItemSettings` 封装，含延迟启动参数 `--autostart`                                     |
+| **单实例运行**       | `app.requestSingleInstanceLock()`，二次启动时激活已有窗口                                         |
+| **上报服务**         | `StatusService`：定时器驱动、`online`/`away` 状态切换、日志回调、Tick 回调                        |
+| **活动窗口检测**     | PowerShell `Get-Process` 近似前台窗口，返回 title 与 processName                                  |
+| **用户空闲检测**     | PowerShell `GetLastInputInfo` 获取空闲毫秒数                                                      |
+| **电池信息**         | PowerShell `Win32_Battery` WMI 查询，返回电量与充电状态                                           |
+| **SMTC 媒体检测**    | PowerShell WinRT `GlobalSystemMediaTransportControlsSessionManager`，返回标题/歌手/进度/应用名    |
+| **应用图标提取**     | `electron.app.getFileIcon()` 提取前台应用 PNG 图标并上报                                          |
+| **屏幕截图**         | Electron `desktopCapturer` 封装，独立截图间隔控制，超大截图检测                                   |
+| **API 上报 V2**      | `multipart/form-data` 上报，含截图、音乐、图标、设备指纹字段                                      |
+| **设备配对握手**     | POST `/api/pair/handshake`，写入 `deviceKey` / `deviceId`                                         |
+| **设备密钥验证**     | GET `/api/device/validate`，启动时校验密钥有效性                                                  |
+| **密钥状态处理**     | 完整处理 KEY_REVOKED / DEVICE_NOT_FOUND / TAKEOVER_SUCCESS，自动停止服务并通知渲染进程            |
+| **配置持久化**       | `ConfigStore`：基于本地 JSON 文件，含完整默认值                                                   |
+| **IPC 完整封装**     | `ipc-bridge.js` + `app-ipc.js` 双层架构，控制台日志实时推送                                       |
+| **三通道更新**       | stable/beta/nightly 通道切换，GitHub Releases 过滤+semver 比较，下载进度推送+SHA256 校验+安装     |
+| **更新中心 UI**      | 检查更新、强制更新、通道切换、更新源配置、release notes 渲染、跳过版本、本地安装、下载进度条      |
+| **设置页完整接入**   | 所有开关绑定配置（自启/托盘/更新/截图/通知/勿扰等），上报间隔持久化                               |
+| **网络等待**         | 开机自启时 DNS 轮询等待网络就绪（30s 超时）                                                       |
+| **兜底自启服务**     | 30s 后检查服务未运行则自动启动                                                                    |
+| **设备状态页**       | CPU/内存/网络延迟实时指标，元信息动态填充，电量状态实时更新                                       |
+| **仪表盘图表**       | Canvas 原生绘制 CPU/内存折线图，支持 1h/6h/24h 时间范围切换                                       |
+| **关于页动态化**     | 版本号、Electron/Node.js/Chromium 版本动态填充                                                    |
+| **历史诊断筛选**     | 分段滑块筛选器（全部/正常/警告/错误）带动画 pill 效果                                             |
+| **electron-builder** | NSIS 安装包 + ZIP 便携包双输出，见 [RELEASE_GUIDE.md](./RELEASE_GUIDE.md)                         |
 
 ---
 
-## 待完善 🔧
+## 未来可扩展（不阻塞当前发布）
 
-### P0 — 必须完成（影响基础使用）
-
-#### 1. 三通道自动更新（完整链路）
-
-- **现状**：`checkForUpdates()` 仅查询 `stable`（`/releases/latest`），无通道概念；前端"检查更新"按钮和通道选择 radio 按钮尚未接入 IPC。
-- **待做**：
-  - [ ] `config-store.js`：添加 `updateChannel: 'stable'` 默认值
-  - [ ] `main.js`：`checkForUpdates` 支持 `stable` / `beta` / `nightly` 三通道逻辑
-  - [ ] `main.js`：添加 `update:getChannel` / `update:setChannel` IPC
-  - [ ] `main.js`：实现下载进度推送（`stream` 分块读取 → `update:progress`）
-  - [ ] `main.js`：下载 ZIP → 解压 → 生成 `update.bat` → 执行并退出（交接文档 07 完整流程）
-  - [ ] `app-ipc.js`：绑定"检查更新"按钮、通道 radio、下载进度条、"立即安装"按钮
-
-#### 2. electron-builder 打包配置
-
-- **现状**：`package.json` 无 `build` 字段，无法打包。
-- **待做**：
-  - [ ] 添加 `electron-builder` devDependency
-  - [ ] 配置 NSIS 安装包 + ZIP 便携包双输出，see [RELEASE_GUIDE.md](./RELEASE_GUIDE.md)
-
-#### 3. 设置页面实际接入
-
-- **现状**：设置页面 HTML 已存在，但输入框/开关未绑定配置读写。
-- **待做**：
-  - [ ] 页面加载时从 IPC 读入 `serverMode`、`serverUrlProd`、`serverUrlLocal`、`reportInterval`、`deviceKey`
-  - [ ] 保存按钮调用 `ipc.setManyConfig()`，修改间隔后 `ipc.restartService()`
-
-### P1 — 重要功能（影响核心体验）
-
-#### 4. 渲染进程 UI 数据绑定（仪表盘）
-
-- **现状**：仪表盘所有卡片数据均为静态 HTML mock。
-- **待做**：
-  - [ ] `app:init` 事件处理：填充版本号、设备名、当前服务状态、Battery
-  - [ ] `service:tick` 事件：实时更新"最后上报应用"、电量、健康度统计
-  - [ ] `service:statusChanged` 事件：更新"停止/启动上报"按钮状态与仪表盘状态卡
-  - [ ] `reportToggleBtn`：点击调用 `ipc.startService()` / `ipc.stopService()`
-
-#### 5. 截图页面数据接入
-
-- **现状**：截图预览框 + 活动流均为静态 mock。
-- **待做**：
-  - [ ] `captureNowBtn`：调用 `ipc.captureScreen()`，将返回 Buffer 转为 `blob:` URL 显示在预览框
-  - [ ] 截图成功后，向活动列表追加一条记录
-  - [ ] 截图开关 `uploadSwitch`：绑定 `enableScreenshot` 配置
-
-#### 6. 服务与自启动页面接入
-
-- **现状**：开关和步进器均为静态，无 IPC 通信。
-- **待做**：
-  - [ ] `autoStartSwitch`：绑定 `ipc.enableAutoStart()` / `ipc.disableAutoStart()`，初始化时读取状态
-  - [ ] `reportAutoStartSwitch`：绑定 `enableAutoServiceStart` 配置
-  - [ ] `startDelayInput`：绑定 `startupDelayMs` 配置
-  - [ ] 服务状态 pill（`reporterStatus`）：响应 `service:statusChanged` 实时刷新
-
-#### 7. 媒体信息检测（SMTC）
-
-- **现状**：`status-service.js` 传 `music: null`，未采集。旧版使用自定义 C++ 插件 `power_pulse_media`。
-- **待做**：
-  - [ ] 方案 A（推荐）：使用 `@jellybrick/wql-process-monitor` 或 `node-smtc` 读取 Windows Runtime SMTC 接口
-  - [ ] 方案 B（兼容）：PowerShell WinRT BridgeCall 脚本，解析当前媒体信息
-  - [ ] 封装至 `system-utils.js` 的 `getMediaInfo()` 方法
-  - [ ] `status-service.js` `_tick()` 中接入 `music` 字段上报
-
-### P2 — 次要功能（增强体验）
-
-#### 8. 设备状态页面数据接入
-
-- **现状**：KPI 卡片（CPU、内存、网络、电量）均为静态 mock。
-- **待做**：
-  - [ ] CPU 负载：PowerShell `Get-CimInstance Win32_Processor` 定时轮询
-  - [ ] 内存使用：`os.totalmem()` / `os.freemem()` 即可获取
-  - [ ] 网络延迟：`ping` API 服务器
-  - [ ] 历史诊断表格：读取 `StatusService` 内存日志并渲染到 `historyTableBody`
-
-#### 9. 仪表盘图表
-
-- **现状**：`card-chart` 卡片内为占位文字 `[ECharts / Chart.js 图表渲染区域]`。
-- **待做**：
-  - [ ] 引入 Chart.js（体积小，推荐）或 ECharts
-  - [ ] 维护一个环形缓冲区记录最近 N 次 tick 的 CPU/内存读数
-  - [ ] 渲染折线图，支持 1h / 6h / 24h 三档时间轴
-
-#### 10. 关于页面动态化
-
-- **现状**：关于页面为完全静态 HTML，版本号为硬编码字符串。
-- **待做**：
-  - [ ] 页面加载时调用 `ipc.getVersion()` 填入版本号显示区域
-  - [ ] 填入 `package.json` 中的 `author`、`description` 等字段
-
-#### 11. 设备状态 → 历史诊断交互
-
-- **待做**：
-  - [ ] 筛选器 `#historyFilterGroup` 的 Segmented 滑动效果真实响应数据过滤
-  - [ ] "一键修复"按钮接入实际权限修复逻辑（目前 UI 仅展示）
+| 模块               | 说明                                                               |
+| ------------------ | ------------------------------------------------------------------ |
+| WebSocket 实时推送 | 当前使用 HTTP 定时轮询，可升级为 WebSocket 双向通信，降低延迟      |
+| 版本回滚           | 更新中心"版本回滚"按钮目前为占位，需实现旧版本缓存+恢复逻辑        |
+| 完整性检查         | "完整性检查"按钮需对比本地文件哈希与发布清单                       |
+| 截图压缩           | 超大 PNG 自动转 JPEG 降质（需引入 sharp 或类似库）                 |
+| 设备指纹增强       | 当前使用 hostname-platform-arch，可改用 MAC 地址 SHA256 提高稳定性 |
+| 系统通知集成       | CPU/内存超阈值时弹窗提醒（stgNotifySwitch 已接入配置，需触发逻辑） |
+| 守护进程分离       | 将服务拆为独立 Daemon 进程，UI 进程退出不影响上报                  |
 
 ---
 

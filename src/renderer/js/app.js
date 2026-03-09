@@ -31,6 +31,9 @@
                 item.addEventListener('click', function() {
                     const targetAreaId = this.getAttribute('data-target');
                     if (targetAreaId) {
+                        // 保存最后访问的页面（供 restoreLastState 使用）
+                        if (window.nekoIPC) window.nekoIPC.setConfig('lastPage', targetAreaId);
+
                         // 更新导航激活状态
                         navItems.forEach(nav => nav.classList.remove('active'));
                         this.classList.add('active');
@@ -106,7 +109,7 @@
             });
 
             // 1. 读取本地存储的主题设置
-            const savedMode = localStorage.getItem('neko-theme-mode') || 'dark';
+            const savedMode = localStorage.getItem('neko-theme-mode') || 'light';
             const savedColor = localStorage.getItem('neko-theme-color') || '#06b6d4';
 
             // 2. 初始化主题模式
@@ -131,18 +134,32 @@
                 else swatch.classList.remove('active');
             });
 
-            // 4. 昼夜切换事件
+            // 4. 昼夜切换事件（dock 按钮 → 同步设置页开关 + config）
             themeModeBtn.addEventListener('click', () => {
                 const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+                const newMode = isLight ? 'dark' : 'light';
                 if (isLight) {
                     document.documentElement.removeAttribute('data-theme');
                     themeModeIcon.classList.replace('ph-sun', 'ph-moon');
-                    localStorage.setItem('neko-theme-mode', 'dark');
                 } else {
                     document.documentElement.setAttribute('data-theme', 'light');
                     themeModeIcon.classList.replace('ph-moon', 'ph-sun');
-                    localStorage.setItem('neko-theme-mode', 'light');
                 }
+                localStorage.setItem('neko-theme-mode', newMode);
+                // 同步设置页深色开关
+                const darkSw = document.getElementById('stgDarkSwitch');
+                if (darkSw) darkSw.classList.toggle('on', newMode === 'dark');
+                // 关闭定时（手动切换时取消定时模式）
+                const schedSw = document.getElementById('stgDarkScheduleSwitch');
+                if (schedSw && schedSw.classList.contains('on')) {
+                    schedSw.classList.remove('on');
+                    const tr = document.getElementById('stgDarkTimeRow');
+                    if (tr) tr.style.display = 'none';
+                }
+                const desc = document.getElementById('stgDarkModeDesc');
+                if (desc) desc.textContent = newMode === 'dark' ? '当前：深色模式' : '当前：浅色模式';
+                // 持久化
+                if (window.nekoIPC) window.nekoIPC.setConfig('themeMode', newMode);
             });
 
             // 5. 颜色面板展开/收起事件
@@ -151,7 +168,7 @@
                 colorPalette.classList.toggle('show');
             });
 
-            // 6. 更换颜色事件
+            // 6. 更换颜色事件（dock 色板 → 同步设置页色板 + config）
             colorSwatches.forEach(swatch => {
                 swatch.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -163,9 +180,22 @@
                         profileAvatarImg.src = `https://ui-avatars.com/api/?name=User&background=${newColor.replace('#', '')}&color=fff`;
                     }
 
+                    // 同步 dock 色板
                     colorSwatches.forEach(s => s.classList.remove('active'));
                     swatch.classList.add('active');
                     colorPalette.classList.remove('show');
+
+                    // 同步设置页色板
+                    document.querySelectorAll('.settings-swatch').forEach(s => {
+                        s.classList.toggle('active', s.dataset.color === newColor);
+                    });
+                    const cb = document.getElementById('stgCustomColorBtn');
+                    if (cb) { cb.classList.remove('active'); }
+
+                    // 持久化到 config
+                    if (window.nekoIPC) window.nekoIPC.setConfig('seedColor', newColor);
+                    // 通知 app-ipc.js 重绘图表以跟随新主题色
+                    document.dispatchEvent(new CustomEvent('neko:themeChange'));
                 });
             });
 
@@ -254,14 +284,19 @@
                 }, 600);
             });
 
-            // 点击模态框背景关闭
+            // 点击模态框背景关闭（记录 mousedown 目标，防止拖选文字时误关弹窗）
+            let _modalMouseDownTarget = null;
+            document.addEventListener('mousedown', (e) => {
+                _modalMouseDownTarget = e.target;
+            });
             document.addEventListener('click', (e) => {
-                if (e.target === configModal) {
+                if (_modalMouseDownTarget === configModal && e.target === configModal) {
                     closeModal();
                 }
-                if (e.target === profileModal) {
+                if (_modalMouseDownTarget === profileModal && e.target === profileModal) {
                     profileModal.classList.remove('show');
                 }
+                _modalMouseDownTarget = null;
             });
 
             // 4. 右侧快捷操作开关逻辑
@@ -334,6 +369,7 @@
             
             let isEditMode = false;
             let preEditStateHTML = ''; // 用于取消保存时的回滚
+            let preEditSnapshot = []; // 取消编辑时恢复卡片布局快照
 
             // 绑定基础编辑态控件与拖拽/缩放拉手
             allCards.forEach(card => {
@@ -360,54 +396,100 @@
                 resizeHandle.className = 'resize-handle';
                 card.appendChild(resizeHandle);
 
-                // ============= 拖拽调整大小 (Snap to Grid) =============
-                resizeHandle.addEventListener('mousedown', (e) => {
+                // 拖拽拉伸拉手 (左下角)
+                const resizeHandleLeft = document.createElement('div');
+                resizeHandleLeft.className = 'resize-handle resize-handle-left';
+                card.appendChild(resizeHandleLeft);
+
+                // ============= 辅助：同组卡片自适应宽度 =============
+                function _autoResizeSiblings(targetCard, parentSection, oldW, newW) {
+                    const delta = newW - oldW;
+                    if (delta === 0) return;
+                    // 获取同 section 所有兄弟卡片（排除自身）
+                    const siblings = Array.from(parentSection.querySelectorAll(':scope > .glass-card')).filter(c => c !== targetCard);
+                    if (!siblings.length) return;
+
+                    // 用 getBoundingClientRect 判断哪些卡片与目标卡片在同一视觉行
+                    const targetRect = targetCard.getBoundingClientRect();
+                    const rowMid = targetRect.top + targetRect.height / 2;
+                    const rowSiblings = siblings.filter(s => {
+                        const r = s.getBoundingClientRect();
+                        return r.top < rowMid && (r.top + r.height) > rowMid;
+                    });
+                    if (!rowSiblings.length) return;
+
+                    // 按分配量均匀收缩/扩展（总共分配 -delta）
+                    let remaining = -delta;
+                    for (const sib of rowSiblings) {
+                        const sibW = parseInt(sib.getAttribute('data-w') || 2);
+                        const share = Math.round(remaining / rowSiblings.length);
+                        const adjusted = Math.max(2, Math.min(12, sibW + share));
+                        const actualDelta = adjusted - sibW;
+                        remaining -= actualDelta;
+                        sib.setAttribute('data-w', adjusted);
+                        sib.style.gridColumn = `span ${adjusted}`;
+                    }
+                }
+
+                // ============= 拖拽调整大小 (Snap to Grid) — 通用 =============
+                function _initResize(e, direction) {
                     if (!isEditMode) return;
-                    e.preventDefault(); // 阻止浏览器的默认拖拽与文本选择，确保只被识别为大小调整
+                    e.preventDefault();
                     e.stopPropagation();
 
-                    // 禁用卡片的拖拽属性，避免一边调大小一边触发了拖放重排
                     card.setAttribute('draggable', 'false');
                     card.classList.add('resizing');
                     resizeHandle.classList.add('active');
+                    if (direction === 'left') resizeHandleLeft.classList.add('active');
 
                     const startX = e.clientX;
                     const startY = e.clientY;
                     const startDataW = parseInt(card.getAttribute('data-w') || 1);
                     const startDataH = parseInt(card.getAttribute('data-h') || 1);
-                    
-                    // 获取当前卡片所在的 section 容器
                     const parentSection = card.closest('.dashboard-section');
-                    // 根据当前12格网格状态计算一个槽位的像素宽 (加上 gap 一起计算)
-                    const slotWidth = (parentSection.offsetWidth + 16) / 12; 
-                    const slotHeight = 40 + 16; // 新的 row height 40 + gap 16
-                    
+                    const slotWidth = (parentSection.offsetWidth + 16) / 12;
+                    const slotHeight = 40 + 16;
+                    let prevW = startDataW;
+
                     document.onmousemove = (moveE) => {
-                        let addW = Math.round((moveE.clientX - startX) / slotWidth);
-                        let addH = Math.round((moveE.clientY - startY) / slotHeight);
-                        
-                        let newW = Math.max(2, Math.min(12, startDataW + addW)); // 最小宽度占2列，避免被压缩到不可见
-                        let newH = Math.max(2, startDataH + addH); // 最小高度2行
-                        
-                        // 更新内联动态样式属性
+                        let addW, addH;
+                        if (direction === 'left') {
+                            addW = Math.round((startX - moveE.clientX) / slotWidth);
+                            addH = Math.round((moveE.clientY - startY) / slotHeight);
+                        } else {
+                            addW = Math.round((moveE.clientX - startX) / slotWidth);
+                            addH = Math.round((moveE.clientY - startY) / slotHeight);
+                        }
+
+                        let newW = Math.max(2, Math.min(12, startDataW + addW));
+                        let newH = Math.max(2, startDataH + addH);
+
+                        if (newW !== prevW) {
+                            _autoResizeSiblings(card, parentSection, prevW, newW);
+                            prevW = newW;
+                        }
+
                         card.style.gridColumn = `span ${newW}`;
                         card.style.gridRow = `span ${newH}`;
                         card.setAttribute('data-w', newW);
                         card.setAttribute('data-h', newH);
                     };
-                    
+
                     document.onmouseup = () => {
                         document.onmousemove = null;
                         document.onmouseup = null;
 
-                        // 恢复拖拽属性和去除视觉反馈
                         if (isEditMode) {
                             card.setAttribute('draggable', 'true');
                         }
                         card.classList.remove('resizing');
                         resizeHandle.classList.remove('active');
+                        resizeHandleLeft.classList.remove('active');
                     };
-                });
+                }
+
+                resizeHandle.addEventListener('mousedown', (e) => _initResize(e, 'right'));
+                resizeHandleLeft.addEventListener('mousedown', (e) => _initResize(e, 'left'));
 
                 // ============= 内容替换逻辑 (可双向切换) =============
                 if (btnReplace) {
@@ -520,6 +602,22 @@
                 if (isEditMode) {
                     // 保存编辑前的 HTML 结构状态以便取消
                     preEditStateHTML = mainArea.innerHTML;
+                    // 快照：保存每张卡片的宽高和所属 section、顺序
+                    preEditSnapshot = [];
+                    document.querySelectorAll('.dashboard-section').forEach(sec => {
+                        const secName = sec.getAttribute('data-section');
+                        Array.from(sec.children).forEach((c, idx) => {
+                            if (c.classList.contains('glass-card') && c.id) {
+                                preEditSnapshot.push({
+                                    id: c.id,
+                                    w: c.getAttribute('data-w'),
+                                    h: c.getAttribute('data-h'),
+                                    section: secName,
+                                    order: idx,
+                                });
+                            }
+                        });
+                    });
                     
                     document.body.classList.add('edit-mode');
                     editActionBar.classList.add('show');
@@ -566,8 +664,31 @@
             });
 
             cancelEditBtn.addEventListener('click', () => {
-                // 取消：直接刷新页面重新加载配置好的或默认的样子
-                window.location.reload(); 
+                // 从快照恢复卡片布局（无需重新加载页面，避免图表重建卡顿）
+                if (preEditSnapshot.length) {
+                    // 按 section 分组恢复
+                    const bySection = {};
+                    preEditSnapshot.forEach(snap => {
+                        if (!bySection[snap.section]) bySection[snap.section] = [];
+                        bySection[snap.section].push(snap);
+                    });
+                    for (const [secName, items] of Object.entries(bySection)) {
+                        const sec = document.querySelector(`.dashboard-section[data-section="${secName}"]`);
+                        if (!sec) continue;
+                        // 按原始顺序排列
+                        items.sort((a, b) => a.order - b.order);
+                        items.forEach(snap => {
+                            const c = document.getElementById(snap.id);
+                            if (!c) return;
+                            c.setAttribute('data-w', snap.w);
+                            c.setAttribute('data-h', snap.h);
+                            c.style.gridColumn = `span ${snap.w}`;
+                            c.style.gridRow = `span ${snap.h}`;
+                            sec.appendChild(c); // 按顺序重新追加以恢复 DOM 顺序
+                        });
+                    }
+                }
+                toggleEditMode(false);
             });
 
             restoreDefaultBtn.addEventListener('click', () => {
@@ -749,25 +870,211 @@
             }
 
             // ======== div 开关统一 click 处理（截图页 + 服务页 + 设置页） ======== //
+            // 只做 UI class 切换，具体配置持久化逻辑统一在 app-ipc.js 中
             [
                 'uploadSwitch', 'autoStartSwitch', 'reportAutoStartSwitch', 'autoRestartSwitch',
-                'stgAutoStartSwitch', 'stgTraySwitch', 'stgRestoreSwitch', 'stgDarkModeSwitch',
+                'stgAutoStartSwitch', 'stgTraySwitch', 'stgRestoreSwitch',
+                'stgDarkSwitch', 'stgDarkScheduleSwitch',
                 'stgGlassSwitch', 'stgAutoUploadSwitch', 'stgNotifySwitch', 'stgDndSwitch',
-                'stgIncognitoSwitch', 'stg2FASwitch', 'stgAutoDownloadSwitch'
+                'stgIncognitoSwitch', 'stg2FASwitch', 'stgAutoDownloadSwitch',
+                'blurAllSwitch', 'stgSyncScreenshotSwitch'
             ].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('click', () => {
                     el.classList.toggle('on');
-                    // 设置页深色模式联动
-                    if (id === 'stgDarkModeSwitch') {
-                        const isLight = !el.classList.contains('on');
-                        document.documentElement.setAttribute('data-theme', isLight ? 'light' : '');
-                        if (isLight) document.documentElement.setAttribute('data-theme', 'light');
-                        else document.documentElement.removeAttribute('data-theme');
-                        localStorage.setItem('neko-theme-mode', isLight ? 'light' : 'dark');
-                    }
                 });
             });
+
+            // ======== 隐私防护 - 隐身模式联动 ======== //
+            const stgIncognitoSwitch = document.getElementById('stgIncognitoSwitch');
+            const privacyBarCard = document.querySelector('.privacy-bar-card');
+            const privacyBarIcon = document.getElementById('privacyBarIcon');
+            const privacyBarTitle = document.getElementById('privacyBarTitle');
+            const privacyBarDesc = document.getElementById('privacyBarDesc');
+
+            function syncPrivacyBarWithIncognito() {
+                const isOn = stgIncognitoSwitch && stgIncognitoSwitch.classList.contains('on');
+                if (privacyBarCard) privacyBarCard.classList.toggle('disabled', !isOn);
+                if (privacyBarTitle) privacyBarTitle.textContent = isOn ? '隐私防护已启用' : '隐私防护已关闭';
+                if (privacyBarIcon) {
+                    privacyBarIcon.innerHTML = isOn
+                        ? '<i class="ph ph-shield-check"></i>'
+                        : '<i class="ph ph-shield-slash"></i>';
+                }
+                if (privacyBarDesc) {
+                    privacyBarDesc.textContent = isOn
+                        ? '匹配隐私规则的前台应用截图将自动模糊后再上传，截图仅上传至已配置的自有服务器。'
+                        : '隐身模式已关闭，截图将以原图上传。前往设置页开启隐身模式以启用隐私防护。';
+                }
+            }
+
+            // 初始同步
+            syncPrivacyBarWithIncognito();
+
+            // 隐私未启用时点击卡片 → 跳转到设置页并高亮隐身开关
+            if (privacyBarCard) {
+                privacyBarCard.addEventListener('click', (e) => {
+                    // 仅在隐私关闭（disabled 状态）且不是点击"设置隐私规则"按钮时触发
+                    if (!privacyBarCard.classList.contains('disabled')) return;
+                    if (e.target.closest('#openPrivacyRulesBtn')) return;
+
+                    // 切换到设置页
+                    const settingsNav = document.querySelector('.nav-item[data-target="page-settings"]');
+                    if (settingsNav) settingsNav.click();
+
+                    // 滚动到隐身开关并高亮
+                    setTimeout(() => {
+                        const incognitoRow = stgIncognitoSwitch?.closest('.settings-row');
+                        if (incognitoRow) {
+                            incognitoRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            incognitoRow.classList.add('highlight-flash');
+                            setTimeout(() => incognitoRow.classList.remove('highlight-flash'), 2000);
+                        }
+                    }, 300);
+                });
+            }
+
+            // 监听隐身开关变化
+            if (stgIncognitoSwitch) {
+                stgIncognitoSwitch.addEventListener('click', () => {
+                    // 等 toggle 完成后再同步
+                    setTimeout(syncPrivacyBarWithIncognito, 0);
+                });
+            }
+
+            // ======== 隐私规则弹窗 ======== //
+            const privacyRulesModal = document.getElementById('privacyRulesModal');
+            const openPrivacyRulesBtn = document.getElementById('openPrivacyRulesBtn');
+            const closePrivacyRulesBtn = document.getElementById('closePrivacyRulesBtn');
+            const privacyRuleInput = document.getElementById('privacyRuleInput');
+            const addPrivacyRuleBtn = document.getElementById('addPrivacyRuleBtn');
+            const privacyRulesList = document.getElementById('privacyRulesList');
+            const privacyRulesEmpty = document.getElementById('privacyRulesEmpty');
+
+            // 从 localStorage 加载规则
+            let privacyRules = [];
+            try { privacyRules = JSON.parse(localStorage.getItem('neko_privacy_rules') || '[]'); } catch { privacyRules = []; }
+
+            function savePrivacyRules() {
+                localStorage.setItem('neko_privacy_rules', JSON.stringify(privacyRules));
+                if (window.nekoIPC) window.nekoIPC.setConfig('privacyRules', privacyRules);
+            }
+
+            function renderPrivacyRules() {
+                if (!privacyRulesList || !privacyRulesEmpty) return;
+                privacyRulesList.innerHTML = '';
+                privacyRulesEmpty.style.display = privacyRules.length === 0 ? '' : 'none';
+                privacyRulesList.style.display = privacyRules.length > 0 ? '' : 'none';
+
+                privacyRules.forEach((rule, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'privacy-rule-item';
+                    item.innerHTML = `
+                        <div class="privacy-rule-icon"><i class="ph ph-app-window"></i></div>
+                        <div class="privacy-rule-name">${rule}</div>
+                        <button class="privacy-rule-remove" data-idx="${idx}" title="移除"><i class="ph ph-trash"></i></button>`;
+                    privacyRulesList.appendChild(item);
+                });
+
+                // 更新预设按钮状态
+                document.querySelectorAll('.privacy-preset-btn').forEach(btn => {
+                    btn.classList.toggle('added', privacyRules.includes(btn.dataset.process));
+                });
+
+                // 更新模糊计数统计
+                updateBlurCount();
+            }
+
+            function addPrivacyRule(processName) {
+                const name = processName.trim();
+                if (!name || privacyRules.includes(name)) return;
+                privacyRules.push(name);
+                savePrivacyRules();
+                renderPrivacyRules();
+            }
+
+            function removePrivacyRule(idx) {
+                privacyRules.splice(idx, 1);
+                savePrivacyRules();
+                renderPrivacyRules();
+            }
+
+            function updateBlurCount() {
+                const countEl = document.getElementById('privacyBlurCount');
+                if (countEl) {
+                    const count = parseInt(localStorage.getItem('neko_blur_count') || '0', 10);
+                    countEl.textContent = count + ' 张';
+                }
+            }
+
+            // 打开/关闭弹窗
+            if (openPrivacyRulesBtn && privacyRulesModal) {
+                openPrivacyRulesBtn.addEventListener('click', () => {
+                    privacyRulesModal.classList.add('show');
+                    renderPrivacyRules();
+                });
+            }
+            if (closePrivacyRulesBtn && privacyRulesModal) {
+                closePrivacyRulesBtn.addEventListener('click', () => privacyRulesModal.classList.remove('show'));
+            }
+            if (privacyRulesModal) {
+                privacyRulesModal.addEventListener('click', (e) => {
+                    if (e.target === privacyRulesModal) privacyRulesModal.classList.remove('show');
+                });
+            }
+
+            // 添加规则
+            if (addPrivacyRuleBtn && privacyRuleInput) {
+                addPrivacyRuleBtn.addEventListener('click', () => {
+                    addPrivacyRule(privacyRuleInput.value);
+                    privacyRuleInput.value = '';
+                });
+                privacyRuleInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        addPrivacyRule(privacyRuleInput.value);
+                        privacyRuleInput.value = '';
+                    }
+                });
+            }
+
+            // 快捷预设
+            document.querySelectorAll('.privacy-preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    addPrivacyRule(btn.dataset.process);
+                });
+            });
+
+            // 删除规则（事件委托）
+            if (privacyRulesList) {
+                privacyRulesList.addEventListener('click', (e) => {
+                    const removeBtn = e.target.closest('.privacy-rule-remove');
+                    if (!removeBtn) return;
+                    removePrivacyRule(parseInt(removeBtn.dataset.idx, 10));
+                });
+            }
+
+            // 初始渲染
+            renderPrivacyRules();
+            syncPrivacyBarWithIncognito();
+
+            // ======== 活动流 - 空态管理 ======== //
+            // 暴露给 app-ipc 使用的辅助函数
+            window._nekoActivityHelpers = {
+                hideEmpty() {
+                    const empty = document.getElementById('activityEmpty');
+                    if (empty) empty.style.display = 'none';
+                },
+                isIncognitoOn() {
+                    const sw = document.getElementById('stgIncognitoSwitch');
+                    return sw ? sw.classList.contains('on') : false;
+                },
+                getPrivacyRules() { return privacyRules; },
+                incrementBlurCount() {
+                    const count = parseInt(localStorage.getItem('neko_blur_count') || '0', 10) + 1;
+                    localStorage.setItem('neko_blur_count', String(count));
+                    updateBlurCount();
+                }
+            };
 
             // ======== 服务与自启动 - 上报服务自启联动 ======== //
             const reportAutoStartSwitch = document.getElementById('reportAutoStartSwitch');
@@ -797,17 +1104,74 @@
             });
 
             // ======== 设置页：色板联动主题色 ======== //
+            function applyThemeColor(color) {
+                document.documentElement.style.setProperty('--theme-color', color);
+                localStorage.setItem('neko-theme-color', color);
+                // 同步两处色板的 active 状态
+                document.querySelectorAll('.settings-swatch, .color-swatch').forEach(s => {
+                    s.classList.toggle('active', s.dataset.color === color);
+                });
+                // 自定义按钮
+                const cb = document.getElementById('stgCustomColorBtn');
+                if (cb) {
+                    const isCustom = !document.querySelector('.settings-swatch.active');
+                    cb.classList.toggle('active', isCustom);
+                    if (isCustom) cb.style.setProperty('--custom-swatch-color', color);
+                }
+                // 持久化到 config-store
+                if (window.nekoIPC) window.nekoIPC.setConfig('seedColor', color);
+                // 通知 app-ipc.js 重绘图表以跟随新主题色
+                document.dispatchEvent(new CustomEvent('neko:themeChange'));
+            }
+
             document.querySelectorAll('#stgColorSwatches .settings-swatch').forEach(swatch => {
                 swatch.addEventListener('click', () => {
-                    const color = swatch.dataset.color;
-                    document.documentElement.style.setProperty('--theme-color', color);
-                    localStorage.setItem('neko-theme-color', color);
-                    // 同步两处色板的 active 状态
-                    document.querySelectorAll('.settings-swatch, .color-swatch').forEach(s => {
-                        s.classList.toggle('active', s.dataset.color === color);
-                    });
+                    applyThemeColor(swatch.dataset.color);
+                    const customRow = document.getElementById('stgCustomColorRow');
+                    if (customRow) customRow.style.display = 'none';
                 });
             });
+
+            // 自定义颜色按钮
+            const customColorBtn = document.getElementById('stgCustomColorBtn');
+            const customColorInput = document.getElementById('stgCustomColorInput');
+            const customColorRow = document.getElementById('stgCustomColorRow');
+            const customColorPreview = document.getElementById('stgCustomColorPreview');
+            const customColorHex = document.getElementById('stgCustomColorHex');
+
+            if (customColorBtn && customColorInput) {
+                customColorBtn.addEventListener('click', () => {
+                    if (customColorRow) customColorRow.style.display = customColorRow.style.display === 'none' ? '' : 'none';
+                    const cur = localStorage.getItem('neko-theme-color') || '#06b6d4';
+                    customColorInput.value = cur;
+                    if (customColorHex) customColorHex.value = cur;
+                    if (customColorPreview) customColorPreview.style.background = cur;
+                });
+                customColorInput.addEventListener('input', () => {
+                    const c = customColorInput.value;
+                    if (customColorPreview) customColorPreview.style.background = c;
+                    if (customColorHex) customColorHex.value = c;
+                });
+                // 点击预览色块打开系统取色器
+                if (customColorPreview) {
+                    customColorPreview.style.cursor = 'pointer';
+                    customColorPreview.addEventListener('click', () => customColorInput.click());
+                }
+                if (customColorHex) {
+                    customColorHex.addEventListener('input', () => {
+                        const v = customColorHex.value;
+                        if (/^#[0-9a-f]{6}$/i.test(v)) {
+                            customColorInput.value = v;
+                            if (customColorPreview) customColorPreview.style.background = v;
+                        }
+                    });
+                }
+                document.getElementById('stgCustomColorApply')?.addEventListener('click', () => {
+                    const c = customColorInput.value;
+                    applyThemeColor(c);
+                    if (customColorRow) customColorRow.style.display = 'none';
+                });
+            }
 
             // ======== 设置页：打开个人资料弹窗 ======== //
             const openProfileBtnSettings = document.getElementById('openProfileBtnSettings');
@@ -841,25 +1205,8 @@
                 });
             }
 
-            // ======== 更新中心：回滚二次确认 ======== //
-            const rollbackBtn = document.getElementById('rollbackBtn');
-            if (rollbackBtn) {
-                let rollbackTimer = null;
-                rollbackBtn.addEventListener('click', () => {
-                    if (rollbackBtn.classList.contains('confirming')) {
-                        clearTimeout(rollbackTimer);
-                        rollbackBtn.classList.remove('confirming');
-                        rollbackBtn.querySelector('.update-ctrl-label').textContent = '版本回滚';
-                    } else {
-                        rollbackBtn.classList.add('confirming');
-                        rollbackBtn.querySelector('.update-ctrl-label').textContent = rollbackBtn.dataset.confirm;
-                        rollbackTimer = setTimeout(() => {
-                            rollbackBtn.classList.remove('confirming');
-                            rollbackBtn.querySelector('.update-ctrl-label').textContent = '版本回滚';
-                        }, 3000);
-                    }
-                });
-            }
+            // ======== 更新中心：回滚按钮 UI 占位（实际逻辑由 app-ipc.js 覆盖）======== //
+            // rollbackBtn 的真实处理由 app-ipc.js replaceHandler('rollbackBtn') 接管
 
             // ======== 服务与自启动 - 危险操作二次确认 ======== //
             // 带 data-confirm 属性的按钮点击后进入「确认态」，3s 内再次点击才执行
@@ -890,53 +1237,7 @@
                 });
             });
 
-            // ======== 服务与自启动 - 一键体检 ======== //
-            const runHealthCheckBtn = document.getElementById('runHealthCheckBtn');
-            const healthResultsList = document.getElementById('healthResultsList');
-
-            const healthChecks = [
-                { name: '守护进程状态',  check: () => ({ ok: true,  text: 'NekoDaemon.exe 运行正常，PID 10243' }) },
-                { name: '屏幕捕获权限',  check: () => ({ ok: false, text: 'Access Denied — 需要以管理员身份运行' }) },
-                { name: '进程遍历 (WMI)', check: () => ({ ok: true,  text: 'WMI 查询正常，已获取前台应用信息' }) },
-                { name: '网络连通性',    check: () => ({ ok: true,  text: 'WebSocket 延迟 12ms，上报服务正常' }) },
-                { name: '开机自启配置',  check: () => ({ ok: true,  text: '注册表启动项已正确写入' }) },
-                { name: '本地存储空间',  check: () => ({ ok: 'warn', text: '已用 384 MB / 2 GB，建议清理旧截图' }) },
-                { name: '服务崩溃恢复',  check: () => ({ ok: true,  text: '看门狗已启用，最大重启 3 次' }) },
-            ];
-
-            if (runHealthCheckBtn && healthResultsList) {
-                runHealthCheckBtn.addEventListener('click', () => {
-                    runHealthCheckBtn.disabled = true;
-                    runHealthCheckBtn.innerHTML = '<i class="ph ph-circle-notch" style="animation: spin 0.8s linear infinite;"></i> 检测中...';
-                    healthResultsList.innerHTML = '';
-
-                    healthChecks.forEach((item, i) => {
-                        const placeholder = document.createElement('div');
-                        placeholder.className = 'health-result-item';
-                        placeholder.style.animationDelay = (i * 0.12) + 's';
-                        placeholder.innerHTML = `
-                            <i class="ph ph-circle-notch health-result-icon checking"></i>
-                            <div class="health-result-name">${item.name}</div>
-                            <div class="health-result-desc">检测中...</div>`;
-                        healthResultsList.appendChild(placeholder);
-
-                        setTimeout(() => {
-                            const result = item.check();
-                            const iconClass = result.ok === true ? 'ph-check-circle ok' :
-                                              result.ok === 'warn' ? 'ph-warning warn' : 'ph-x-circle fail';
-                            placeholder.innerHTML = `
-                                <i class="ph ${iconClass} health-result-icon"></i>
-                                <div class="health-result-name">${item.name}</div>
-                                <div class="health-result-desc">${result.text}</div>`;
-                        }, 400 + i * 350);
-                    });
-
-                    setTimeout(() => {
-                        runHealthCheckBtn.disabled = false;
-                        runHealthCheckBtn.innerHTML = '<i class="ph ph-heartbeat"></i> 重新体检';
-                    }, 400 + healthChecks.length * 350 + 200);
-                });
-            }
+            // ======== 服务与自启动 - 一键体检（实际逻辑由 app-ipc.js 覆盖） ======== //
 
             // ======== configModal 模式切换 ======== //
             const configModeSwitcher = document.getElementById('configModeSwitcher');
@@ -997,36 +1298,44 @@
                 });
             }
 
-            // ======== 设置页：系统字体列表填充 ======== //
+            // ======== 设置页：系统字体列表填充（从系统枚举） ======== //
             const stgFontSelect = document.getElementById('stgFontSelect');
             if (stgFontSelect) {
-                const commonFonts = [
-                    { label: '微软雅黑 / Microsoft YaHei', value: 'Microsoft YaHei' },
-                    { label: '思源黑体 / Source Han Sans', value: 'Source Han Sans SC' },
-                    { label: '苹方 / PingFang SC', value: 'PingFang SC' },
-                    { label: 'Segoe UI', value: 'Segoe UI' },
-                    { label: 'Inter', value: 'Inter' },
-                    { label: 'Roboto', value: 'Roboto' },
-                    { label: 'Helvetica Neue', value: 'Helvetica Neue' },
-                    { label: 'Arial', value: 'Arial' },
-                    { label: 'Consolas', value: 'Consolas' },
-                    { label: '等线 / DengXian', value: 'DengXian' },
-                ];
-                commonFonts.forEach(f => {
-                    const opt = document.createElement('option');
-                    opt.value = f.value;
-                    opt.textContent = f.label;
-                    opt.style.fontFamily = f.value;
-                    stgFontSelect.appendChild(opt);
-                });
-                const savedFont = localStorage.getItem('neko-ui-font') || '';
-                stgFontSelect.value = savedFont;
-                stgFontSelect.addEventListener('change', () => {
-                    const font = stgFontSelect.value;
-                    document.body.style.fontFamily = font ? `"${font}", "Microsoft YaHei", sans-serif` : '';
+                function applyFont(font) {
+                    if (font) {
+                        document.documentElement.style.setProperty('--ui-font', `"${font}"`);
+                    } else {
+                        document.documentElement.style.removeProperty('--ui-font');
+                    }
                     localStorage.setItem('neko-ui-font', font);
+                    if (window.nekoIPC) window.nekoIPC.setConfig('uiFont', font);
+                }
+
+                // 页面加载时立即应用已保存字体
+                const savedFont = localStorage.getItem('neko-ui-font') || '';
+                if (savedFont) document.documentElement.style.setProperty('--ui-font', `"${savedFont}"`);
+
+                // 异步加载系统字体列表
+                (async () => {
+                    stgFontSelect.innerHTML = '<option value="">系统默认</option>';
+                    let fonts = [];
+                    try {
+                        fonts = (window.nekoIPC ? await window.nekoIPC.getSystemFonts() : []) || [];
+                    } catch {}
+                    // 去重排序
+                    fonts = [...new Set(fonts)].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+                    fonts.forEach(name => {
+                        const opt = document.createElement('option');
+                        opt.value = name;
+                        opt.textContent = name;
+                        opt.style.fontFamily = name;
+                        stgFontSelect.appendChild(opt);
+                    });
+                    stgFontSelect.value = savedFont;
+                })();
+
+                stgFontSelect.addEventListener('change', () => {
+                    applyFont(stgFontSelect.value);
                 });
-                // 页面加载时应用已保存字体
-                if (savedFont) document.body.style.fontFamily = `"${savedFont}", "Microsoft YaHei", sans-serif`;
             }
         });
