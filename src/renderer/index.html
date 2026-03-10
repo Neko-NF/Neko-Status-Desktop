@@ -82,13 +82,16 @@
                     <img src="https://api.dicebear.com/7.x/notionists/svg?seed=NekoAdmin&backgroundColor=0f172a" alt="User Avatar" class="user-avatar" id="userAvatar">
                     <div class="user-dropdown" id="userDropdown">
                         <div style="padding: 4px 10px; margin-bottom: 4px;">
-                            <div style="font-weight: 600; color: var(--text-main);">NF</div>
-                            <div style="font-size: 12px; color: var(--text-secondary);">管理员</div>
+                            <div style="font-weight: 600; color: var(--text-main);" id="dropdownUsername">未登录</div>
+                            <div style="font-size: 12px; color: var(--text-secondary);" id="dropdownRole">设备密钥模式</div>
                         </div>
                         <div class="dropdown-divider"></div>
-                        <a class="dropdown-item" id="btnProfileSettings"><i class="ph ph-user-circle"></i> 账户个人信息设置</a>
-                        <div class="dropdown-divider"></div>
-                        <a class="dropdown-item" style="color: var(--error-coral);"><i class="ph ph-sign-out"></i> 退出登录</a>
+                        <!-- 未登录时显示 -->
+                        <a class="dropdown-item" id="btnOpenLogin" style="color: var(--theme-color);"><i class="ph ph-sign-in"></i> 登录 / 注册</a>
+                        <!-- 已登录时显示 -->
+                        <a class="dropdown-item" id="btnProfileSettings" style="display: none;"><i class="ph ph-user-circle"></i> 账户个人信息设置</a>
+                        <div class="dropdown-divider" id="logoutDivider" style="display: none;"></div>
+                        <a class="dropdown-item" id="btnLogout" style="color: var(--error-coral); display: none;"><i class="ph ph-sign-out"></i> 退出登录</a>
                     </div>
                 </div>
             </div>
@@ -1515,6 +1518,9 @@
                 <div class="form-group" id="configApiKeyGroup">
                     <label>设备通信密钥 (Client API Key)</label>
                     <input type="password" class="glass-input" id="configApiKeyInput" value="nk_stat_xxxxxxxx" placeholder="请输入服务端分配的密钥...">
+                    <div class="form-hint config-key-hint">
+                        <i class="ph ph-lightbulb"></i> 登录账号后可自动生成密钥，也可从网页前端复制粘贴。留空将保留当前密钥。
+                    </div>
                 </div>
                 <div class="form-hint" id="configHint">
                     <i class="ph ph-info"></i> 保存后服务可能需要重启以应用新的网络连接。
@@ -1550,14 +1556,14 @@
                     <label>用户名</label>
                     <div class="profile-input highlight">
                         <i class="ph ph-user-circle text-theme"></i>
-                        <input type="text" value="admin">
+                        <input type="text" id="profileUsername" value="">
                     </div>
                 </div>
                 <div class="profile-form-group">
                     <label>电子邮箱</label>
                     <div class="profile-input">
                         <i class="ph ph-envelope text-theme"></i>
-                        <input type="email" value="admin@example.com">
+                        <input type="email" id="profileEmail" value="" placeholder="选填">
                     </div>
                 </div>
             </div>
@@ -1572,19 +1578,22 @@
                     <label>当前密码</label>
                     <div class="profile-input">
                         <i class="ph ph-key text-theme"></i>
-                        <input type="password" placeholder="请输入当前密码">
+                        <input type="password" id="profileCurrentPassword" placeholder="修改密码时填写">
                     </div>
                 </div>
                 <div class="profile-form-group">
                     <label>新密码</label>
                     <div class="profile-input">
                         <i class="ph ph-lock text-theme"></i>
-                        <input type="password" placeholder="请输入新密码">
+                        <input type="password" id="profileNewPassword" placeholder="留空则不修改">
                     </div>
                 </div>
             </div>
 
             <div class="profile-footer">
+                <div class="profile-sync-hint" id="profileSyncHint" style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+                    <i class="ph ph-cloud-check" style="color: var(--success-mint);"></i> 修改将同步到服务器和网页端
+                </div>
                 <button class="btn-theme-save" id="saveProfileBtn">
                     <i class="ph ph-check-circle"></i> 保存更改
                 </button>
@@ -1646,6 +1655,132 @@
                 </div>
                 <div class="privacy-rules-footer-info" style="margin-top:12px;">
                     <i class="ph ph-link"></i> 与设置页「隐身模式」联动，关闭隐身模式后规则不生效
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 登录/注册弹窗 ========== -->
+    <div class="modal-overlay" id="authModal" style="display: none;">
+        <div class="auth-modal-container">
+            <button class="close-profile-btn" id="closeAuthModal"><i class="ph ph-x"></i></button>
+
+            <!-- 未配置服务器时的提示 -->
+            <div class="auth-server-warning" id="authServerWarning" style="display: none;">
+                <i class="ph ph-warning-circle"></i>
+                <span>尚未配置服务器地址，请先完成服务器配置</span>
+                <button class="auth-config-link" id="authOpenConfigBtn"><i class="ph ph-plugs"></i> 去配置</button>
+            </div>
+
+            <!-- 本地测试模式标识 -->
+            <div class="auth-local-badge" id="authLocalBadge" style="display: none;">
+                <i class="ph ph-laptop"></i> 本地测试模式 — 账户仅保存在本机
+            </div>
+            
+            <!-- 登录视图 -->
+            <div class="auth-view" id="authLoginView">
+                <div class="auth-modal-header">
+                    <i class="ph ph-cat auth-header-icon"></i>
+                    <h2>欢迎回来</h2>
+                    <p class="auth-header-subtitle">登录以同步你的设备与账户设置</p>
+                </div>
+                <div class="auth-form">
+                    <div class="auth-form-group">
+                        <label><i class="ph ph-user"></i> 用户名</label>
+                        <input type="text" id="authLoginUsername" placeholder="请输入用户名" autocomplete="username">
+                    </div>
+                    <div class="auth-form-group">
+                        <label><i class="ph ph-lock"></i> 密码</label>
+                        <input type="password" id="authLoginPassword" placeholder="请输入密码" autocomplete="current-password">
+                    </div>
+                    <div class="auth-error" id="authLoginError" style="display: none;"></div>
+                    <button class="btn-theme-save auth-submit-btn" id="authLoginBtn">
+                        <i class="ph ph-sign-in"></i> 登录
+                    </button>
+                    <div class="auth-switch">
+                        还没有账号？<a href="#" id="switchToRegister">立即注册</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 注册视图 -->
+            <div class="auth-view" id="authRegisterView" style="display: none;">
+                <div class="auth-modal-header">
+                    <i class="ph ph-user-plus auth-header-icon"></i>
+                    <h2>创建账号</h2>
+                    <p class="auth-header-subtitle">注册后可跨设备同步你的状态信息</p>
+                </div>
+                <div class="auth-form">
+                    <div class="auth-form-group">
+                        <label><i class="ph ph-user"></i> 用户名</label>
+                        <input type="text" id="authRegUsername" placeholder="2-32位字母、数字、下划线或中文" autocomplete="username">
+                    </div>
+                    <div class="auth-form-group">
+                        <label><i class="ph ph-lock"></i> 密码</label>
+                        <input type="password" id="authRegPassword" placeholder="至少6位" autocomplete="new-password">
+                    </div>
+                    <div class="auth-form-group">
+                        <label><i class="ph ph-lock-key"></i> 确认密码</label>
+                        <input type="password" id="authRegConfirm" placeholder="再次输入密码" autocomplete="new-password">
+                    </div>
+                    <div class="auth-error" id="authRegError" style="display: none;"></div>
+                    <button class="btn-theme-save auth-submit-btn" id="authRegBtn">
+                        <i class="ph ph-user-plus"></i> 注册
+                    </button>
+                    <div class="auth-switch">
+                        已有账号？<a href="#" id="switchToLogin">返回登录</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 首次使用引导提示弹窗 ========== -->
+    <div class="modal-overlay" id="firstTimeAuthPrompt" style="display: none;">
+        <div class="glass-card modal-container first-time-container">
+            <!-- Step 1: 配置服务器地址（内嵌输入） -->
+            <div id="firstTimeStep1">
+                <div class="first-time-icon-wrap">
+                    <i class="ph ph-plugs-connected first-time-icon"></i>
+                </div>
+                <h3 class="first-time-title">欢迎使用 Neko Status</h3>
+                <p class="first-time-desc">
+                    首次使用请配置服务器地址以启用在线功能。<br>
+                    连接成功后即可登录或注册，设备密钥将在登录后自动生成。
+                </p>
+                <div class="first-time-server-form">
+                    <label class="first-time-server-label">
+                        <i class="ph ph-globe"></i> 服务器地址
+                    </label>
+                    <input type="text" id="firstTimeServerUrl" class="first-time-server-input" placeholder="例如: https://nf.koirin.com">
+                    <div class="first-time-server-status" id="firstTimeServerStatus"></div>
+                </div>
+                <div class="first-time-actions">
+                    <button class="action-btn first-time-btn" id="firstTimeSkipBtn">
+                        <i class="ph ph-arrow-right"></i> 跳过，稍后配置
+                    </button>
+                    <button class="btn-theme-save first-time-btn" id="firstTimeTestBtn">
+                        <i class="ph ph-plugs"></i> 测试并继续
+                    </button>
+                </div>
+            </div>
+            <!-- Step 2: 登录/注册（服务器已配置后显示） -->
+            <div id="firstTimeStep2" style="display: none;">
+                <div class="first-time-icon-wrap">
+                    <i class="ph ph-user-circle first-time-icon"></i>
+                </div>
+                <h3 class="first-time-title">服务器已连接，是否登录？</h3>
+                <p class="first-time-desc">
+                    登录后可同步账户设置、自动配置设备密钥，在多端间无缝管理。<br>
+                    你也可以跳过登录，直接在设置中填入从网页复制的设备密钥使用。
+                </p>
+                <div class="first-time-actions">
+                    <button class="action-btn first-time-btn" id="firstTimeSkipStep2Btn">
+                        <i class="ph ph-arrow-right"></i> 跳过，使用密钥
+                    </button>
+                    <button class="btn-theme-save first-time-btn" id="firstTimeLoginBtn">
+                        <i class="ph ph-sign-in"></i> 登录 / 注册
+                    </button>
                 </div>
             </div>
         </div>

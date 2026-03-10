@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",

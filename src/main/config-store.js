@@ -30,6 +30,7 @@ const DEFAULTS = {
   darkModeStart: '18:00',         // 定时深色模式起始时间
   darkModeEnd: '07:00',           // 定时深色模式结束时间
   seedColor: '#06b6d4',
+  customSeedColor: '',            // 用户自定义强调色（切换预置色时保留）
   glassEffect: true,              // 玻璃拟态效果
   uiScale: 100,                   // 界面缩放百分比
   uiFont: '',                     // 界面字体
@@ -37,12 +38,14 @@ const DEFAULTS = {
   // 通知 & 隐私
   enableNotification: true,       // 系统推送通知
   doNotDisturb: false,            // 勿扰模式
-  enableIncognito: false,         // 隐身模式（截图模糊、隐藏敏感窗口）
+  enableIncognito: false,         // 隐身模式（截图模糊、隐藏敏感窗口）默认关闭
   blurAllScreenshots: false,      // 全局截图模糊（无论前台应用）
   enable2FA: false,               // 双重认证
   restoreLastState: false,        // 启动时恢复上次页面
   authListCollapsed: false,       // 权限列表折叠状态持久化
   reportIntervalMode: 'auto',     // 'auto' | 'custom'
+  // 仪表盘布局持久化
+  dashboardLayout: null,          // 卡片布局快照 [{id, w, h, section}]
   // 故障恢复
   enableAutoRestart: true,        // 崩溃自动重启
   maxRestarts: 3,                 // 最大重启次数
@@ -56,6 +59,12 @@ const DEFAULTS = {
   updateChannel: 'stable',         // 'stable' | 'beta' | 'nightly'
   skippedVersion: '',
   lastUpdateCheck: 0,
+  // 用户认证
+  authToken: '',                  // JWT token（桌面客户端专用）
+  authUser: null,                 // { id, username, email, avatar, role }
+  authPromptDismissed: false,     // 首次登录提示是否已关闭
+  serverConfigured: false,        // 用户是否已成功配置并测试过服务器连接
+  localTestAccounts: [],          // 本地测试账户 [{username, password, createdAt}]
 };
 
 class ConfigStore {

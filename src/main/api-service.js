@@ -180,7 +180,7 @@ async function testConnection(serverUrl) {
   }
 }
 
-module.exports = { reportStatusV2, performHandshake, testConnection, validateDeviceKey };
+module.exports = { reportStatusV2, performHandshake, testConnection, validateDeviceKey, authLogin, authRegister, authGetMe, authUpdateProfile, authGenerateDeviceKey };
 
 /**
  * 验证设备密钥: GET /api/device/validate
@@ -217,6 +217,144 @@ async function validateDeviceKey(deviceKey, fingerprint) {
 
   if (!response.ok) {
     throw new Error(json.message || `验证失败 HTTP ${response.status}`);
+  }
+
+  return json;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  用 户 认 证  (桌面客户端 REST API)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * 登录: POST /api/auth/login
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{success: boolean, token?: string, user?: object, message?: string}>}
+ */
+async function authLogin(username, password) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+    signal: withTimeout(15000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(json.message || `登录失败 HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 注册: POST /api/auth/register
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{success: boolean, token?: string, user?: object, message?: string}>}
+ */
+async function authRegister(username, password) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+    signal: withTimeout(15000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(json.message || `注册失败 HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 获取当前用户信息: GET /api/auth/me
+ * @param {string} token JWT token
+ * @returns {Promise<{success: boolean, user?: object}>}
+ */
+async function authGetMe(token) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/auth/me`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` },
+    signal: withTimeout(10000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(json.message || `获取用户信息失败 HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 更新个人信息: PUT /api/auth/profile
+ * @param {string} token JWT token
+ * @param {object} data { username?, email?, avatar?, currentPassword?, newPassword? }
+ * @returns {Promise<{success: boolean, user?: object, message?: string}>}
+ */
+async function authUpdateProfile(token, data) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/auth/profile`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+    signal: withTimeout(15000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(json.message || `更新个人信息失败 HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 生成设备密钥: POST /api/auth/device-key
+ * @param {string} token JWT token
+ * @param {object} data { deviceName?, platform?, deviceFingerprint? }
+ * @returns {Promise<{success: boolean, deviceKey?: string, deviceId?: number, isExisting?: boolean}>}
+ */
+async function authGenerateDeviceKey(token, data) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/auth/device-key`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+    signal: withTimeout(15000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(json.message || `设备密钥操作失败 HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
   }
 
   return json;

@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let _trendChart    = null;
   let _trendRange    = '1m';
   let _metricsBuffer = []; // 本地指标历史缓存（cpuPct / memPct / timestamp）
+  let _lastChartUpdateTs = 0; // 图表上次刷新时间戳（节流用）
   let _themeColorRgb = { r: 6, g: 182, b: 212 }; // 缓存主题色 RGB
 
   // 将 CSS 颜色字符串（#hex 或 rgb(...)）解析为 {r,g,b}
@@ -91,9 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const pad = n => String(n).padStart(2, '0');
     const now = Date.now();
     const cfgMap = {
-      '1m':  { totalMs: 60e3,         buckets: 60 },  // ~1 sec/格
-      '1h':  { totalMs: 3600e3,       buckets: 60 },  // ~1 min/格
-      '12h': { totalMs: 12 * 3600e3,  buckets: 72 },  // ~10 min/格
+      '1m':  { totalMs: 60e3,         buckets: 12 },  // 5s/格，每 5s 一条
+      '1h':  { totalMs: 3600e3,       buckets: 60 },  // 1min/格，每 1min 一条
+      '12h': { totalMs: 12 * 3600e3,  buckets: 12 },  // 1h/格，每 1h 一条
     };
     const { totalMs, buckets } = cfgMap[rangeId] || cfgMap['1m'];
     const from     = now - totalMs;
@@ -723,6 +724,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const configUpdate = {
         deviceKey,
         serverMode: isLocal ? 'local' : 'production',
+        serverConfigured: true,   // 标记服务器已成功配置
       };
       if (isLocal) configUpdate.serverUrlLocal = serverUrl;
       else configUpdate.serverUrlProd = serverUrl;
@@ -741,6 +743,12 @@ document.addEventListener('DOMContentLoaded', () => {
           saveBtn.classList.remove('btn-feedback-success');
           saveBtn.disabled = false;
         }, 300);
+
+        // auth modal 内来的配置请求：配置成功后重新打开 auth modal
+        if (window._authPendingAfterConfig) {
+          window._authPendingAfterConfig = false;
+          setTimeout(() => openAuthModal('login'), 400);
+        }
       }, 800);
 
     } catch (e) {
@@ -1274,6 +1282,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const nameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
       channelBadge.textContent = nameMap[result.channel] || '稳定版';
     }
+    const verTag = document.querySelector('.update-ver-tag');
+    if (verTag) {
+      const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
+      verTag.textContent = tagMap[result.channel] || 'Stable';
+    }
 
     // 渲染 release notes 到时间线
     const timeline = document.querySelector('.update-timeline');
@@ -1690,6 +1703,12 @@ document.addEventListener('DOMContentLoaded', () => {
           const nameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
           channelBadge.textContent = nameMap[channel] || channel;
         }
+        // 版本号旁的通道标签
+        const verTag = document.querySelector('.update-ver-tag');
+        if (verTag) {
+          const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
+          verTag.textContent = tagMap[channel] || channel;
+        }
       }
     });
   });
@@ -1970,6 +1989,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const winDnd = fa && fa.ok ? fa.enabled : !!cfg.doNotDisturb;
       if (dndSwitch) dndSwitch.classList.toggle('on', winDnd);
       if (winDnd !== !!cfg.doNotDisturb) await ipc.setConfig('doNotDisturb', winDnd);
+      // 勿扰开启时强制关闭通知开关
+      if (winDnd && notifySwitch) {
+        notifySwitch.classList.remove('on');
+        if (cfg.enableNotification !== false) await ipc.setConfig('enableNotification', false);
+      }
     })();
 
     // 隐身模式
@@ -2100,6 +2124,22 @@ document.addEventListener('DOMContentLoaded', () => {
         customBtn.classList.toggle('active', !matchedBuiltin);
         if (!matchedBuiltin) customBtn.style.setProperty('--custom-swatch-color', cfg.seedColor);
       }
+      // 回填自定义取色器预览（保留用户的自定义色）
+      if (cfg.customSeedColor) {
+        const cInput = document.getElementById('stgCustomColorInput');
+        const cHex   = document.getElementById('stgCustomColorHex');
+        const cPrev  = document.getElementById('stgCustomColorPreview');
+        if (cInput) cInput.value = cfg.customSeedColor;
+        if (cHex)   cHex.value   = cfg.customSeedColor;
+        if (cPrev)  cPrev.style.background = cfg.customSeedColor;
+      }
+    }
+
+    // ── 仪表盘布局从 configStore 恢复（比 localStorage 更可靠）────────
+    if (cfg.dashboardLayout && Array.isArray(cfg.dashboardLayout) && cfg.dashboardLayout.length) {
+      if (typeof loadLayoutConfig === 'function') {
+        loadLayoutConfig(cfg.dashboardLayout);
+      }
     }
 
     // ── 玻璃拟态效果初始化 ────────────────────────────────────────────
@@ -2153,6 +2193,13 @@ document.addEventListener('DOMContentLoaded', () => {
       channelBadge.className = `update-channel-badge ${ch}`;
       const nameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
       channelBadge.textContent = nameMap[ch] || '稳定版';
+    }
+    // 版本号旁的通道标签
+    const verTag = document.querySelector('.update-ver-tag');
+    if (verTag) {
+      const ch = cfg.updateChannel || 'stable';
+      const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
+      verTag.textContent = tagMap[ch] || 'Stable';
     }
 
     // ── 更新源信息初始化 ──────────────────────────────────────────────
@@ -2423,14 +2470,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 主题色板切换时重绘图表（响应 app.js 发出的自定义事件）──────────────
   document.addEventListener('neko:themeChange', () => _rebuildTrendChartDeferred());
 
-  // ── 系统指标更新 → 图表实时刷新 ──────────────────────────────────────
+  // ── 系统指标更新 → 按区间节流图表刷新 ─────────────────────────────────
+  // 1m 区间: 每 5s 刷新, 1h 区间: 每 60s 刷新, 12h 区间: 每 3600s 刷新
+  const _trendThrottleMs = { '1m': 5000, '1h': 60000, '12h': 3600000 };
   ipc.on('system:metricsUpdate', (m) => {
     _metricsBuffer.push(m);
     if (_metricsBuffer.length > 8640) _metricsBuffer.shift(); // 保留 24h
-    // 仅在仪表盘页可见时实时更新，避免不必要的重绘
+    // 仅在仪表盘页可见时刷新，且遵守当前区间节流间隔
     const dashArea = document.getElementById('mainDashboardArea');
     if (dashArea && dashArea.style.display !== 'none') {
-      _updateTrendChart();
+      const now = Date.now();
+      const interval = _trendThrottleMs[_trendRange] || 5000;
+      if (now - _lastChartUpdateTs >= interval) {
+        _lastChartUpdateTs = now;
+        _updateTrendChart();
+      }
     }
   });
 
@@ -2452,6 +2506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const range = btn.dataset.range;
     if (!range || range === _trendRange) return;
     _trendRange = range;
+    _lastChartUpdateTs = 0; // 切换区间时立即刷新
     document.querySelectorAll('#trendRangeGroup .toggle-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.range === range);
     });
@@ -2640,6 +2695,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // 通知开关
   document.getElementById('stgNotifySwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
+    // 如果勿扰模式已开启，阻止用户手动开启通知
+    const dndSw = document.getElementById('stgDndSwitch');
+    if (isOn && dndSw && dndSw.classList.contains('on')) {
+      this.classList.remove('on');
+      addLogLine('WARN', '勿扰模式已开启，无法开启通知');
+      return;
+    }
     await ipc.setConfig('enableNotification', isOn);
   });
 
@@ -2650,8 +2712,19 @@ document.addEventListener('DOMContentLoaded', () => {
     _dndUserAction = true;
     await ipc.setConfig('doNotDisturb', isOn);
     const result = await ipc.setFocusAssist(isOn);
+    // 勿扰开启时自动关闭通知开关，关闭时自动恢复
+    const notifySw = document.getElementById('stgNotifySwitch');
+    if (notifySw) {
+      if (isOn) {
+        notifySw.classList.remove('on');
+        await ipc.setConfig('enableNotification', false);
+      } else {
+        notifySw.classList.add('on');
+        await ipc.setConfig('enableNotification', true);
+      }
+    }
     if (result && result.ok) {
-      addLogLine('INFO', `勿扰模式 → ${isOn ? '已开启（Windows 免打扰已同步）' : '已关闭'}`);
+      addLogLine('INFO', `勿扰模式 → ${isOn ? '已开启（Windows 免打扰已同步，通知已自动关闭）' : '已关闭（通知已自动恢复）'}`);
     } else {
       addLogLine('WARN', `勿扰模式 → ${isOn ? '已开启' : '已关闭'}（Windows 免打扰同步失败）`);
     }
@@ -2668,6 +2741,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (fa.enabled !== curOn) {
         if (sw) sw.classList.toggle('on', fa.enabled);
         await ipc.setConfig('doNotDisturb', fa.enabled);
+        // 同步通知开关状态
+        const notifySw = document.getElementById('stgNotifySwitch');
+        if (notifySw) {
+          if (fa.enabled) {
+            notifySw.classList.remove('on');
+            await ipc.setConfig('enableNotification', false);
+          } else {
+            notifySw.classList.add('on');
+            await ipc.setConfig('enableNotification', true);
+          }
+        }
       }
     } catch { /* ignore */ }
   }, 30000);
@@ -3295,6 +3379,516 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // ══════════════════════════════════════════════════════════════
+  //  用户认证系统
+  // ══════════════════════════════════════════════════════════════
+
+  // ── 辅助：灵动岛通知（复用已有逻辑或简易版）──────────────────
+  function showAuthNotice(msg, type = 'info') {
+    // 尝试使用已有的灵动岛
+    const island = document.getElementById('nekoIsland');
+    if (island && typeof window._showIslandNotice === 'function') {
+      window._showIslandNotice(msg, type);
+      return;
+    }
+    // 降级方案：控制台
+    addLogLine(type === 'error' ? 'ERROR' : 'INFO', msg);
+  }
+
+  // ── UI 状态更新 ────────────────────────────────────────────────
+  function updateAuthUI(isLoggedIn, user) {
+    const avatar = document.getElementById('userAvatar');
+    const nameEl = document.getElementById('dropdownUsername');
+    const roleEl = document.getElementById('dropdownRole');
+    const loginBtn = document.getElementById('btnOpenLogin');
+    const profileBtn = document.getElementById('btnProfileSettings');
+    const logoutBtn = document.getElementById('btnLogout');
+    const logoutDiv = document.getElementById('logoutDivider');
+    const settingsAvatar = document.getElementById('settingsAvatar');
+    const settingsName = document.querySelector('.settings-profile-name');
+    const settingsSub = document.querySelector('.settings-profile-sub');
+
+    if (isLoggedIn && user) {
+      const displayName = user.username || 'User';
+      const avatarUrl = user.avatar
+        ? user.avatar
+        : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=06b6d4&color=fff`;
+
+      if (avatar) avatar.src = avatarUrl;
+      if (nameEl) nameEl.textContent = displayName;
+      if (roleEl) roleEl.textContent = user.role === 'admin' ? '管理员' : '已登录';
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (profileBtn) profileBtn.style.display = '';
+      if (logoutBtn) logoutBtn.style.display = '';
+      if (logoutDiv) logoutDiv.style.display = '';
+      if (settingsAvatar) settingsAvatar.src = avatarUrl;
+      if (settingsName) settingsName.textContent = displayName;
+      if (settingsSub) settingsSub.textContent = `已登录 · ${user.role === 'admin' ? '管理员' : '普通用户'}`;
+    } else {
+      if (avatar) avatar.src = 'https://api.dicebear.com/7.x/notionists/svg?seed=Guest&backgroundColor=0f172a';
+      if (nameEl) nameEl.textContent = '未登录';
+      if (roleEl) roleEl.textContent = '设备密钥模式';
+      if (loginBtn) loginBtn.style.display = '';
+      if (profileBtn) profileBtn.style.display = 'none';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+      if (logoutDiv) logoutDiv.style.display = 'none';
+      if (settingsName) settingsName.textContent = 'Neko User';
+      if (settingsSub) settingsSub.textContent = '设备监控本地账户';
+    }
+  }
+
+  // ── 认证弹窗逻辑 ──────────────────────────────────────────────
+  const authModal = document.getElementById('authModal');
+  const authLoginView = document.getElementById('authLoginView');
+  const authRegisterView = document.getElementById('authRegisterView');
+
+  function openAuthModal(mode = 'login') {
+    if (!authModal) return;
+
+    // 检查服务器配置状态，更新警告/标识显示
+    (async () => {
+      const state = await ipc.authGetState();
+      const warningEl = document.getElementById('authServerWarning');
+      const localBadge = document.getElementById('authLocalBadge');
+      const loginBtn = document.getElementById('authLoginBtn');
+      const regBtn = document.getElementById('authRegBtn');
+
+      if (state.serverMode === 'local' && !state.serverConfigured) {
+        // 本地测试模式，未连接服务器
+        if (warningEl) warningEl.style.display = 'none';
+        if (localBadge) localBadge.style.display = '';
+        if (loginBtn) loginBtn.disabled = false;
+        if (regBtn) regBtn.disabled = false;
+      } else if (!state.serverConfigured) {
+        // 生产模式但未配置服务器
+        if (warningEl) warningEl.style.display = '';
+        if (localBadge) localBadge.style.display = 'none';
+        if (loginBtn) loginBtn.disabled = true;
+        if (regBtn) regBtn.disabled = true;
+      } else {
+        // 服务器已配置
+        if (warningEl) warningEl.style.display = 'none';
+        if (localBadge) localBadge.style.display = 'none';
+        if (loginBtn) loginBtn.disabled = false;
+        if (regBtn) regBtn.disabled = false;
+      }
+    })();
+
+    authModal.style.display = 'flex';
+    if (mode === 'register') {
+      authLoginView.style.display = 'none';
+      authRegisterView.style.display = '';
+    } else {
+      authLoginView.style.display = '';
+      authRegisterView.style.display = 'none';
+    }
+    // 清空错误和输入
+    const errLogin = document.getElementById('authLoginError');
+    const errReg = document.getElementById('authRegError');
+    if (errLogin) errLogin.style.display = 'none';
+    if (errReg) errReg.style.display = 'none';
+  }
+
+  function closeAuthModal() {
+    if (authModal) authModal.style.display = 'none';
+  }
+
+  // 关闭按钮
+  const closeAuthBtn = document.getElementById('closeAuthModal');
+  if (closeAuthBtn) closeAuthBtn.addEventListener('click', closeAuthModal);
+  // 切换到注册
+  const switchToReg = document.getElementById('switchToRegister');
+  if (switchToReg) switchToReg.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('register'); });
+  // 切换到登录
+  const switchToLog = document.getElementById('switchToLogin');
+  if (switchToLog) switchToLog.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('login'); });
+  // 点击遮罩关闭
+  if (authModal) authModal.addEventListener('click', (e) => { if (e.target === authModal) closeAuthModal(); });
+
+  // auth modal 内「去配置」按钮 → 关闭 auth modal，打开 configModal
+  const authOpenConfigBtn = document.getElementById('authOpenConfigBtn');
+  if (authOpenConfigBtn) {
+    authOpenConfigBtn.addEventListener('click', () => {
+      closeAuthModal();
+      // 标记来源，以便配置成功后重新打开 authModal
+      window._authPendingAfterConfig = true;
+      document.getElementById('stgConfigBtn')?.click();  // 触发已有的 loadConfigToModal + open modal 逻辑
+      const cm = document.getElementById('configModal');
+      if (cm) cm.classList.add('show');
+    });
+  }
+
+  // 导航栏 "登录/注册" 按钮
+  const btnOpenLogin = document.getElementById('btnOpenLogin');
+  if (btnOpenLogin) btnOpenLogin.addEventListener('click', () => openAuthModal('login'));
+
+  // ── 登录提交 ──────────────────────────────────────────────────
+  const authLoginBtn = document.getElementById('authLoginBtn');
+  if (authLoginBtn) {
+    authLoginBtn.addEventListener('click', async () => {
+      const username = document.getElementById('authLoginUsername')?.value?.trim();
+      const password = document.getElementById('authLoginPassword')?.value;
+      const errEl = document.getElementById('authLoginError');
+
+      if (!username || !password) {
+        if (errEl) { errEl.textContent = '请填写用户名和密码'; errEl.style.display = ''; }
+        return;
+      }
+
+      authLoginBtn.disabled = true;
+      authLoginBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 登录中...';
+
+      const result = await ipc.authLogin(username, password);
+
+      if (result.success) {
+        closeAuthModal();
+        updateAuthUI(true, result.user);
+        const localHint = result.isLocal ? '（本地测试模式）' : '';
+        showAuthNotice(`欢迎回来，${result.user.username}！${localHint}`, 'info');
+        // 登录后自动检查设备密钥（仅在线模式）
+        if (!result.isLocal) await autoProvisionDeviceKey();
+      } else {
+        const errMsg = result.message || '登录失败';
+        if (errEl) { errEl.textContent = errMsg; errEl.style.display = ''; }
+        addLogLine('ERROR', `登录失败: ${errMsg}`);
+      }
+
+      authLoginBtn.disabled = false;
+      authLoginBtn.innerHTML = '<i class="ph ph-sign-in"></i> 登录';
+    });
+  }
+
+  // Enter 键提交登录
+  ['authLoginUsername', 'authLoginPassword'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') authLoginBtn?.click(); });
+  });
+
+  // ── 注册提交 ──────────────────────────────────────────────────
+  const authRegBtn = document.getElementById('authRegBtn');
+  if (authRegBtn) {
+    authRegBtn.addEventListener('click', async () => {
+      const username = document.getElementById('authRegUsername')?.value?.trim();
+      const password = document.getElementById('authRegPassword')?.value;
+      const confirm = document.getElementById('authRegConfirm')?.value;
+      const errEl = document.getElementById('authRegError');
+
+      if (!username || !password) {
+        if (errEl) { errEl.textContent = '请填写用户名和密码'; errEl.style.display = ''; }
+        return;
+      }
+      if (password !== confirm) {
+        if (errEl) { errEl.textContent = '两次输入的密码不一致'; errEl.style.display = ''; }
+        return;
+      }
+
+      authRegBtn.disabled = true;
+      authRegBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 注册中...';
+
+      const result = await ipc.authRegister(username, password);
+
+      if (result.success) {
+        closeAuthModal();
+        updateAuthUI(true, result.user);
+        const localHint = result.isLocal ? '（本地测试模式）' : '';
+        showAuthNotice(`注册成功！欢迎，${result.user.username}${localHint}`, 'info');
+        // 注册后自动生成设备密钥（仅在线模式）
+        if (!result.isLocal) await autoProvisionDeviceKey();
+      } else {
+        const errMsg = result.message || '注册失败';
+        if (errEl) { errEl.textContent = errMsg; errEl.style.display = ''; }
+        addLogLine('ERROR', `注册失败: ${errMsg}`);
+      }
+
+      authRegBtn.disabled = false;
+      authRegBtn.innerHTML = '<i class="ph ph-user-plus"></i> 注册';
+    });
+  }
+
+  // Enter 键提交注册
+  ['authRegUsername', 'authRegPassword', 'authRegConfirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') authRegBtn?.click(); });
+  });
+
+  // ── 退出登录 ──────────────────────────────────────────────────
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async () => {
+      await ipc.authLogout();
+      updateAuthUI(false, null);
+      showAuthNotice('已退出登录，当前使用设备密钥模式', 'info');
+    });
+  }
+
+  // ── 自动配置设备密钥 ──────────────────────────────────────────
+  async function autoProvisionDeviceKey() {
+    // 如果已经有设备密钥直接跳过
+    const currentKey = await ipc.getConfig('deviceKey');
+    if (currentKey) return;
+
+    addLogLine('INFO', '检测到未配置设备密钥，正在自动为当前设备生成...');
+
+    const result = await ipc.authGenerateDeviceKey();
+    if (result.success && result.deviceKey) {
+      // deviceKey 已由主进程 IPC handler 自动写入 configStore
+      const keyInputEl = document.getElementById('inputDeviceKey');
+      if (keyInputEl) keyInputEl.value = result.deviceKey;
+
+      const msg = result.isExisting
+        ? `已自动恢复此设备的密钥: ${result.deviceKey}`
+        : `已自动为此设备生成新密钥: ${result.deviceKey}`;
+
+      addLogLine('INFO', msg);
+      showAuthNotice(`${msg}，已自动填入服务器配置`, 'info');
+
+      // 通知系统
+      ipc.notify('设备密钥已自动配置', msg);
+    } else {
+      addLogLine('WARN', '自动生成设备密钥失败: ' + (result.message || '未知错误'));
+    }
+  }
+
+  // ── 个人信息编辑（对接服务端同步）───────────────────────────
+  const profileModal = document.getElementById('profileModal');
+  const openProfileBtns = [
+    document.getElementById('btnProfileSettings'),
+    document.getElementById('openProfileBtnSettings'),
+  ].filter(Boolean);
+
+  openProfileBtns.forEach(btn => {
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', async () => {
+      // 先从服务端刷新用户信息
+      const state = await ipc.authGetState();
+      if (!state.isLoggedIn) {
+        showAuthNotice('请先登录后再编辑个人信息', 'info');
+        openAuthModal('login');
+        return;
+      }
+
+      const me = await ipc.authGetMe();
+      if (me.success && me.user) {
+        const u = me.user;
+        const pUsername = document.getElementById('profileUsername');
+        const pEmail = document.getElementById('profileEmail');
+        const pAvatar = document.getElementById('profileModalAvatar');
+        if (pUsername) pUsername.value = u.username || '';
+        if (pEmail) pEmail.value = u.email || '';
+        if (pAvatar && u.avatar) pAvatar.src = u.avatar;
+        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username)}&background=06b6d4&color=fff`;
+      }
+
+      if (profileModal) profileModal.classList.add('show');
+    });
+  });
+
+  // 保存个人信息
+  const saveProfileBtn = document.getElementById('saveProfileBtn');
+  if (saveProfileBtn) {
+    const clone = saveProfileBtn.cloneNode(true);
+    saveProfileBtn.parentNode.replaceChild(clone, saveProfileBtn);
+    clone.addEventListener('click', async () => {
+      const username = document.getElementById('profileUsername')?.value?.trim();
+      const email = document.getElementById('profileEmail')?.value?.trim();
+      const currentPassword = document.getElementById('profileCurrentPassword')?.value;
+      const newPassword = document.getElementById('profileNewPassword')?.value;
+
+      const data = {};
+      if (username) data.username = username;
+      if (email !== undefined) data.email = email;
+      if (currentPassword && newPassword) {
+        data.currentPassword = currentPassword;
+        data.newPassword = newPassword;
+      }
+
+      clone.disabled = true;
+      clone.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
+
+      const result = await ipc.authUpdateProfile(data);
+
+      if (result.success) {
+        showAuthNotice('个人信息已更新并同步到服务器', 'info');
+        if (result.user) updateAuthUI(true, result.user);
+        if (profileModal) profileModal.classList.remove('show');
+        // 清空密码字段
+        const cp = document.getElementById('profileCurrentPassword');
+        const np = document.getElementById('profileNewPassword');
+        if (cp) cp.value = '';
+        if (np) np.value = '';
+      } else {
+        showAuthNotice(result.message || '保存失败', 'error');
+      }
+
+      clone.disabled = false;
+      clone.innerHTML = '<i class="ph ph-check-circle"></i> 保存更改';
+    });
+  }
+
+  // ── 首次使用引导提示 ──────────────────────────────────────────
+  async function checkFirstTimeAuthPrompt() {
+    const state = await ipc.authGetState();
+    if (state.isLoggedIn) {
+      // 已登录 — 更新 UI，验证 token 有效性
+      updateAuthUI(true, state.user);
+      // 本地测试 token 无需远程验证
+      if (state.user?.id?.startsWith('local-')) return;
+      // 静默刷新用户信息
+      const me = await ipc.authGetMe();
+      if (me.success && me.user) {
+        updateAuthUI(true, me.user);
+      } else if (!me.success) {
+        // token 过期了
+        updateAuthUI(false, null);
+        showAuthNotice('登录已过期，请重新登录', 'info');
+      }
+      return;
+    }
+
+    updateAuthUI(false, null);
+
+    // 未登录且未曾关闭提示
+    if (!state.promptDismissed) {
+      const prompt = document.getElementById('firstTimeAuthPrompt');
+      const step1 = document.getElementById('firstTimeStep1');
+      const step2 = document.getElementById('firstTimeStep2');
+      if (prompt) {
+        prompt.style.display = 'flex';
+        if (state.serverConfigured) {
+          // 服务器已配置，直接展示 Step 2（登录/注册）
+          if (step1) step1.style.display = 'none';
+          if (step2) step2.style.display = '';
+        } else {
+          // 服务器未配置，展示 Step 1（配置服务器）
+          if (step1) step1.style.display = '';
+          if (step2) step2.style.display = 'none';
+          // 预填充默认服务器地址
+          const urlInput = document.getElementById('firstTimeServerUrl');
+          if (urlInput) {
+            const cfg = await ipc.getAllConfig();
+            if (cfg) {
+              urlInput.value = cfg.serverMode === 'local'
+                ? (cfg.serverUrlLocal || '')
+                : (cfg.serverUrlProd || '');
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Step 1 — "跳过" 按钮
+  const firstTimeSkipBtn = document.getElementById('firstTimeSkipBtn');
+  if (firstTimeSkipBtn) {
+    firstTimeSkipBtn.addEventListener('click', async () => {
+      await ipc.authDismissPrompt();
+      const prompt = document.getElementById('firstTimeAuthPrompt');
+      if (prompt) prompt.style.display = 'none';
+    });
+  }
+
+  // Step 1 — "测试并继续" 按钮（内嵌服务器地址测试）
+  const firstTimeTestBtn = document.getElementById('firstTimeTestBtn');
+  if (firstTimeTestBtn) {
+    firstTimeTestBtn.addEventListener('click', async () => {
+      const urlInput = document.getElementById('firstTimeServerUrl');
+      const statusEl = document.getElementById('firstTimeServerStatus');
+      const serverUrl = urlInput?.value?.trim();
+
+      if (!serverUrl) {
+        if (statusEl) {
+          statusEl.textContent = '请输入服务器地址';
+          statusEl.className = 'first-time-server-status first-time-status-error';
+        }
+        return;
+      }
+
+      firstTimeTestBtn.disabled = true;
+      firstTimeTestBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 测试中...';
+      if (statusEl) {
+        statusEl.textContent = '正在测试连接...';
+        statusEl.className = 'first-time-server-status first-time-status-testing';
+      }
+
+      try {
+        const connResult = await ipc.testConnection(serverUrl);
+
+        if (connResult.ok) {
+          // 保存到配置（与 configModal 同步）
+          const isLocal = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1');
+          const configUpdate = {
+            serverMode: isLocal ? 'local' : 'production',
+            serverConfigured: true,
+          };
+          if (isLocal) configUpdate.serverUrlLocal = serverUrl;
+          else configUpdate.serverUrlProd = serverUrl;
+          await ipc.setManyConfig(configUpdate);
+
+          if (statusEl) {
+            statusEl.textContent = `连接成功！延迟 ${connResult.latencyMs || '—'}ms`;
+            statusEl.className = 'first-time-server-status first-time-status-success';
+          }
+          addLogLine('SUCCESS', `服务器连接成功，延迟 ${connResult.latencyMs || '—'}ms`);
+
+          // 延迟后过渡到 Step 2
+          setTimeout(() => {
+            const step1 = document.getElementById('firstTimeStep1');
+            const step2 = document.getElementById('firstTimeStep2');
+            if (step1) step1.style.display = 'none';
+            if (step2) step2.style.display = '';
+          }, 800);
+        } else {
+          if (statusEl) {
+            statusEl.textContent = `连接失败: ${connResult.error || '无法连接'}`;
+            statusEl.className = 'first-time-server-status first-time-status-error';
+          }
+          addLogLine('ERROR', `服务器连接失败: ${connResult.error || '无法连接'}`);
+        }
+      } catch (e) {
+        if (statusEl) {
+          statusEl.textContent = `错误: ${e.message}`;
+          statusEl.className = 'first-time-server-status first-time-status-error';
+        }
+      }
+
+      firstTimeTestBtn.disabled = false;
+      firstTimeTestBtn.innerHTML = '<i class="ph ph-plugs"></i> 测试并继续';
+    });
+  }
+
+  // Enter 键提交服务器地址
+  const firstTimeUrlInput = document.getElementById('firstTimeServerUrl');
+  if (firstTimeUrlInput) {
+    firstTimeUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') firstTimeTestBtn?.click();
+    });
+  }
+
+  // Step 2 — "跳过" 按钮
+  const firstTimeSkipStep2Btn = document.getElementById('firstTimeSkipStep2Btn');
+  if (firstTimeSkipStep2Btn) {
+    firstTimeSkipStep2Btn.addEventListener('click', async () => {
+      await ipc.authDismissPrompt();
+      const prompt = document.getElementById('firstTimeAuthPrompt');
+      if (prompt) prompt.style.display = 'none';
+    });
+  }
+
+  // Step 2 — "登录/注册" 按钮
+  const firstTimeLoginBtn = document.getElementById('firstTimeLoginBtn');
+  if (firstTimeLoginBtn) {
+    firstTimeLoginBtn.addEventListener('click', async () => {
+      await ipc.authDismissPrompt();
+      const prompt = document.getElementById('firstTimeAuthPrompt');
+      if (prompt) prompt.style.display = 'none';
+      openAuthModal('login');
+    });
+  }
+
+  // 启动时检查认证状态
+  checkFirstTimeAuthPrompt();
 
   addLogLine('INFO', 'UI 后端连接初始化完成，等待主进程推送...');
 });

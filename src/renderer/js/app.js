@@ -635,26 +635,31 @@
             const STORAGE_KEY = 'neko_layout_config';
 
             // ============= 加载持久化布局 =============
-            function loadLayoutConfig() {
-                const savedConfig = localStorage.getItem(STORAGE_KEY);
-                if (savedConfig) {
-                    try {
-                        const layout = JSON.parse(savedConfig);
-                        layout.forEach(item => {
-                            const card = document.getElementById(item.id);
-                            const targetSection = document.querySelector(`.dashboard-section[data-section="${item.section}"]`);
-                            if (card && targetSection) {
-                                // 还原宽和高
-                                card.setAttribute('data-w', item.w);
-                                card.setAttribute('data-h', item.h);
-                                card.style.gridColumn = `span ${item.w}`;
-                                card.style.gridRow = `span ${item.h}`;
-                                // 还原层级流排序
-                                targetSection.appendChild(card);
-                            }
-                        });
-                    } catch (e) { console.error('加载防抖布局失败', e); }
+            function loadLayoutConfig(layoutData) {
+                // 优先使用传入的 layoutData（来自 configStore），否则回退 localStorage
+                let layout = layoutData;
+                if (!layout) {
+                    const savedConfig = localStorage.getItem(STORAGE_KEY);
+                    if (savedConfig) {
+                        try { layout = JSON.parse(savedConfig); } catch (e) { console.error('加载布局失败', e); }
+                    }
                 }
+                if (!layout || !Array.isArray(layout)) return;
+                try {
+                    layout.forEach(item => {
+                        const card = document.getElementById(item.id);
+                        const targetSection = document.querySelector(`.dashboard-section[data-section="${item.section}"]`);
+                        if (card && targetSection) {
+                            card.setAttribute('data-w', item.w);
+                            card.setAttribute('data-h', item.h);
+                            card.style.gridColumn = `span ${item.w}`;
+                            card.style.gridRow = `span ${item.h}`;
+                            targetSection.appendChild(card);
+                        }
+                    });
+                    // 同步回 localStorage 作为快速缓存
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+                } catch (e) { console.error('加载布局失败', e); }
             }
             // 自动加载上次保存的配置
             loadLayoutConfig();
@@ -694,6 +699,7 @@
             restoreDefaultBtn.addEventListener('click', () => {
                 if (confirm('确定要放弃所有的布局修改并恢复出厂默认布局吗？')) {
                     localStorage.removeItem(STORAGE_KEY);
+                    if (window.nekoIPC) window.nekoIPC.setConfig('dashboardLayout', null);
                     window.location.reload();
                 }
             });
@@ -721,6 +727,8 @@
                 
                 setTimeout(() => {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+                    // 同时持久化到 configStore（跨会话可靠存储）
+                    if (window.nekoIPC) window.nekoIPC.setConfig('dashboardLayout', layout);
                     btn.innerHTML = '<i class="ph ph-check"></i> 保存成功';
                     setTimeout(() => {
                         toggleEditMode(false);
@@ -1169,6 +1177,8 @@
                 document.getElementById('stgCustomColorApply')?.addEventListener('click', () => {
                     const c = customColorInput.value;
                     applyThemeColor(c);
+                    // 额外持久化自定义色（切换预设色时不会丢失）
+                    if (window.nekoIPC) window.nekoIPC.setConfig('customSeedColor', c);
                     if (customColorRow) customColorRow.style.display = 'none';
                 });
             }

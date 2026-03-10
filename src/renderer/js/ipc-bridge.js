@@ -51,6 +51,16 @@ const nekoIPC = {
   // ── 设备验证 ───────────────────────────────────────────────────────────
   validateKey: () => ipcRenderer.invoke('api:validateKey'),
 
+  // ── 用户认证 ─────────────────────────────────────────────────────────
+  authLogin: (username, password) => ipcRenderer.invoke('auth:login', { username, password }),
+  authRegister: (username, password) => ipcRenderer.invoke('auth:register', { username, password }),
+  authGetMe: () => ipcRenderer.invoke('auth:me'),
+  authUpdateProfile: (data) => ipcRenderer.invoke('auth:updateProfile', data),
+  authLogout: () => ipcRenderer.invoke('auth:logout'),
+  authGenerateDeviceKey: () => ipcRenderer.invoke('auth:generateDeviceKey'),
+  authGetState: () => ipcRenderer.invoke('auth:getState'),
+  authDismissPrompt: () => ipcRenderer.invoke('auth:dismissPrompt'),
+
   // ── 更新 ─────────────────────────────────────────────────────────────
   checkUpdate:      () => ipcRenderer.invoke('update:check'),
   getChangelog:     () => ipcRenderer.invoke('update:getChangelog'),

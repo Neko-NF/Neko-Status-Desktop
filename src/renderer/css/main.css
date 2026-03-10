@@ -2682,6 +2682,8 @@
     text-transform: uppercase; letter-spacing: 0.04em;
 }
 .update-channel-badge.stable { background: color-mix(in srgb, var(--theme-color) 18%, transparent); color: var(--theme-color); border: 1px solid color-mix(in srgb, var(--theme-color) 30%, transparent); }
+.update-channel-badge.beta { background: rgba(251, 191, 36, 0.15); color: #d97706; border: 1px solid rgba(251, 191, 36, 0.35); }
+.update-channel-badge.nightly { background: rgba(168, 85, 247, 0.15); color: #9333ea; border: 1px solid rgba(168, 85, 247, 0.35); }
 .update-integrity-label { font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
 .update-integrity-label i { color: var(--theme-color); font-size: 16px; }
 .update-ver-display { display: flex; align-items: baseline; gap: 10px; }
@@ -3085,3 +3087,271 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 .about-footer-meta { display: flex; gap: 20px; flex-wrap: wrap; }
 .about-footer-item { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; }
 .about-footer-item i { color: var(--theme-color); font-size: 14px; }
+
+/* ========== 认证弹窗 ========== */
+.auth-modal-container {
+    background: var(--dropdown-bg);
+    backdrop-filter: var(--dock-blur);
+    border: var(--dock-border);
+    color: var(--text-main);
+    width: 380px;
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    padding: 32px;
+    position: relative;
+    animation: authSlideIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes authSlideIn { from { opacity: 0; transform: translateY(24px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+.auth-modal-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+.auth-modal-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 10px 0 4px;
+    color: var(--text-main);
+}
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.auth-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.auth-form-group label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.auth-form-group input {
+    background: var(--glass-bg);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 11px 14px;
+    color: var(--text-main);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    width: 100%;
+    box-sizing: border-box;
+}
+.auth-form-group input:focus {
+    border-color: var(--theme-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-color) 15%, transparent);
+}
+.auth-form-group input::placeholder { color: var(--text-muted, rgba(255,255,255,0.3)); }
+
+.auth-error {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: var(--error-coral, #ff6b6b);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.auth-submit-btn {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 500;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+.auth-switch {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.auth-switch a {
+    color: var(--theme-color);
+    text-decoration: none;
+    font-weight: 500;
+    cursor: pointer;
+}
+.auth-switch a:hover {
+    text-decoration: underline;
+}
+
+/* ========== 首次引导弹窗 ========== */
+.first-time-container {
+    max-width: 460px;
+    text-align: center;
+    padding: 36px;
+}
+.first-time-icon-wrap {
+    margin-bottom: 20px;
+}
+.first-time-icon {
+    font-size: 56px;
+    color: var(--theme-color);
+}
+.first-time-title {
+    margin-bottom: 8px;
+    font-size: 18px;
+    font-weight: var(--fw-semibold);
+    color: var(--text-main);
+}
+.first-time-desc {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+    margin-bottom: 24px;
+}
+.first-time-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+.first-time-btn {
+    padding: 10px 24px;
+}
+
+/* 首次引导 — 内嵌服务器地址表单 */
+.first-time-server-form {
+    text-align: left;
+    margin-bottom: 24px;
+}
+.first-time-server-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+.first-time-server-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--glass-bg);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 11px 14px;
+    color: var(--text-main);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.first-time-server-input:focus {
+    border-color: var(--theme-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-color) 15%, transparent);
+}
+.first-time-server-input::placeholder {
+    color: var(--text-muted, rgba(255,255,255,0.3));
+}
+.first-time-server-status {
+    font-size: 12px;
+    margin-top: 8px;
+    min-height: 18px;
+}
+.first-time-status-testing {
+    color: var(--text-secondary);
+}
+.first-time-status-success {
+    color: var(--success-green, #22c55e);
+}
+.first-time-status-error {
+    color: var(--error-coral, #ff6b6b);
+}
+
+/* 认证弹窗头部图标和副标题 */
+.auth-header-icon {
+    font-size: 36px;
+    color: var(--theme-color);
+}
+.auth-header-subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* 配置弹窗密钥提示 */
+.config-key-hint {
+    margin-top: 6px;
+    font-size: 12px;
+}
+.config-key-hint > i {
+    color: var(--theme-color);
+}
+
+#firstTimeAuthPrompt .first-time-container {
+    animation: authSlideIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 认证弹窗显示状态（使用 display:flex 控制，而非 .show 类） */
+#authModal, #firstTimeAuthPrompt {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* 服务器未配置警告横幅 */
+.auth-server-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: var(--text-main);
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    margin-bottom: 16px;
+    line-height: 1.4;
+}
+.auth-server-warning > i {
+    font-size: 18px;
+    color: #f59e0b;
+    flex-shrink: 0;
+}
+.auth-config-link {
+    margin-left: auto;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #f59e0b;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s;
+}
+.auth-config-link:hover {
+    background: rgba(245, 158, 11, 0.25);
+}
+
+/* 本地测试模式标识 */
+.auth-local-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    color: var(--theme-color);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    margin-bottom: 16px;
+}
+.auth-local-badge > i {
+    font-size: 16px;
+}
+
+/* 个人信息同步提示 */
+.profile-sync-hint {
+    margin-right: auto;
+}

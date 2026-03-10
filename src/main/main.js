@@ -8,7 +8,10 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 // ─── 热重载（仅开发环境）────────────────────────────────────────────
-try { require('electron-reload')(__dirname); } catch (_) {}
+if (!app.isPackaged) { try { require('electron-reload')(__dirname); } catch (_) {} }
+
+// ─── Windows 通知通道身份标识（必须在 app.whenReady 前设置）─────────
+app.setAppUserModelId('com.neko.neko-status');
 
 // ─── 核心服务 ────────────────────────────────────────────────────────
 const configStore   = require('./config-store');
@@ -100,7 +103,10 @@ function createWindow() {
     if (isQuitting) return;
 
     const action = configStore.get('closeAction');
-    if (action === 'exit') return; // 允许直接退出
+    if (action === 'exit') {
+      isQuitting = true;
+      return; // 允许关闭→window-all-closed 会调用 app.quit()
+    }
 
     e.preventDefault();
 
@@ -158,7 +164,17 @@ function createTray() {
 }
 
 function showWindow() {
-  if (!mainWindow) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    // 用户主动触发，确保窗口可见（覆盖 isAutoStart 门控）
+    if (mainWindow) {
+      mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+        mainWindow.focus();
+      });
+    }
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -213,7 +229,13 @@ function pushInitialState() {
 function showNotification(title, body) {
   if (!configStore.get('enableNotification')) return;
   if (configStore.get('doNotDisturb')) return;
-  new Notification({ title: title || APP_NAME, body }).show();
+  const notification = new Notification({
+    title: title || APP_NAME,
+    body,
+    silent: false,
+    toastXml: undefined, // 使用 Windows 原生通知通道
+  });
+  notification.show();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -448,6 +470,161 @@ function setupIPC() {
 
   // ── 更新检查与通道管理 ────────────────────────────────────────────────
   ipcMain.handle('update:check',      () => checkForUpdates());
+
+  // ── 用户认证 ──────────────────────────────────────────────────────────
+
+  // 本地测试认证辅助函数
+  function _localLogin(username, password) {
+    const accounts = configStore.get('localTestAccounts') || [];
+    const found = accounts.find(a => a.username === username && a.password === password);
+    if (!found) return { success: false, message: '用户名或密码错误（本地测试模式）' };
+    const user = { id: 'local-' + username, username, email: '', avatar: '', role: 'user' };
+    configStore.setMany({ authToken: 'local-test-token', authUser: user });
+    return { success: true, token: 'local-test-token', user, isLocal: true };
+  }
+  function _localRegister(username, password) {
+    const accounts = configStore.get('localTestAccounts') || [];
+    if (accounts.some(a => a.username === username)) {
+      return { success: false, message: '用户名已存在（本地测试模式）' };
+    }
+    accounts.push({ username, password, createdAt: new Date().toISOString() });
+    configStore.set('localTestAccounts', accounts);
+    const user = { id: 'local-' + username, username, email: '', avatar: '', role: 'user' };
+    configStore.setMany({ authToken: 'local-test-token', authUser: user });
+    return { success: true, token: 'local-test-token', user, isLocal: true };
+  }
+
+  ipcMain.handle('auth:login', async (_, { username, password }) => {
+    const serverMode = configStore.get('serverMode');
+    const serverConfigured = configStore.get('serverConfigured');
+    // 本地测试模式：服务器未配置时使用本地账户
+    if (serverMode === 'local' && !serverConfigured) {
+      return _localLogin(username, password);
+    }
+    try {
+      const result = await apiService.authLogin(username, password);
+      if (result.success && result.token) {
+        configStore.setMany({ authToken: result.token, authUser: result.user });
+      }
+      return result;
+    } catch (err) {
+      console.error('[Auth] 登录请求失败:', err.message);
+      // 本地模式下服务器不可用时回退到本地认证
+      if (serverMode === 'local') {
+        return _localLogin(username, password);
+      }
+      // 网络错误给出友好提示
+      const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|abort/i.test(err.message);
+      const friendlyMsg = isNetworkError
+        ? `无法连接到服务器 (${configStore.getServerUrl()})，请检查网络或服务器地址配置`
+        : (err.message || '登录失败');
+      return { success: false, message: friendlyMsg };
+    }
+  });
+
+  ipcMain.handle('auth:register', async (_, { username, password }) => {
+    const serverMode = configStore.get('serverMode');
+    const serverConfigured = configStore.get('serverConfigured');
+    if (serverMode === 'local' && !serverConfigured) {
+      return _localRegister(username, password);
+    }
+    try {
+      const result = await apiService.authRegister(username, password);
+      if (result.success && result.token) {
+        configStore.setMany({ authToken: result.token, authUser: result.user });
+      }
+      return result;
+    } catch (err) {
+      console.error('[Auth] 注册请求失败:', err.message);
+      if (serverMode === 'local') {
+        return _localRegister(username, password);
+      }
+      const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|abort/i.test(err.message);
+      const friendlyMsg = isNetworkError
+        ? `无法连接到服务器 (${configStore.getServerUrl()})，请检查网络或服务器地址配置`
+        : (err.message || '注册失败');
+      return { success: false, message: friendlyMsg };
+    }
+  });
+
+  ipcMain.handle('auth:me', async () => {
+    const token = configStore.get('authToken');
+    if (!token) return { success: false, message: '未登录' };
+    try {
+      const result = await apiService.authGetMe(token);
+      if (result.success && result.user) {
+        configStore.set('authUser', result.user);
+      }
+      return result;
+    } catch (err) {
+      // token 过期则清除本地认证状态
+      if (err.status === 401) {
+        configStore.setMany({ authToken: '', authUser: null });
+      }
+      return { success: false, message: err.message };
+    }
+  });
+
+  ipcMain.handle('auth:updateProfile', async (_, data) => {
+    const token = configStore.get('authToken');
+    if (!token) return { success: false, message: '未登录' };
+    try {
+      const result = await apiService.authUpdateProfile(token, data);
+      if (result.success && result.user) {
+        configStore.set('authUser', result.user);
+      }
+      return result;
+    } catch (err) {
+      if (err.status === 401) {
+        configStore.setMany({ authToken: '', authUser: null });
+      }
+      return { success: false, message: err.message };
+    }
+  });
+
+  ipcMain.handle('auth:logout', () => {
+    configStore.setMany({ authToken: '', authUser: null });
+    return { success: true };
+  });
+
+  ipcMain.handle('auth:generateDeviceKey', async () => {
+    const token = configStore.get('authToken');
+    if (!token) return { success: false, message: '未登录' };
+    try {
+      const fingerprint = statusService.getDeviceFingerprint
+        ? statusService.getDeviceFingerprint()
+        : Buffer.from(`${os.hostname()}-${os.platform()}-${os.arch()}`).toString('base64');
+      const result = await apiService.authGenerateDeviceKey(token, {
+        deviceName: os.hostname(),
+        platform: 'Windows',
+        deviceFingerprint: fingerprint,
+      });
+      if (result.success && result.deviceKey) {
+        configStore.setMany({ deviceKey: result.deviceKey, deviceId: result.deviceId });
+      }
+      return result;
+    } catch (err) {
+      if (err.status === 401) {
+        configStore.setMany({ authToken: '', authUser: null });
+      }
+      return { success: false, message: err.message };
+    }
+  });
+
+  ipcMain.handle('auth:getState', () => {
+    return {
+      isLoggedIn: !!configStore.get('authToken'),
+      user: configStore.get('authUser'),
+      promptDismissed: configStore.get('authPromptDismissed'),
+      serverConfigured: configStore.get('serverConfigured'),
+      serverMode: configStore.get('serverMode'),
+    };
+  });
+
+  ipcMain.handle('auth:dismissPrompt', () => {
+    configStore.set('authPromptDismissed', true);
+    return true;
+  });
   ipcMain.handle('update:getChannel', () => configStore.get('updateChannel') || 'stable');
   ipcMain.handle('update:setChannel', (_, channel) => {
     if (!['stable', 'beta', 'nightly'].includes(channel)) return false;
@@ -562,16 +739,29 @@ function setupIPC() {
     if (process.platform !== 'win32') return { ok: false, enabled: false, reason: 'not-windows' };
     try {
       const { execSync } = require('child_process');
-      const out = execSync(
-        `reg query "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK`,
-        { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      );
-      // REG_DWORD 0x0 = toasts blocked = Focus Assist ON
-      const match = out.match(/0x([0-9a-fA-F]+)/);
-      const val = match ? parseInt(match[1], 16) : 1;
-      return { ok: true, enabled: val === 0 };
+      // Windows 11 使用 NOC_GLOBAL_SETTING_TOASTS_ENABLED (0=DND开, 1=DND关)
+      // Windows 10 使用 NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK
+      let dndEnabled = false;
+      try {
+        const out1 = execSync(
+          `reg query "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_TOASTS_ENABLED`,
+          { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        const m1 = out1.match(/0x([0-9a-fA-F]+)/);
+        if (m1) dndEnabled = parseInt(m1[1], 16) === 0;
+      } catch {
+        // fallback: Windows 10 key
+        try {
+          const out2 = execSync(
+            `reg query "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK`,
+            { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+          );
+          const m2 = out2.match(/0x([0-9a-fA-F]+)/);
+          if (m2) dndEnabled = parseInt(m2[1], 16) === 0;
+        } catch { /* 键不存在 = DND 关闭 */ }
+      }
+      return { ok: true, enabled: dndEnabled };
     } catch {
-      // 键不存在 → 免打扰未开启
       return { ok: true, enabled: false };
     }
   });
@@ -580,18 +770,27 @@ function setupIPC() {
     if (process.platform !== 'win32') return { ok: false, reason: 'not-windows' };
     try {
       const { execSync } = require('child_process');
-      execSync(
-        `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
-        { windowsHide: true }
-      );
-      execSync(
-        `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
-        { windowsHide: true }
-      );
-      log.info(`[FocusAssist] ${enabled ? '已开启' : '已关闭'}`);
+      // 写入 Windows 11 + Windows 10 两个键以最大兼容
+      try {
+        execSync(
+          `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_TOASTS_ENABLED /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
+          { windowsHide: true }
+        );
+      } catch { /* Win10 可能无此键 */ }
+      try {
+        execSync(
+          `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
+          { windowsHide: true }
+        );
+        execSync(
+          `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
+          { windowsHide: true }
+        );
+      } catch { /* ignore */ }
+      console.log(`[FocusAssist] ${enabled ? '已开启' : '已关闭'}`);
       return { ok: true };
     } catch (err) {
-      log.warn('[FocusAssist] 设置失败:', err.message);
+      console.warn('[FocusAssist] 设置失败:', err.message);
       return { ok: false, reason: err.message };
     }
   });
@@ -966,7 +1165,7 @@ app.whenReady().then(async () => {
     }, 30000);
   }
 
-  // 启动时始终检查更新（不受「自动下载」开关影响）
+  // 启动时始终检查更新（不受「自动下载」开关影响）— 延迟 15s 避免影响首屏加载
   setTimeout(async () => {
     try {
       const result = await checkForUpdates();
@@ -975,7 +1174,7 @@ app.whenReady().then(async () => {
         console.log(`[Main] 发现新版本 v${result.latestVersion}`);
       }
     } catch { /* 更新检查失败静默处理 */ }
-  }, 5000);
+  }, 15000);
 
   // 长期运行时每 30 分钟轮询一次更新
   setInterval(async () => {
@@ -988,24 +1187,29 @@ app.whenReady().then(async () => {
     } catch { /* 定期更新检查失败静默处理 */ }
   }, 30 * 60 * 1000);
 
-  // 定期采集系统指标（10s 一次），推送到渲染进程并存入历史
-  setInterval(async () => {
-    try {
-      const m = await systemUtils.getSystemMetrics();
-      m.timestamp = Date.now();
-      metricsHistory.push(m);
-      if (metricsHistory.length > MAX_METRICS_HISTORY) metricsHistory.shift();
-      sendToRenderer('system:metricsUpdate', m);
-    } catch { /* 指标采集失败静默处理 */ }
-  }, 10000);
+  // 定期采集系统指标（5s 一次，配合 1m 区间每 5s 刷新），延迟首次采集等窗口渲染完成
+  setTimeout(() => {
+    setInterval(async () => {
+      try {
+        const m = await systemUtils.getSystemMetrics();
+        m.timestamp = Date.now();
+        metricsHistory.push(m);
+        if (metricsHistory.length > MAX_METRICS_HISTORY) metricsHistory.shift();
+        sendToRenderer('system:metricsUpdate', m);
+      } catch { /* 指标采集失败静默处理 */ }
+    }, 5000);
+  }, 3000);
 });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// Windows/Linux: 关闭所有窗口后保持进程存活（已最小化到托盘）
-app.on('window-all-closed', () => { /* 不退出 */ });
+// Windows/Linux: 关闭所有窗口后处理
+app.on('window-all-closed', () => {
+  // 明确退出时结束进程，否则保持托盘驻留
+  if (isQuitting) app.quit();
+});
 
 app.on('before-quit', () => {
   isQuitting = true;
