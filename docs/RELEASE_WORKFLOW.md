@@ -18,8 +18,9 @@
 6. [CI/CD 自动发布](#6-cicd-自动发布)
 7. [Release Body 与更新日志规范](#7-release-body-与更新日志规范)
 8. [打包产物说明](#8-打包产物说明)
-9. [用户视角：自动更新流程](#9-用户视角自动更新流程)
-10. [FAQ 故障排查](#10-faq-故障排查)
+9. [本地归档规范](#9-本地归档规范)
+10. [用户视角：自动更新流程](#10-用户视角自动更新流程)
+11. [FAQ 故障排查](#11-faq-故障排查)
 
 ---
 
@@ -254,7 +255,60 @@ Neko Status v1.1.0-beta.1   # Beta
 
 ---
 
-## 9. 用户视角：自动更新流程
+## 9. 本地归档规范
+
+每次发版构建完成后，将产物归档到本地 `releases/` 目录，便于回溯和离线分发。
+
+### 目录结构
+
+```
+releases/
+├── v1.0.0-beta.1/
+│   ├── NekoStatus-Setup-1.0.0-beta.1.exe
+│   ├── NekoStatus-1.0.0-beta.1-win.zip
+│   └── SHA256SUMS.txt
+├── v1.0.0-beta.2/
+│   ├── NekoStatus-Setup-1.0.0-beta.2.exe
+│   ├── NekoStatus-1.0.0-beta.2-win.zip
+│   └── SHA256SUMS.txt
+└── v1.1.0/
+    └── ...
+```
+
+### 归档命令
+
+每次 `npm run build` 完成后执行：
+
+```powershell
+$version = (Get-Content package.json | ConvertFrom-Json).version
+$dir = "releases\v$version"
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+# 复制产物
+Copy-Item "dist\NekoStatus-Setup-$version.exe" $dir
+Copy-Item "dist\NekoStatus-$version-win.zip" $dir
+
+# 生成 SHA256
+$files = @("NekoStatus-Setup-$version.exe", "NekoStatus-$version-win.zip")
+$lines = foreach ($f in $files) {
+    $h = (Get-FileHash "$dir\$f" -Algorithm SHA256).Hash
+    "$h  $f"
+}
+$lines | Out-File -FilePath "$dir\SHA256SUMS.txt" -Encoding ascii
+
+Write-Host "已归档到 $dir"
+```
+
+### 注意事项
+
+- `releases/` 已加入 `.gitignore`，**不会被推送到 GitHub**
+- 每个版本独立子目录，目录名与 Tag 一致（`v{version}`）
+- 归档仅用于本地备份；GitHub Release 上的产物由 CI 自动上传
+- 旧版本按需保留或清理，建议至少保留最近 3 个版本
+
+---
+
+## 10. 用户视角：自动更新流程
 
 ### 设置页配置项
 
@@ -275,7 +329,7 @@ Neko Status v1.1.0-beta.1   # Beta
 
 ---
 
-## 10. FAQ 故障排查
+## 11. FAQ 故障排查
 
 ### Q: `npm run build` 报错 "Cannot find icon"
 
