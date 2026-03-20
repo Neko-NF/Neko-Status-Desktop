@@ -67,8 +67,50 @@ jobs:
             echo "IS_PRERELEASE=false" >> $env:GITHUB_ENV
           }
 
-      # ── 7. 创建 GitHub Release 并上传产物 ──────────────────────────
-      - name: 创建 GitHub Release
+      # ── 7. 读取 release_notes.txt（若存在）并构建 Release Body ──────
+      - name: 构建 Release Body
+        id: release_body
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          $hasCustomNotes = $false
+          $body = ""
+
+          # 优先使用项目根目录的 release_notes.txt 作为更新日志
+          if (Test-Path "release_notes.txt") {
+            $notes = Get-Content "release_notes.txt" -Raw -Encoding utf8
+            if ($notes.Trim()) {
+              $body = $notes.TrimEnd()
+              $hasCustomNotes = $true
+            }
+          }
+
+          # 将结果写入文件
+          if ($hasCustomNotes) {
+            $bodyFile = "release_body.md"
+            [System.IO.File]::WriteAllText($bodyFile, $body, [System.Text.Encoding]::UTF8)
+            echo "HAS_CUSTOM_NOTES=true" >> $env:GITHUB_ENV
+            echo "BODY_FILE=$bodyFile" >> $env:GITHUB_ENV
+          } else {
+            echo "HAS_CUSTOM_NOTES=false" >> $env:GITHUB_ENV
+          }
+
+      # ── 8a. 创建 Release（有自定义 release_notes.txt 时） ──────────
+      - name: 创建 GitHub Release（自定义日志）
+        if: env.HAS_CUSTOM_NOTES == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Neko Status ${{ github.ref_name }}"
+          prerelease: ${{ env.IS_PRERELEASE }}
+          body_path: ${{ env.BODY_FILE }}
+          files: |
+            dist/NekoStatus-Setup-${{ env.VERSION }}.exe
+            dist/NekoStatus-${{ env.VERSION }}-win.zip
+            dist/SHA256SUMS.txt
+
+      # ── 8b. 创建 Release（无自定义日志时，使用自动生成） ─────────────
+      - name: 创建 GitHub Release（自动生成日志）
+        if: env.HAS_CUSTOM_NOTES == 'false'
         uses: softprops/action-gh-release@v2
         with:
           name: "Neko Status ${{ github.ref_name }}"
@@ -78,22 +120,6 @@ jobs:
             dist/NekoStatus-Setup-${{ env.VERSION }}.exe
             dist/NekoStatus-${{ env.VERSION }}-win.zip
             dist/SHA256SUMS.txt
-          body: |
-            ## Neko Status ${{ github.ref_name }}
-
-            ### 安装说明
-
-            - **推荐**：下载 `NekoStatus-Setup-${{ env.VERSION }}.exe` 双击安装
-            - **覆盖更新**：下载 `NekoStatus-${{ env.VERSION }}-win.zip` 解压覆盖安装目录
-
-            ### 文件完整性
-
-            校验文件 `SHA256SUMS.txt` 已随 Release 上传，可使用以下命令验证：
-
-            ```powershell
-            # PowerShell 验证安装包
-            (Get-FileHash "NekoStatus-Setup-${{ env.VERSION }}.exe" -Algorithm SHA256).Hash
-            ```
 
   # ── Nightly 定时构建（每天 UTC 02:00） ──────────────────────────────
   nightly-build:

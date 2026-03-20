@@ -50,6 +50,7 @@ const nekoIPC = {
 
   // ── 设备验证 ───────────────────────────────────────────────────────────
   validateKey: () => ipcRenderer.invoke('api:validateKey'),
+  preValidateKey: (key, serverUrl) => ipcRenderer.invoke('api:preValidateKey', key, serverUrl),
 
   // ── 用户认证 ─────────────────────────────────────────────────────────
   authLogin: (username, password) => ipcRenderer.invoke('auth:login', { username, password }),

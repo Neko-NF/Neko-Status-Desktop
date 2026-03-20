@@ -6,8 +6,8 @@
     <title>Neko Status - 仪表盘</title>
     <!-- 主题初始化脚本 (前置执行，防止刷新闪烁) -->
     
-    <!-- 引入 Phosphor Icons 以呈现干净的线性图标 -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- 引入 Phosphor Icons（本地加载，确保离线/弱网下图标正常显示） -->
+    <link rel="stylesheet" href="../../node_modules/@phosphor-icons/web/src/regular/style.css">
     <link rel="stylesheet" href="./css/main.css">
 </head>
 <body>
@@ -1782,6 +1782,51 @@
                         <i class="ph ph-sign-in"></i> 登录 / 注册
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 密钥接管警告弹窗 ========== -->
+    <div class="modal-overlay takeover-overlay" id="takeoverWarningModal">
+        <div class="auth-modal-container takeover-container">
+            <button class="close-profile-btn" id="takeoverWarningCloseBtn"><i class="ph ph-x"></i></button>
+            <div class="takeover-header">
+                <i class="ph ph-warning-circle takeover-icon danger" id="takeoverWarningIcon"></i>
+                <h3 id="takeoverWarningTitle">密钥安全警告</h3>
+                <p id="takeoverWarningDesc">检测到密钥安全事件，请确认以下信息。</p>
+            </div>
+            <div class="takeover-detail-box danger" id="takeoverDetailBox">
+                <!-- 动态填充详情 -->
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn" id="takeoverWarningDismissBtn">我知道了</button>
+                <button class="action-btn danger" id="takeoverWarningActionBtn" style="display: none;">
+                    <i class="ph ph-gear"></i> 重新配置密钥
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 密钥接管确认弹窗 (保存密钥时前置确认) ========== -->
+    <div class="modal-overlay takeover-overlay" id="takeoverConfirmModal">
+        <div class="auth-modal-container takeover-container">
+            <button class="close-profile-btn" id="takeoverConfirmCloseBtn"><i class="ph ph-x"></i></button>
+            <div class="takeover-header">
+                <i class="ph ph-swap takeover-icon warn"></i>
+                <h3>密钥变更确认</h3>
+                <p id="takeoverConfirmDesc">
+                    您即将更改设备密钥。如果该密钥已绑定到其他设备，<strong class="text-danger">该设备的上报数据将被清除</strong>。
+                </p>
+            </div>
+            <div class="takeover-detail-box warn">
+                <i class="ph ph-info"></i>
+                如果此密钥是您之前在本机使用的，且您只是在本地删除后重新填入，可以安全继续。否则请确认您了解数据清除的风险。
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn" id="takeoverConfirmCancelBtn">取消</button>
+                <button class="action-btn warning" id="takeoverConfirmOkBtn">
+                    <i class="ph ph-swap"></i> 确认更改
+                </button>
             </div>
         </div>
     </div>

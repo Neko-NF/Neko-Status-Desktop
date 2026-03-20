@@ -206,7 +206,16 @@ git push origin "v1.2.0-nightly.$date"
 
 应用的"更新中心 → 更新日志"从 GitHub Releases API 拉取最近 6 个版本，提取 `tag_name`、`published_at`、`body`、`prerelease` 渲染为时间线。
 
-### Release Body 推荐格式
+**⚠️ 重要**：Release Body 的内容会直接显示为客户端内的更新日志。**不要**在 Body 中放入安装说明、SHA256 校验命令等非更新内容。
+
+### release_notes.txt 工作流
+
+CI 自动构建时的更新日志来源（按优先级）：
+
+1. **`release_notes.txt`（推荐）**：项目根目录下的文本文件，CI 检测到后直接用作 Release Body
+2. **自动生成**：若 `release_notes.txt` 不存在或为空，CI 使用 `generate_release_notes: true` 从 PR / 提交记录自动生成
+
+**发版前必做**：编辑 `release_notes.txt`，写入本次发版的实际更新内容：
 
 ```markdown
 ## 新功能
@@ -223,13 +232,15 @@ git push origin "v1.2.0-nightly.$date"
 - 性能优化项目
 ```
 
-规则：
+**发版后可选**：清空或更新 `release_notes.txt` 为下一版本做准备。
+
+### 格式规则
 
 - 使用 `## 标题` 分节，客户端原样展示
+- 每个功能/修复一行，以 `- ` 开头
 - 避免嵌套列表或大段代码块
 - 留空时客户端显示"暂无更新说明"
-
-> CI 默认启用 `generate_release_notes: true`，会自动生成 changelog。如需自定义，在 GitHub Release 页面手动编辑 Body 即可。
+- **禁止**在更新日志中写安装说明或 SHA256 校验信息（安装说明由 CI 折叠到 `<details>` 中或省略）
 
 ### Release 标题格式（CI 自动生成）
 

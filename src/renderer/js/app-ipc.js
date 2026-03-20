@@ -719,6 +719,43 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // ── 密钥变更安全检查：如果新密钥不同于当前密钥，预验证是否会触发接管 ──
+      const oldKey = await ipc.getConfig('deviceKey');
+      if (deviceKey && deviceKey !== oldKey) {
+        saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 验证密钥中...';
+        addLogLine('INFO', '检测到密钥变更，正在预验证...');
+
+        let validationResult;
+        try {
+          // 使用预验证（不发送指纹），服务器会返回 warning 而非 403
+          // 设定 5 秒竞赛超时，避免预验证阻塞保存流程
+          validationResult = await Promise.race([
+            ipc.preValidateKey(deviceKey, serverUrl),
+            new Promise(resolve => setTimeout(() => resolve(null), 5000)),
+          ]);
+        } catch (preErr) {
+          addLogLine('WARN', `密钥预验证失败: ${preErr.message || '未知错误'}，继续保存`);
+          validationResult = null;
+        }
+
+        // 密钥已绑定到其他设备 → 弹出确认框
+        if (validationResult && validationResult.warning === 'KEY_BOUND_TO_OTHER_DEVICE') {
+          saveBtn.innerHTML = originalHtml;
+          saveBtn.disabled = false;
+          const userConfirmed = await showTakeoverConfirmDialog();
+          if (!userConfirmed) {
+            addLogLine('INFO', '用户取消了密钥变更');
+            return;
+          }
+          addLogLine('WARN', '用户确认接管密钥，继续保存');
+          saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
+          saveBtn.disabled = true;
+        } else {
+          // 预验证通过或跳过，继续保存
+          saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
+        }
+      }
+
       // 判断是本地还是生产模式
       const isLocal = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1');
       const configUpdate = {
@@ -2532,22 +2569,90 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 密钥状态事件（密钥失效/设备删除/接管）
+  // 密钥状态事件（密钥失效/设备删除/接管）— 弹出醒目警告弹窗
   ipc.on('service:keyStatus', (data) => {
     const { code, message } = data;
     if (code === 'KEY_REVOKED') {
       addLogLine('ERROR', `密钥已被撤销: ${message}`);
       addDiagnosticEntry('认证系统', 'error', `密钥已被撤销: ${message}`);
       applyServiceState(false);
+      showTakeoverWarning('密钥已被撤销', '当前设备密钥已被服务器撤销，上报服务已自动停止。可能原因：密钥在网页端被手动删除，或被其他设备接管。', message, true);
     } else if (code === 'DEVICE_NOT_FOUND') {
       addLogLine('ERROR', `设备已被删除: ${message}`);
       addDiagnosticEntry('认证系统', 'error', `设备已被删除: ${message}`);
       applyServiceState(false);
+      showTakeoverWarning('设备已从服务器删除', '该设备已被从服务器端移除，上报服务已自动停止。请重新配置密钥或登录账号重新生成。', message, true);
     } else if (code === 'TAKEOVER_SUCCESS') {
       addLogLine('WARN', `设备接管: ${message}`);
       addDiagnosticEntry('认证系统', 'warn', `设备接管: ${message}`);
+      showTakeoverWarning('设备接管已发生', '当前密钥已被新设备接管，该密钥之前绑定的上报数据已被服务器清除。如果这不是您的操作，请立即更换密钥。', message, true);
     }
   });
+
+  /** 显示密钥接管/安全事件警告弹窗 */
+  function showTakeoverWarning(title, desc, detail, showAction) {
+    const modal = document.getElementById('takeoverWarningModal');
+    const titleEl = document.getElementById('takeoverWarningTitle');
+    const descEl = document.getElementById('takeoverWarningDesc');
+    const detailBox = document.getElementById('takeoverDetailBox');
+    const actionBtn = document.getElementById('takeoverWarningActionBtn');
+    if (!modal) return;
+    if (titleEl) titleEl.textContent = title;
+    if (descEl) descEl.textContent = desc;
+    if (detailBox) detailBox.innerHTML = `<i class="ph ph-info" style="color: var(--error-coral); margin-right: 4px;"></i>${escapeHtml(detail || '无附加信息')}`;
+    if (actionBtn) actionBtn.style.display = showAction ? '' : 'none';
+    modal.classList.add('show');
+    showNekoIsland(title, 'error', 5000);
+  }
+
+  // 密钥警告弹窗按钮
+  document.getElementById('takeoverWarningDismissBtn')?.addEventListener('click', () => {
+    const modal = document.getElementById('takeoverWarningModal');
+    if (modal) modal.classList.remove('show');
+  });
+  document.getElementById('takeoverWarningCloseBtn')?.addEventListener('click', () => {
+    const modal = document.getElementById('takeoverWarningModal');
+    if (modal) modal.classList.remove('show');
+  });
+  document.getElementById('takeoverWarningActionBtn')?.addEventListener('click', () => {
+    const modal = document.getElementById('takeoverWarningModal');
+    if (modal) modal.classList.remove('show');
+    // 打开配置弹窗重新设置密钥
+    document.getElementById('btnConfigKey')?.click();
+  });
+  // 点击遮罩关闭
+  document.getElementById('takeoverWarningModal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+  });
+
+  /** 显示接管确认弹窗（Promise，用户确认返回 true，取消返回 false） */
+  function showTakeoverConfirmDialog() {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('takeoverConfirmModal');
+      if (!modal) { resolve(true); return; } // 弹窗不存在则默认放行
+      modal.classList.add('show');
+
+      const okBtn     = document.getElementById('takeoverConfirmOkBtn');
+      const cancelBtn = document.getElementById('takeoverConfirmCancelBtn');
+      const closeBtn  = document.getElementById('takeoverConfirmCloseBtn');
+
+      function cleanup() {
+        modal.classList.remove('show');
+        okBtn?.removeEventListener('click', onOk);
+        cancelBtn?.removeEventListener('click', onCancel);
+        closeBtn?.removeEventListener('click', onCancel);
+        modal.removeEventListener('click', onOverlay);
+      }
+      function onOk()      { cleanup(); resolve(true); }
+      function onCancel()   { cleanup(); resolve(false); }
+      function onOverlay(e) { if (e.target === modal) { cleanup(); resolve(false); } }
+
+      okBtn?.addEventListener('click', onOk);
+      cancelBtn?.addEventListener('click', onCancel);
+      closeBtn?.addEventListener('click', onCancel);
+      modal.addEventListener('click', onOverlay);
+    });
+  }
 
   // ══════════════════════════════════════════════════════════════
   //  设置页开关 → 持久化到配置
@@ -3624,11 +3729,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 自动配置设备密钥 ──────────────────────────────────────────
   async function autoProvisionDeviceKey() {
-    // 如果已经有设备密钥直接跳过
     const currentKey = await ipc.getConfig('deviceKey');
-    if (currentKey) return;
 
-    addLogLine('INFO', '检测到未配置设备密钥，正在自动为当前设备生成...');
+    // 已有密钥 → 先验证其有效性，有效则直接跳过
+    if (currentKey) {
+      try {
+        const validation = await ipc.validateKey();
+        if (validation.valid) {
+          addLogLine('INFO', '当前设备密钥有效，跳过自动生成');
+          return;
+        }
+        // 密钥无效（被撤销、设备已删除等）→ 继续生成新密钥
+        addLogLine('WARN', `当前密钥已失效（${validation.error || '未知原因'}），将为当前账户重新生成`);
+      } catch {
+        // 验证请求失败（网络等问题）→ 保守处理，保留现有密钥
+        addLogLine('WARN', '无法验证现有密钥（网络异常），保留当前密钥');
+        return;
+      }
+    } else {
+      addLogLine('INFO', '检测到未配置设备密钥，正在自动为当前设备生成...');
+    }
 
     const result = await ipc.authGenerateDeviceKey();
     if (result.success && result.deviceKey) {

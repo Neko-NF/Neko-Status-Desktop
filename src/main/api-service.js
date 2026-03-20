@@ -180,7 +180,7 @@ async function testConnection(serverUrl) {
   }
 }
 
-module.exports = { reportStatusV2, performHandshake, testConnection, validateDeviceKey, authLogin, authRegister, authGetMe, authUpdateProfile, authGenerateDeviceKey };
+module.exports = { reportStatusV2, performHandshake, testConnection, validateDeviceKey, validateDeviceKeyAt, authLogin, authRegister, authGetMe, authUpdateProfile, authGenerateDeviceKey };
 
 /**
  * 验证设备密钥: GET /api/device/validate
@@ -212,6 +212,35 @@ async function validateDeviceKey(deviceKey, fingerprint) {
     const err = new Error(json.message || '密钥不存在');
     err.code = json.errorCode || 'KEY_NOT_FOUND';
     err.status = 404;
+    throw err;
+  }
+
+  if (!response.ok) {
+    throw new Error(json.message || `验证失败 HTTP ${response.status}`);
+  }
+
+  return json;
+}
+
+/**
+ * 密钥预检：使用指定服务器验证密钥（不发送指纹，用于检测接管风险）
+ * @param {string} deviceKey
+ * @param {string} serverUrl
+ * @returns {Promise<{valid: boolean, warning?: string, ...}>}
+ */
+async function validateDeviceKeyAt(deviceKey, serverUrl) {
+  const response = await fetch(`${serverUrl}/api/device/validate`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${deviceKey}` },
+    signal: withTimeout(5000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (response.status === 403) {
+    const err = new Error(json.message || '密钥已被撤销');
+    err.code = json.errorCode || 'KEY_REVOKED';
+    err.status = 403;
     throw err;
   }
 

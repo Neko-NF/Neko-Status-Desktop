@@ -3186,6 +3186,72 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     text-decoration: underline;
 }
 
+/* ========== 密钥接管弹窗 ========== */
+.modal-overlay.takeover-overlay {
+    z-index: 1100;
+}
+.takeover-header {
+    text-align: center;
+    padding: 8px 0 16px;
+}
+.takeover-header .takeover-icon {
+    font-size: 48px;
+    display: inline-block;
+}
+.takeover-header .takeover-icon.danger { color: var(--error-coral); }
+.takeover-header .takeover-icon.warn   { color: var(--warning-amber); }
+.takeover-header h3 {
+    margin: 12px 0 6px;
+    font-size: 18px;
+    font-weight: var(--fw-bold);
+    color: var(--text-main);
+}
+.takeover-header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.6;
+}
+.takeover-header .text-danger { color: var(--error-coral); }
+.takeover-detail-box {
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin: 8px 0 16px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+}
+.takeover-detail-box i { margin-right: 4px; }
+.takeover-detail-box.danger {
+    background: color-mix(in srgb, var(--error-coral) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--error-coral) 25%, transparent);
+}
+.takeover-detail-box.danger i { color: var(--error-coral); }
+.takeover-detail-box.warn {
+    background: color-mix(in srgb, var(--warning-amber) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning-amber) 25%, transparent);
+}
+.takeover-detail-box.warn i { color: var(--warning-amber); }
+.takeover-container {
+    max-width: 480px;
+}
+.action-btn.danger {
+    background: color-mix(in srgb, var(--error-coral) 15%, transparent);
+    border-color: color-mix(in srgb, var(--error-coral) 30%, transparent);
+    color: var(--error-coral);
+}
+.action-btn.danger:hover {
+    background: color-mix(in srgb, var(--error-coral) 25%, transparent);
+}
+.action-btn.warning {
+    background: color-mix(in srgb, var(--warning-amber) 15%, transparent);
+    border-color: color-mix(in srgb, var(--warning-amber) 30%, transparent);
+    color: var(--warning-amber);
+}
+.action-btn.warning:hover {
+    background: color-mix(in srgb, var(--warning-amber) 25%, transparent);
+}
+
 /* ========== 首次引导弹窗 ========== */
 .first-time-container {
     max-width: 460px;

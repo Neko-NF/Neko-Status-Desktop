@@ -468,6 +468,17 @@ function setupIPC() {
     }
   });
 
+  // ── 密钥预检（不发送指纹，用于保存前检测接管风险）─────────────────────
+  ipcMain.handle('api:preValidateKey', async (_, key, serverUrl) => {
+    if (!key) return { valid: false, error: '密钥为空' };
+    try {
+      const url = serverUrl || configStore.getServerUrl();
+      return await apiService.validateDeviceKeyAt(key, url);
+    } catch (err) {
+      return { valid: false, errorCode: err.code, error: err.message };
+    }
+  });
+
   // ── 更新检查与通道管理 ────────────────────────────────────────────────
   ipcMain.handle('update:check',      () => checkForUpdates());
 

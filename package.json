@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -30,6 +30,7 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "node_modules/@phosphor-icons/web/src/regular/**/*",
       "package.json"
     ],
     "extraResources": [],
@@ -67,6 +68,7 @@
     "publish": null
   },
   "dependencies": {
+    "@phosphor-icons/web": "^2.1.2",
     "chart.js": "^4.5.1"
   }
 }
