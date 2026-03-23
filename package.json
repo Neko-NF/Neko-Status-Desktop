@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0-beta.1",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -11,7 +11,8 @@
     "build": "electron-builder --win --x64",
     "build:nsis": "electron-builder --win nsis --x64",
     "build:zip": "electron-builder --win zip --x64",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "verify": "node scripts/verify.js"
   },
   "keywords": [],
   "devDependencies": {

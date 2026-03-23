@@ -925,7 +925,7 @@
                             <span class="update-integrity-label"><i class="ph ph-seal-check"></i> 系统完整性</span>
                         </div>
                         <div class="update-ver-display">
-                            <div class="update-ver-number">v1.0.0</div>
+                            <div class="update-ver-number" id="updateVerNumber">v1.0.0</div>
                             <div class="update-ver-tag">Stable</div>
                         </div>
                         <div class="update-ver-desc" id="updateVerDesc">Loading...</div>
@@ -1417,8 +1417,8 @@
                     <div class="glass-card about-info-card">
                         <div class="about-info-icon"><i class="ph ph-tag"></i></div>
                         <div class="about-info-label">当前版本</div>
-                        <div class="about-info-value">v1.0.0</div>
-                        <div class="about-info-sub">Stable · 2026-03-08</div>
+                        <div class="about-info-value" id="aboutVersionValue">--</div>
+                        <div class="about-info-sub" id="aboutVersionSub">加载中...</div>
                     </div>
                     <div class="glass-card about-info-card">
                         <div class="about-info-icon"><i class="ph ph-user-circle"></i></div>
@@ -1826,6 +1826,68 @@
                 <button class="action-btn" id="takeoverConfirmCancelBtn">取消</button>
                 <button class="action-btn warning" id="takeoverConfirmOkBtn">
                     <i class="ph ph-swap"></i> 确认更改
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 更新弹窗模态框 ========== -->
+    <div class="modal-overlay" id="updateDialogOverlay">
+        <div class="glass-card modal-container update-dialog-container">
+            <!-- 头部 -->
+            <div class="modal-header">
+                <h3><i class="ph ph-rocket-launch update-dialog-icon"></i> 发现新版本</h3>
+                <button class="close-profile-btn" id="updateDialogClose" title="关闭">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+
+            <!-- 版本信息 -->
+            <div class="update-dialog-version-row">
+                <div class="update-dialog-ver-current">
+                    <span class="update-dialog-ver-label">当前版本</span>
+                    <span class="update-dialog-ver-value" id="updateDialogCurrentVer">--</span>
+                </div>
+                <div class="update-dialog-ver-arrow"><i class="ph ph-arrow-right"></i></div>
+                <div class="update-dialog-ver-new">
+                    <span class="update-dialog-ver-label">新版本</span>
+                    <span class="update-dialog-ver-value highlight" id="updateDialogNewVer">--</span>
+                </div>
+            </div>
+
+            <!-- 更新元信息 -->
+            <div class="update-dialog-meta">
+                <span class="update-dialog-meta-item" id="updateDialogSize">
+                    <i class="ph ph-hard-drive"></i> --
+                </span>
+                <span class="update-dialog-meta-item" id="updateDialogDate">
+                    <i class="ph ph-calendar"></i> --
+                </span>
+                <span class="update-dialog-meta-item" id="updateDialogChannel">
+                    <i class="ph ph-tag"></i> Stable
+                </span>
+            </div>
+
+            <!-- 强制更新横幅 -->
+            <div class="update-dialog-force-banner" id="updateDialogForceBanner" style="display:none">
+                <i class="ph ph-warning"></i> 此版本为强制更新，必须安装才能继续使用
+            </div>
+
+            <!-- 更新日志 -->
+            <div class="update-dialog-notes-wrap">
+                <div class="update-dialog-notes-title">更新内容</div>
+                <div class="update-dialog-notes" id="updateDialogNotes">
+                    <p>加载中...</p>
+                </div>
+            </div>
+
+            <!-- 底部操作 -->
+            <div class="modal-footer">
+                <button class="action-btn" id="updateDialogSkipBtn">
+                    <i class="ph ph-fast-forward"></i> 跳过此版本
+                </button>
+                <button class="action-btn primary" id="updateDialogInstallBtn">
+                    <i class="ph ph-download-simple"></i> 立即更新
                 </button>
             </div>
         </div>

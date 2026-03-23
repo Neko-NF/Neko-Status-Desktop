@@ -16,12 +16,19 @@ function runPowerShell(script) {
       {
         timeout: 8000,
         windowsHide: true,
-        encoding: 'utf8',
+        encoding: 'buffer', // 返回原始 Buffer，避免 Node.js 按系统代码页(GBK)解码
         env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       },
       (err, stdout) => {
         if (err) reject(err);
-        else resolve(stdout.trim());
+        else {
+          // PowerShell 内已通过 [Console]::OutputEncoding = UTF8 输出，
+          // 这里强制按 UTF-8 解码，确保中文名称不会因系统代码页不同而乱码
+          const text = Buffer.isBuffer(stdout)
+            ? stdout.toString('utf8')
+            : String(stdout);
+          resolve(text.trim());
+        }
       }
     );
   });

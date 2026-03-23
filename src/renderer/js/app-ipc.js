@@ -547,8 +547,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 活动流 — 追加新条目
-    if (data.success && data.appName) {
-      appendActivityItem('app', data.appName, data.packageName || '', 'NOW');
+    if (data.success) {
+      const displayApp = data.appName || data.packageName || '';
+      if (displayApp) {
+        appendActivityItem('app', displayApp, data.packageName || '', nowStr());
+      }
+      // 追加上传活动记录
+      appendActivityItem('upload', '状态上报', data.packageName || '系统', nowStr());
     }
 
     // 自动截图同步到 UI 预览卡片
@@ -1820,6 +1825,133 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════
+  //  更新弹窗辅助函数
+  // ══════════════════════════════════════════════════════════════
+
+  /** 简易 Markdown → HTML 转换（仅处理更新日志常用语法） */
+  function simpleMarkdownToHtml(md) {
+    if (!md) return '<p>暂无更新说明</p>';
+    // 移除 FORCE_UPDATE 标记
+    let text = md.replace(/<!--\s*FORCE_UPDATE\s*-->/gi, '').trim();
+    // 标题
+    text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    // 列表项
+    text = text.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+    // 将连续 <li> 包在 <ul> 中
+    text = text.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+    // 段落：非空行且非标签开头的视为段落
+    text = text.replace(/^([^<\n].+)$/gm, '<p>$1</p>');
+    // 清理多余空行
+    text = text.replace(/\n{2,}/g, '\n');
+    return text || '<p>暂无更新说明</p>';
+  }
+
+  /** 格式化文件大小 */
+  function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return '--';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  /** 打开更新弹窗 */
+  function showUpdateDialog(result) {
+    const overlay = document.getElementById('updateDialogOverlay');
+    if (!overlay) return;
+
+    // 填充版本号
+    const curVerEl = document.getElementById('updateDialogCurrentVer');
+    const newVerEl = document.getElementById('updateDialogNewVer');
+    if (curVerEl) curVerEl.textContent = `v${result.currentVersion}`;
+    if (newVerEl) newVerEl.textContent = `v${result.latestVersion}`;
+
+    // 填充元信息
+    const sizeEl = document.getElementById('updateDialogSize');
+    const dateEl = document.getElementById('updateDialogDate');
+    const channelEl = document.getElementById('updateDialogChannel');
+    if (sizeEl) sizeEl.innerHTML = `<i class="ph ph-hard-drive"></i> ${formatFileSize(result.downloadSize)}`;
+    if (dateEl) {
+      const dateStr = result.publishedAt
+        ? new Date(result.publishedAt).toLocaleDateString('zh-CN')
+        : '--';
+      dateEl.innerHTML = `<i class="ph ph-calendar"></i> ${dateStr}`;
+    }
+    if (channelEl) {
+      const ch = (result.channel || 'stable').charAt(0).toUpperCase() + (result.channel || 'stable').slice(1);
+      channelEl.innerHTML = `<i class="ph ph-tag"></i> ${ch}`;
+    }
+
+    // 填充更新日志
+    const notesEl = document.getElementById('updateDialogNotes');
+    if (notesEl) notesEl.innerHTML = simpleMarkdownToHtml(result.releaseNotes);
+
+    // 强制更新模式
+    const forceBanner = document.getElementById('updateDialogForceBanner');
+    const closeBtn = document.getElementById('updateDialogClose');
+    const skipBtn = document.getElementById('updateDialogSkipBtn');
+    if (result.forceUpdate) {
+      if (forceBanner) forceBanner.style.display = '';
+      if (closeBtn) closeBtn.style.display = 'none';
+      if (skipBtn) skipBtn.style.display = 'none';
+    } else {
+      if (forceBanner) forceBanner.style.display = 'none';
+      if (closeBtn) closeBtn.style.display = '';
+      if (skipBtn) skipBtn.style.display = '';
+    }
+
+    // 存储当前更新信息供按钮回调使用
+    overlay._updateResult = result;
+
+    // 显示弹窗
+    overlay.classList.add('show');
+  }
+
+  /** 关闭更新弹窗 */
+  function hideUpdateDialog() {
+    const overlay = document.getElementById('updateDialogOverlay');
+    if (overlay) overlay.classList.remove('show');
+  }
+
+  // ── 更新弹窗按钮事件 ───────────────────────────────────────
+  // 关闭按钮
+  document.getElementById('updateDialogClose')?.addEventListener('click', hideUpdateDialog);
+
+  // 点击遮罩关闭（非强制更新时）
+  document.getElementById('updateDialogOverlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'updateDialogOverlay') {
+      const overlay = document.getElementById('updateDialogOverlay');
+      const result = overlay?._updateResult;
+      if (result && result.forceUpdate) return; // 强制更新不允许点击遮罩关闭
+      hideUpdateDialog();
+    }
+  });
+
+  // 跳过此版本
+  document.getElementById('updateDialogSkipBtn')?.addEventListener('click', async () => {
+    const overlay = document.getElementById('updateDialogOverlay');
+    const result = overlay?._updateResult;
+    if (result && result.latestVersion) {
+      await ipc.setConfig('skippedVersion', result.latestVersion);
+      addLogLine('INFO', `已跳过版本 v${result.latestVersion}，下一版本发布前不再提醒`);
+      showNekoIsland(`已跳过 v${result.latestVersion}`, 'info', 3000);
+    }
+    hideUpdateDialog();
+  });
+
+  // 立即更新
+  document.getElementById('updateDialogInstallBtn')?.addEventListener('click', async () => {
+    const overlay = document.getElementById('updateDialogOverlay');
+    const result = overlay?._updateResult;
+    if (!result) return;
+    hideUpdateDialog();
+    // 清除跳过记录
+    await ipc.setConfig('skippedVersion', '');
+    showNekoIsland(`开始下载 v${result.latestVersion}...`, 'info', 3000);
+    addLogLine('INFO', `用户确认更新 v${result.latestVersion}，开始下载`);
+    doDownloadAndInstall(result);
+  });
+
   // 启动时推送的新版本可用事件
   ipc.on('update:available', (result) => {
     _lastUpdateResult = result;
@@ -1828,16 +1960,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const label = document.getElementById('checkUpdateLabel');
     const badge = document.getElementById('updateStatusBadge');
     if (result.hasUpdate) {
+      // 更新中心页面状态同步
       if (result.forceUpdate) {
         if (badge) { badge.className = 'update-status-badge error'; badge.innerHTML = `<i class="ph ph-warning"></i> 强制更新 v${result.latestVersion}`; }
-        showNekoIsland(`检测到强制更新 v${result.latestVersion}，即将自动下载安装`, 'warn', 6000);
-        renderReleaseNotes(result);
         addLogLine('WARN', `强制更新触发: v${result.latestVersion}`);
-        // 自动触发强制下载
-        setTimeout(() => doDownloadAndInstall(result), 600);
       } else {
         if (badge) { badge.className = 'update-status-badge warn'; badge.innerHTML = `<i class="ph ph-arrow-circle-up"></i> 发现新版本 v${result.latestVersion}`; }
-        // 主按钮改为「立刻更新」
         if (btn) {
           btn._updateMode = 'download';
           btn.classList.remove('rollback-install-btn');
@@ -1845,17 +1973,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (icon)  { icon.className = 'ph ph-download-simple'; icon.style.animation = ''; }
           if (label) label.textContent = '立刻更新';
         }
-        showNekoIsland(`发现新版本 v${result.latestVersion}，点击「立刻更新」下载安装`, 'info', 5000);
-        renderReleaseNotes(result);
         addLogLine('INFO', `后台检查发现新版本 v${result.latestVersion}`);
-        // 自动下载（若用户已开启）
-        ipc.getConfig('autoDownload').then(autoDl => {
-          if (autoDl) {
-            showNekoIsland(`自动下载 v${result.latestVersion}...`, 'info', 3000);
-            doDownloadAndInstall(result);
-          }
-        }).catch(() => {});
       }
+      renderReleaseNotes(result);
+      // 弹出更新弹窗
+      showUpdateDialog(result);
     }
   });
   ['aboutGithubBtn', 'aboutReleaseBtn'].forEach((id) => {
@@ -2258,11 +2380,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }).catch(() => _initTrendChart());
 
     // 更新关于页版本
-    const aboutVerEl = document.querySelector('.about-info-value');
-    if (aboutVerEl && aboutVerEl.closest('.about-info-card')?.querySelector('.about-info-label')?.textContent.includes('版本')) {
-      aboutVerEl.textContent = `v${data.version}`;
+    const aboutVerEl = document.getElementById('aboutVersionValue');
+    if (aboutVerEl) aboutVerEl.textContent = `v${data.version}`;
+    const aboutSubEl = document.getElementById('aboutVersionSub');
+    if (aboutSubEl) {
+      const ch = (cfg.updateChannel || 'stable').charAt(0).toUpperCase() + (cfg.updateChannel || 'stable').slice(1);
+      aboutSubEl.textContent = `${ch} · ${new Date().toLocaleDateString('zh-CN')}`;
     }
-    const updateVerEl = document.querySelector('.update-ver-number');
+    const updateVerEl = document.getElementById('updateVerNumber');
     if (updateVerEl) updateVerEl.textContent = `v${data.version}`;
 
     // 更新中心描述文本 — 反映实际运行环境

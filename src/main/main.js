@@ -1085,6 +1085,10 @@ async function checkForUpdates() {
     const releaseBody = release.body || '';
     const forceUpdate = releaseBody.includes('<!-- FORCE_UPDATE -->');
 
+    // 获取下载文件大小（优先 exe，否则 zip）
+    const primaryAsset = exeAsset || zipAsset;
+    const downloadSize = primaryAsset ? primaryAsset.size : 0;
+
     return {
       hasUpdate,
       channel,
@@ -1096,6 +1100,7 @@ async function checkForUpdates() {
       zipDownloadUrl: pickUrl(zipAsset),
       sha256sumsUrl:  pickUrl(sumsAsset),
       publishedAt:    release.published_at,
+      downloadSize,
     };
   } catch (err) {
     return { hasUpdate: false, channel, error: err.message };
@@ -1181,6 +1186,12 @@ app.whenReady().then(async () => {
     try {
       const result = await checkForUpdates();
       if (result.hasUpdate) {
+        // 非强制更新时检查跳过版本
+        const skipped = configStore.get('skippedVersion');
+        if (!result.forceUpdate && skipped === result.latestVersion) {
+          console.log(`[Main] 版本 v${result.latestVersion} 已被用户跳过`);
+          return;
+        }
         sendToRenderer('update:available', result);
         console.log(`[Main] 发现新版本 v${result.latestVersion}`);
       }
@@ -1192,6 +1203,11 @@ app.whenReady().then(async () => {
     try {
       const result = await checkForUpdates();
       if (result.hasUpdate) {
+        // 非强制更新时检查跳过版本
+        const skipped = configStore.get('skippedVersion');
+        if (!result.forceUpdate && skipped === result.latestVersion) {
+          return;
+        }
         sendToRenderer('update:available', result);
         console.log(`[Main] 定期检查 - 发现新版本 v${result.latestVersion}`);
       }

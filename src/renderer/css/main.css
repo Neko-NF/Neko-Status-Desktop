@@ -3421,3 +3421,157 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 .profile-sync-hint {
     margin-right: auto;
 }
+
+/* ── 更新弹窗 (Update Dialog Modal) ─────────────────────────── */
+.update-dialog-icon {
+    color: var(--theme-color);
+}
+
+.update-dialog-container {
+    width: 520px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    padding: 28px;
+}
+
+.update-dialog-version-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: color-mix(in srgb, var(--theme-color) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-color) 15%, transparent);
+    border-radius: var(--radius-card, 16px);
+}
+
+.update-dialog-ver-current,
+.update-dialog-ver-new {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.update-dialog-ver-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: var(--fw-medium, 500);
+}
+
+.update-dialog-ver-value {
+    font-size: 22px;
+    font-weight: var(--fw-bold, 700);
+    color: var(--text-main);
+    font-variant-numeric: tabular-nums;
+}
+
+.update-dialog-ver-value.highlight {
+    color: var(--theme-color);
+}
+
+.update-dialog-ver-arrow {
+    font-size: 20px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.update-dialog-meta {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.update-dialog-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--text-main) 5%, transparent);
+    padding: 4px 10px;
+    border-radius: 6px;
+}
+
+.update-dialog-meta-item i {
+    font-size: 14px;
+    color: var(--theme-color);
+}
+
+.update-dialog-force-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--error-coral) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--error-coral) 30%, transparent);
+    border-radius: 8px;
+    color: var(--error-coral);
+    font-size: 13px;
+    font-weight: var(--fw-medium, 500);
+    margin-bottom: 16px;
+}
+
+.update-dialog-force-banner i {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.update-dialog-notes-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
+.update-dialog-notes-title {
+    font-size: 13px;
+    font-weight: var(--fw-semibold, 600);
+    color: var(--text-main);
+    margin-bottom: 8px;
+}
+
+.update-dialog-notes {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 200px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--text-main) 3%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-main) 8%, transparent);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.update-dialog-notes h2,
+.update-dialog-notes h3 {
+    font-size: 14px;
+    font-weight: var(--fw-semibold, 600);
+    color: var(--text-main);
+    margin: 8px 0 4px;
+}
+
+.update-dialog-notes h2:first-child,
+.update-dialog-notes h3:first-child {
+    margin-top: 0;
+}
+
+.update-dialog-notes ul {
+    margin: 4px 0;
+    padding-left: 18px;
+}
+
+.update-dialog-notes li {
+    margin-bottom: 2px;
+}
+
+.update-dialog-notes p {
+    margin: 4px 0;
+}
