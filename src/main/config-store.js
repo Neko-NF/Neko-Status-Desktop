@@ -57,6 +57,7 @@ const DEFAULTS = {
   githubToken: '',
   autoCheckUpdate: true,
   updateChannel: 'stable',         // 'stable' | 'beta' | 'nightly'
+  autoDownload: true,              // 发现更新时自动下载安装包
   skippedVersion: '',
   lastUpdateCheck: 0,
   // 用户认证

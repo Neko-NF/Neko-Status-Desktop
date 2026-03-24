@@ -162,6 +162,18 @@
             border: 1px solid color-mix(in srgb, var(--theme-color) 30%, transparent);
         }
 
+        /* 导航栏脉冲提示（发现新版本） */
+        .nav-item.has-update {
+            animation: updatePulse 2s ease-in-out infinite;
+        }
+        .nav-item.has-update i {
+            color: var(--warning-amber);
+        }
+        @keyframes updatePulse {
+            0%, 100% { background: transparent; }
+            50% { background: color-mix(in srgb, var(--warning-amber) 15%, transparent); }
+        }
+
         /* ------------------ 主内容区 ------------------ */
         .main-container {
             flex: 1;

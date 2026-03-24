@@ -1313,16 +1313,25 @@ document.addEventListener('DOMContentLoaded', () => {
   // 保存最近一次更新检查结果，供"强制更新"和"跳过版本"使用
   let _lastUpdateResult = null;
 
+  /** 根据当前安装的版本号解析所属通道（徽章应反映实际安装版本，而非通道选择） */
+  function getInstalledChannel(version) {
+    const v = (version || '').toLowerCase();
+    if (v.includes('-nightly')) return 'nightly';
+    if (v.includes('-beta')) return 'beta';
+    return 'stable';
+  }
+  const _installedChannelNameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
+
   /** 将 Markdown 风格的 release notes 渲染为更新日志时间线 */
   function renderReleaseNotes(result) {
     if (!result || !result.latestVersion) return;
 
-    // 更新版本卡上的通道标签
+    // 更新版本卡上的通道标签 — 基于当前安装版本，而非更新通道选择
     const channelBadge = document.querySelector('.update-channel-badge');
     if (channelBadge) {
-      channelBadge.className = `update-channel-badge ${result.channel || 'stable'}`;
-      const nameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
-      channelBadge.textContent = nameMap[result.channel] || '稳定版';
+      const instCh = getInstalledChannel(result.currentVersion);
+      channelBadge.className = `update-channel-badge ${instCh}`;
+      channelBadge.textContent = _installedChannelNameMap[instCh] || '稳定版';
     }
     const verTag = document.querySelector('.update-ver-tag');
     if (verTag) {
@@ -1502,6 +1511,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (badge) { badge.className = 'update-status-badge warn'; badge.innerHTML = `<i class="ph ph-arrow-circle-up"></i> 发现新版本 v${result.latestVersion}`; }
         showNekoIsland(`发现新版本 v${result.latestVersion}，点击「立刻更新」下载安装`, 'info', 5000);
         addLogLine('INFO', `发现新版本 v${result.latestVersion}（当前 v${result.currentVersion}）`);
+        // 导航栏脉冲提示
+        const navUpd = document.querySelector('.nav-item[data-target="page-update"]');
+        if (navUpd) navUpd.classList.add('has-update');
       } else {
         btn._updateMode = 'check';
         btn.classList.remove('rollback-install-btn');
@@ -1738,14 +1750,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const ok = await ipc.setUpdateChannel(channel);
       if (ok) {
         addLogLine('INFO', `更新通道已切换为 ${channel}`);
-        // 更新通道标签
-        const channelBadge = document.querySelector('.update-channel-badge');
-        if (channelBadge) {
-          channelBadge.className = `update-channel-badge ${channel}`;
-          const nameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
-          channelBadge.textContent = nameMap[channel] || channel;
-        }
-        // 版本号旁的通道标签
+        // 注意：通道切换不改变版本卡上的徽章（徽章反映当前安装版本）
+        // 仅更新版本号旁的通道标签以反映订阅通道
         const verTag = document.querySelector('.update-ver-tag');
         if (verTag) {
           const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
@@ -1976,6 +1982,9 @@ document.addEventListener('DOMContentLoaded', () => {
         addLogLine('INFO', `后台检查发现新版本 v${result.latestVersion}`);
       }
       renderReleaseNotes(result);
+      // 导航栏脉冲提示
+      const navUpd = document.querySelector('.nav-item[data-target="page-update"]');
+      if (navUpd) navUpd.classList.add('has-update');
       // 弹出更新弹窗
       showUpdateDialog(result);
     }
@@ -2345,15 +2354,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const channelRadio = document.querySelector(`input[name="updateChannel"][value="${cfg.updateChannel || 'stable'}"]`);
     if (channelRadio) channelRadio.checked = true;
 
-    // 更新通道标签
+    // 更新通道徽章 — 基于当前安装版本号，而非通道选择
     const channelBadge = document.querySelector('.update-channel-badge');
     if (channelBadge) {
-      const ch = cfg.updateChannel || 'stable';
-      channelBadge.className = `update-channel-badge ${ch}`;
-      const nameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
-      channelBadge.textContent = nameMap[ch] || '稳定版';
+      const instCh = getInstalledChannel(data.version);
+      channelBadge.className = `update-channel-badge ${instCh}`;
+      channelBadge.textContent = _installedChannelNameMap[instCh] || '稳定版';
     }
-    // 版本号旁的通道标签
+    // 版本号旁的通道标签（反映订阅通道）
     const verTag = document.querySelector('.update-ver-tag');
     if (verTag) {
       const ch = cfg.updateChannel || 'stable';
@@ -2361,7 +2369,11 @@ document.addEventListener('DOMContentLoaded', () => {
       verTag.textContent = tagMap[ch] || 'Stable';
     }
 
-    // ── 更新源信息初始化 ──────────────────────────────────────────────
+    // 导航栏「更新中心」点击时移除脉冲动效
+    const navUpdateItem = document.querySelector('.nav-item[data-target="page-update"]');
+    if (navUpdateItem) {
+      navUpdateItem.addEventListener('click', () => navUpdateItem.classList.remove('has-update'));
+    }
     const currentUrlSpan = document.querySelector('#updateSourceCurrent .update-source-current-url');
     if (currentUrlSpan && cfg.githubOwner && cfg.githubRepo) {
       currentUrlSpan.textContent = `github.com/${cfg.githubOwner}/${cfg.githubRepo}`;

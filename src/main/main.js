@@ -882,20 +882,26 @@ function setupIPC() {
     if (token) headers['Authorization'] = `token ${token}`;
     try {
       const res = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/releases?per_page=6`,
+        `https://api.github.com/repos/${owner}/${repo}/releases?per_page=15`,
         { headers, signal: AbortSignal.timeout(10000) }
       );
       if (!res.ok) throw new Error(`GitHub API ${res.status}`);
       const releases = await res.json();
-      const entries = releases.map((r) => ({
+      const allEntries = releases.map((r) => ({
         version:     (r.tag_name || '').replace(/^v/, ''),
         date:        (r.published_at || '').slice(0, 10),
         notes:       r.body || '',
         isPreRelease: r.prerelease,
       }));
-      configStore.set('changelogCache', entries);
-      return entries;
+      // 按当前更新通道过滤，返回最新 4 条
+      const channel = configStore.get('updateChannel') || 'stable';
+      const filtered = allEntries.filter(e => isTagInChannel('v' + e.version, channel));
+      const result = filtered.slice(0, 4);
+      // 本地缓存最多保留 2 条（当前版本 + 上一版本），供离线降级使用
+      configStore.set('changelogCache', result.slice(0, 2));
+      return result;
     } catch {
+      // 网络不可用 → 返回本地缓存（最多 2 条）
       return configStore.get('changelogCache') || [];
     }
   });
@@ -905,7 +911,7 @@ function setupIPC() {
     const results = [];
     // 配置文件
     try {
-      const cfg = configStore.store;
+      const cfg = configStore.getAll();
       results.push({ name: '配置文件',   ok: true,  text: `完好，共 ${Object.keys(cfg).length} 项` });
     } catch (e) {
       results.push({ name: '配置文件',   ok: false, text: `损坏: ${e.message}` });
