@@ -284,7 +284,9 @@ class StatusService {
         screenshotBuffer,
         music: isIncognito ? null : musicPayload,
         iconBuffer: isIncognito ? null : iconBuffer,
+        captureEnabled: configStore.get('enableScreenshot') === true,
       });
+
 
       this._lastTickResult = {
         success: true,

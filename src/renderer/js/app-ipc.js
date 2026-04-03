@@ -1069,6 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const upload = document.getElementById('uploadSwitch');
     if (upload) upload.classList.toggle('on', enabled);
     addLogLine('INFO', `截图上报 → ${enabled ? '已启用' : '已禁用'}`);
+    ipc.invoke('device:syncMeta').catch(() => {}); // 同步元数据到 Web
   });
 
   // 截图页上传开关
@@ -1078,6 +1079,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 同步快捷操作自动捕获开关 UI
     const toggle = document.getElementById('toggleScreenshot');
     if (toggle) toggle.classList.toggle('on', enabled);
+    ipc.invoke('device:syncMeta').catch(() => {}); // 同步元数据到 Web
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -1547,7 +1549,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  强制更新按钮（下载 → 进度 → 安装完整流程）
   // ══════════════════════════════════════════════════════════════
+  // 防重入锁：避免并发多次触发下载
+  let _isDownloading = false;
+
   async function doDownloadAndInstall(result) {
+    if (_isDownloading) {
+      showNekoIsland('已有下载任务正在进行中，请稍候', 'warn', 3000);
+      addLogLine('WARN', '已有下载任务进行中，防止重复触发');
+      return;
+    }
+    _isDownloading = true;
+
     const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
     if (!downloadUrl) {
       addLogLine('ERROR', '没有找到可用的下载链接');
@@ -1589,7 +1601,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       addLogLine('SUCCESS', '安装程序已启动，应用即将关闭');
     }
+    _isDownloading = false;
   }
+
 
   replaceHandler('forceUpdateBtn', async () => {
     const btn = document.getElementById('forceUpdateBtn');
@@ -1958,6 +1972,31 @@ document.addEventListener('DOMContentLoaded', () => {
     doDownloadAndInstall(result);
   });
 
+  // 后台自动下载完成通知
+  ipc.on('update:autoDownloaded', (data) => {
+    const badge = document.getElementById('updateStatusBadge');
+    if (badge) { badge.className = 'update-status-badge info'; badge.innerHTML = `<i class="ph ph-download-simple"></i> 已下载 v${data.version}，下次启动时安装`; }
+    showNekoIsland(`更新 v${data.version} 已在后台下载完成，下次启动时自动安装`, 'info', 6000);
+    addLogLine('SUCCESS', `自动下载更新 v${data.version} 完成，等待下次启动安装`);
+    // 导航栏脉冲提示
+    const navUpd = document.querySelector('.nav-item[data-target="page-update"]');
+    if (navUpd) navUpd.classList.add('has-update');
+  });
+
+  // 强制更新即将安装通知
+  ipc.on('update:forceInstallStarted', (data) => {
+    const badge = document.getElementById('updateStatusBadge');
+    if (badge) { badge.className = 'update-status-badge error'; badge.innerHTML = `<i class="ph ph-warning"></i> 强制更新安装中...`; }
+    showNekoIsland(`强制更新 v${data.version} 安装程序已启动，应用即将关闭`, 'warn', 6000);
+    addLogLine('WARN', `强制更新 v${data.version} 安装程序已启动`);
+  });
+
+  // 后台自动下载失败通知
+  ipc.on('update:autoDownloadFailed', (data) => {
+    addLogLine('ERROR', `后台自动下载 v${data.version} 失败: ${data.error}`);
+    showNekoIsland(`更新 v${data.version} 后台下载失败，请手动检查更新`, 'error', 5000);
+  });
+
   // 启动时推送的新版本可用事件
   ipc.on('update:available', (result) => {
     _lastUpdateResult = result;
@@ -2073,6 +2112,48 @@ document.addEventListener('DOMContentLoaded', () => {
     addLogLine('INFO', `设备: ${data.deviceName} | 平台: ${data.platform}`);
 
     applyServiceState(data.isRunning);
+
+    // 检查是否有已下载（等待安装）的更新
+    try {
+      const pending = await ipc.invoke('update:getPendingInstall');
+      if (pending && pending.hasPending) {
+        showNekoIsland(
+          `发现已预下载的更新 v${pending.version}，点击「立即安装」完成更新`,
+          'info', 0 // 0 = 不自动关闭
+        );
+        addLogLine('INFO', `检测到待安装更新 v${pending.version}，已在后台下载完成`);
+        // 更新中心页面按钮也同步变为「安装待更新」
+        const btn = document.getElementById('checkUpdateBtn');
+        const icon = document.getElementById('checkUpdateIcon');
+        const label = document.getElementById('checkUpdateLabel');
+        const badge = document.getElementById('updateStatusBadge');
+        if (btn) {
+          btn._updateMode = 'install-pending';
+          btn.classList.remove('rollback-install-btn');
+          btn.classList.add('primary');
+        }
+        if (icon) { icon.className = 'ph ph-package'; icon.style.animation = ''; }
+        if (label) label.textContent = '立即安装';
+        if (badge) { badge.className = 'update-status-badge warn'; badge.innerHTML = `<i class="ph ph-arrow-circle-up"></i> 已下载 v${pending.version}，等待安装`; }
+        // 按钮点击 → 安装
+        replaceHandler('checkUpdateBtn', async () => {
+          if (btn && btn._updateMode === 'install-pending') {
+            btn.disabled = true;
+            if (label) label.textContent = '安装中...';
+            const res = await ipc.invoke('update:installPending');
+            if (!res.success) {
+              addLogLine('ERROR', `安装失败: ${res.error}`);
+              btn.disabled = false;
+              if (label) label.textContent = '立即安装';
+            } else {
+              addLogLine('SUCCESS', '安装程序已启动，应用即将关闭');
+            }
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('[Init] 检查待安装更新失败:', e.message);
+    }
 
     // 更新顶栏设备徽标
     const badge = document.querySelector('.device-badge');
@@ -2692,6 +2773,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyServiceState(data.isRunning);
     addDiagnosticEntry('守护进程', 'success',
       data.isRunning ? '上报服务已启动' : '上报服务已停止');
+    ipc.invoke('device:syncMeta').catch(() => {}); // 服务状态变化时同步元数据
   });
 
   // 日志条目（来自主进程 StatusService）
@@ -2812,8 +2894,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('stgAutoDownloadSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
     await ipc.setConfig('autoDownload', isOn);
-    addLogLine('INFO', `自动下载更新 → ${isOn ? '已启用' : '已禁用'}`);
+    addLogLine('INFO', `自动下载更新 → ${isOn ? '开启（后台静默下载，下次启动时安装）' : '已关闭'}`);
   });
+
 
   // ── 设置页：上报间隔模式切换 ─────────────────────────────
   document.getElementById('stgReportModeGroup')?.addEventListener('click', async (e) => {

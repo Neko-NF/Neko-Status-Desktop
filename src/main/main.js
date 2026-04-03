@@ -8,7 +8,15 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 // ─── 热重载（仅开发环境）────────────────────────────────────────────
-if (!app.isPackaged) { try { require('electron-reload')(__dirname); } catch (_) {} }
+// 监听整个 src/ 目录（含 renderer）；传入 electron 可执行文件路径使主进程变更时硬重启
+if (!app.isPackaged) {
+  try {
+    require('electron-reload')(path.join(__dirname, '../../src'), {
+      electron: require('electron'),  // electron 包导出的即是 exe 绝对路径
+      hardResetMethod: 'exit',        // Windows 下 exit 比 quit 更干净
+    });
+  } catch (_) {}
+}
 
 // ─── Windows 通知通道身份标识（必须在 app.whenReady 前设置）─────────
 app.setAppUserModelId('com.neko.neko-status');
@@ -45,6 +53,14 @@ function isRunAsAdmin() {
 let mainWindow = null;
 let tray       = null;
 let isQuitting = false;
+
+/**
+ * 自动下载互斥状态（防止并发重入）
+ * null = 空闲
+ * { stage: 'downloading', version, url } = 正在下载
+ * { stage: 'ready', version, filePath, sha256 } = 已下载，等待用户下次启动时安装
+ */
+let _autoDownloadState = null;
 
 // 指标历史环形缓冲区（最多保存 360 条 = 1h @ 10s间隔）
 const MAX_METRICS_HISTORY = 8640; // 24h @ 10s 采样间隔
@@ -643,10 +659,73 @@ function setupIPC() {
     return true;
   });
 
+  // ── 获取待安装的已下载更新 ──────────────────────────────────────────
+  ipcMain.handle('update:getPendingInstall', () => {
+    if (_autoDownloadState && _autoDownloadState.stage === 'ready') {
+      return { hasPending: true, version: _autoDownloadState.version, filePath: _autoDownloadState.filePath, sha256: _autoDownloadState.sha256 };
+    }
+    return { hasPending: false };
+  });
+
+  // ── 安装已下载的待安装更新 ────────────────────────────────────────────
+  ipcMain.handle('update:installPending', async () => {
+    if (!_autoDownloadState || _autoDownloadState.stage !== 'ready') {
+      return { success: false, error: '没有待安装的更新' };
+    }
+    const { filePath, sha256 } = _autoDownloadState;
+    const resolvedPath = path.resolve(filePath);
+    if (!fs.existsSync(resolvedPath)) {
+      _autoDownloadState = null;
+      return { success: false, error: '安装文件已不存在，请重新下载' };
+    }
+    if (sha256) {
+      const data = fs.readFileSync(resolvedPath);
+      const actual = crypto.createHash('sha256').update(data).digest('hex').toLowerCase();
+      if (actual !== sha256.toLowerCase()) {
+        _autoDownloadState = null;
+        return { success: false, error: 'SHA256 校验失败，文件可能已损坏' };
+      }
+    }
+    shell.openPath(resolvedPath).then(() => {
+      setTimeout(() => { isQuitting = true; app.quit(); }, 1000);
+    });
+    return { success: true };
+  });
+
+  // ── 设备元数据心跳（上报开关状态，独立于上报服务）───────────────────
+  ipcMain.handle('device:syncMeta', async () => {
+    const deviceKey = configStore.get('deviceKey');
+    if (!deviceKey) return { success: false, error: '设备密钥未配置' };
+    const serverUrl = configStore.getServerUrl();
+    const reportEnabled = statusService.isRunning;
+    const captureEnabled = configStore.get('enableScreenshot') === true;
+    try {
+      const res = await fetch(`${serverUrl}/api/device/meta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceKey, reportEnabled, captureEnabled }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) {
+        console.warn(`[Meta] 元数据同步失败: HTTP ${res.status}`);
+        return { success: false, error: `HTTP ${res.status}` };
+      }
+      console.log(`[Meta] 元数据已同步: reportEnabled=${reportEnabled}, captureEnabled=${captureEnabled}`);
+      return { success: true };
+    } catch (err) {
+      console.warn('[Meta] 元数据同步异常:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
   // ── 更新下载（流式，推送进度至渲染进程）──────────────────────────────
   ipcMain.handle('update:download', async (_, { url }) => {
     if (!url || !/^https?:\/\//i.test(url)) {
       return { success: false, error: '无效下载链接' };
+    }
+    // 防重入检查：若后台自动下载或用户已触发下载，拒绝重复请求
+    if (_autoDownloadState && _autoDownloadState.stage === 'downloading') {
+      return { success: false, error: '已有下载任务进行中，请稍候' };
     }
     try {
       const tmpDir = path.join(os.tmpdir(), 'neko-update');
@@ -966,6 +1045,96 @@ function setupIPC() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  后 台 自 动 下 载（主进程内部，独立于渲染进程）
+// ═══════════════════════════════════════════════════════════════════════
+/**
+ * 在主进程后台执行下载，不依赖渲染进程 IPC。
+ * 下载成功后：
+ *   - 强制更新(force=true)：直接调用 install 并退出
+ *   - 普通更新：存储到 _autoDownloadState，等待用户下次启动时安装
+ */
+async function autoDownloadUpdate(result) {
+  if (_autoDownloadState && _autoDownloadState.stage === 'downloading') {
+    console.log('[AutoDL] 已有下载任务，跳过');
+    return;
+  }
+  const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
+  if (!downloadUrl) {
+    console.warn('[AutoDL] 无可用下载链接，跳过自动下载');
+    return;
+  }
+
+  _autoDownloadState = { stage: 'downloading', version: result.latestVersion, url: downloadUrl };
+  console.log(`[AutoDL] 开始后台下载 v${result.latestVersion}...`);
+
+  try {
+    const token = configStore.get('githubToken') || '';
+    const headers = {};
+    const isGhApi = downloadUrl.includes('api.github.com');
+    if (isGhApi) {
+      if (token) headers['Authorization'] = `token ${token}`;
+      headers['Accept'] = 'application/octet-stream';
+    }
+
+    const res = await fetch(downloadUrl, { headers, signal: AbortSignal.timeout(300000), redirect: 'follow' });
+    if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`);
+
+    let fileName;
+    const cd = res.headers.get('content-disposition') || '';
+    const cdMatch = cd.match(/filename[*]?=['"']?([^'"\s;]+)/i);
+    if (cdMatch) {
+      fileName = cdMatch[1];
+    } else {
+      fileName = (res.url || downloadUrl).split('/').pop().split('?')[0] || 'NekoStatus-update.exe';
+    }
+
+    const tmpDir = path.join(os.tmpdir(), 'neko-update');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const filePath = path.join(tmpDir, fileName);
+
+    const total = parseInt(res.headers.get('content-length') || '0', 10);
+    let received = 0;
+    const chunks = [];
+    const reader = res.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+      received += value.length;
+      // 后台下载也推送进度（渲染进程可选择展示）
+      sendToRenderer('update:progress', {
+        received, total,
+        pct: total > 0 ? Math.round(received / total * 100) : -1,
+      });
+    }
+
+    const buffer = Buffer.concat(chunks);
+    fs.writeFileSync(filePath, buffer);
+    const sha256 = crypto.createHash('sha256').update(buffer).digest('hex').toLowerCase();
+
+    console.log(`[AutoDL] 下载完成: ${filePath} (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`);
+
+    if (result.forceUpdate) {
+      // 强制更新：立即安装
+      console.log('[AutoDL] 强制更新，立即启动安装程序...');
+      _autoDownloadState = null;
+      sendToRenderer('update:forceInstallStarted', { version: result.latestVersion });
+      await shell.openPath(filePath);
+      setTimeout(() => { isQuitting = true; app.quit(); }, 1500);
+    } else {
+      // 普通自动下载：存储结果，等待用户下次启动时安装
+      _autoDownloadState = { stage: 'ready', version: result.latestVersion, filePath, sha256 };
+      console.log(`[AutoDL] 普通更新 v${result.latestVersion} 已下载，等待用户下次启动时安装`);
+      sendToRenderer('update:autoDownloaded', { version: result.latestVersion, filePath, sha256 });
+    }
+  } catch (err) {
+    console.error('[AutoDL] 后台下载失败:', err.message);
+    _autoDownloadState = null;
+    sendToRenderer('update:autoDownloadFailed', { version: result.latestVersion, error: err.message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  版 本 比 较 与 通 道 过 滤
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1192,14 +1361,22 @@ app.whenReady().then(async () => {
     try {
       const result = await checkForUpdates();
       if (result.hasUpdate) {
-        // 非强制更新时检查跳过版本
         const skipped = configStore.get('skippedVersion');
         if (!result.forceUpdate && skipped === result.latestVersion) {
           console.log(`[Main] 版本 v${result.latestVersion} 已被用户跳过`);
           return;
         }
-        sendToRenderer('update:available', result);
-        console.log(`[Main] 发现新版本 v${result.latestVersion}`);
+
+        // 判断是否需要自动下载
+        const shouldAutoDownload = result.forceUpdate || configStore.get('autoDownload') === true;
+        if (shouldAutoDownload) {
+          // 后台自动下载（强制更新下载完立刻安装，普通更新等待下次启动）
+          autoDownloadUpdate(result);
+        } else {
+          // 不自动下载，只通知渲染进程弹窗提示
+          sendToRenderer('update:available', result);
+        }
+        console.log(`[Main] 发现新版本 v${result.latestVersion}${shouldAutoDownload ? '，已启动后台下载' : '，通知用户'}`);
       }
     } catch { /* 更新检查失败静默处理 */ }
   }, 15000);
@@ -1209,16 +1386,38 @@ app.whenReady().then(async () => {
     try {
       const result = await checkForUpdates();
       if (result.hasUpdate) {
-        // 非强制更新时检查跳过版本
         const skipped = configStore.get('skippedVersion');
-        if (!result.forceUpdate && skipped === result.latestVersion) {
-          return;
+        if (!result.forceUpdate && skipped === result.latestVersion) return;
+
+        const shouldAutoDownload = result.forceUpdate || configStore.get('autoDownload') === true;
+        if (shouldAutoDownload) {
+          autoDownloadUpdate(result);
+        } else {
+          sendToRenderer('update:available', result);
         }
-        sendToRenderer('update:available', result);
         console.log(`[Main] 定期检查 - 发现新版本 v${result.latestVersion}`);
       }
     } catch { /* 定期更新检查失败静默处理 */ }
   }, 30 * 60 * 1000);
+
+  // 应用启动 10s 后同步设备元数据（独立于上报服务）
+  setTimeout(() => {
+    const deviceKey = configStore.get('deviceKey');
+    if (deviceKey) {
+      const serverUrl = configStore.getServerUrl();
+      const reportEnabled = statusService.isRunning;
+      const captureEnabled = configStore.get('enableScreenshot') === true;
+      fetch(`${serverUrl}/api/device/meta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceKey, reportEnabled, captureEnabled }),
+        signal: AbortSignal.timeout(8000),
+      }).then(r => {
+        if (r.ok) console.log('[Meta] 启动元数据同步成功');
+        else console.warn(`[Meta] 启动元数据同步失败: HTTP ${r.status}`);
+      }).catch(e => console.warn('[Meta] 启动元数据同步异常:', e.message));
+    }
+  }, 10000);
 
   // 定期采集系统指标（5s 一次，配合 1m 区间每 5s 刷新），延迟首次采集等窗口渲染完成
   setTimeout(() => {
