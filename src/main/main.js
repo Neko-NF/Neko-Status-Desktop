@@ -1400,7 +1400,8 @@ app.whenReady().then(async () => {
     } catch { /* 定期更新检查失败静默处理 */ }
   }, 30 * 60 * 1000);
 
-  // 应用启动 10s 后同步设备元数据（独立于上报服务）
+  // 应用启动后同步设备元数据（兜底机制，防止渲染进程未能正常触发 syncMeta）
+  // 正常情况下 app:init 回调已在渲染进程侧完成首次同步，此处仅在延迟后补发一次确保万无一失
   setTimeout(() => {
     const deviceKey = configStore.get('deviceKey');
     if (deviceKey) {

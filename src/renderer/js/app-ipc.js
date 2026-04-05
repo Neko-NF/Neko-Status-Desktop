@@ -2712,6 +2712,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.isAutoStart) addDiagnosticEntry('系统权限', 'success', '开机自启已启用');
     if (data.isAdmin) addDiagnosticEntry('系统权限', 'success', '以管理员权限运行');
     else addDiagnosticEntry('系统权限', 'warn', '以普通用户权限运行，部分功能可能受限');
+
+    // 应用启动时立即同步当前状态到服务端
+    // 无论用户是否开启上报或截图，确保网页端能立即看到真实的开关状态
+    // 不依赖用户操作，不依赖主进程 10s 延迟定时器
+    if (cfg.deviceKey) {
+      ipc.syncMeta().catch(() => {});
+    }
   });
 
   // 上报成功 Tick
