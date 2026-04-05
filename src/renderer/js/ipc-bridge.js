@@ -100,6 +100,9 @@ const nekoIPC = {
   getFocusAssist: () => ipcRenderer.invoke('system:getFocusAssist'),
   setFocusAssist: (enabled) => ipcRenderer.invoke('system:setFocusAssist', enabled),
 
+  // ── 设备元数据同步（上报/截图开关状态推送至服务端）─────────────────
+  syncMeta: () => ipcRenderer.invoke('device:syncMeta'),
+
   // ── 事件监听 ─────────────────────────────────────────────────────────
   /**
    * 监听主进程推送的事件

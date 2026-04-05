@@ -1069,7 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const upload = document.getElementById('uploadSwitch');
     if (upload) upload.classList.toggle('on', enabled);
     addLogLine('INFO', `截图上报 → ${enabled ? '已启用' : '已禁用'}`);
-    ipc.invoke('device:syncMeta').catch(() => {}); // 同步元数据到 Web
+    ipc.syncMeta().catch(() => {}); // 同步元数据到 Web
   });
 
   // 截图页上传开关
@@ -1079,7 +1079,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 同步快捷操作自动捕获开关 UI
     const toggle = document.getElementById('toggleScreenshot');
     if (toggle) toggle.classList.toggle('on', enabled);
-    ipc.invoke('device:syncMeta').catch(() => {}); // 同步元数据到 Web
+    ipc.syncMeta().catch(() => {}); // 同步元数据到 Web
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -2773,7 +2773,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyServiceState(data.isRunning);
     addDiagnosticEntry('守护进程', 'success',
       data.isRunning ? '上报服务已启动' : '上报服务已停止');
-    ipc.invoke('device:syncMeta').catch(() => {}); // 服务状态变化时同步元数据
+    ipc.syncMeta().catch(() => {}); // 服务状态变化时同步元数据
   });
 
   // 日志条目（来自主进程 StatusService）
