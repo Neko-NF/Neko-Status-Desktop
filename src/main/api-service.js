@@ -10,6 +10,41 @@ function withTimeout(ms) {
   return AbortSignal.timeout(ms);
 }
 
+async function streamRequest(pathname, { method = 'GET', deviceKey, query, body } = {}) {
+  const serverUrl = configStore.getServerUrl();
+  const url = new URL(pathname, serverUrl);
+
+  if (query) {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        url.searchParams.set(key, String(value));
+      }
+    });
+  }
+
+  const headers = { 'X-API-Key': deviceKey };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    signal: withTimeout(15000),
+  });
+
+  const json = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(json.message || json.error || `请求失败 HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  return json;
+}
+
 /**
  * 状态上报 V2: POST /api/v2/status/report (multipart/form-data)
  * @param {object} params
@@ -180,7 +215,22 @@ async function testConnection(serverUrl) {
   }
 }
 
-module.exports = { reportStatusV2, performHandshake, testConnection, validateDeviceKey, validateDeviceKeyAt, authLogin, authRegister, authGetMe, authUpdateProfile, authGenerateDeviceKey };
+module.exports = {
+  reportStatusV2,
+  performHandshake,
+  testConnection,
+  validateDeviceKey,
+  validateDeviceKeyAt,
+  authLogin,
+  authRegister,
+  authGetMe,
+  authUpdateProfile,
+  authGenerateDeviceKey,
+  streamGetOrInitKey,
+  streamResetKey,
+  streamGetStatus,
+  streamTestSrs,
+};
 
 /**
  * 验证设备密钥: GET /api/device/validate
@@ -387,4 +437,52 @@ async function authGenerateDeviceKey(token, data) {
   }
 
   return json;
+}
+
+/**
+ * 获取或初始化 Stream Key: GET /api/v1/stream/key
+ * @param {string} deviceKey
+ */
+async function streamGetOrInitKey(deviceKey) {
+  return streamRequest('/api/v1/stream/key', {
+    method: 'GET',
+    deviceKey,
+  });
+}
+
+/**
+ * 重置 Stream Key: POST /api/v1/stream/key/reset
+ * @param {string} deviceKey
+ */
+async function streamResetKey(deviceKey) {
+  return streamRequest('/api/v1/stream/key/reset', {
+    method: 'POST',
+    deviceKey,
+  });
+}
+
+/**
+ * 查询推流状态: GET /api/v1/stream/status
+ * @param {string} deviceKey
+ * @param {object} query
+ */
+async function streamGetStatus(deviceKey, query) {
+  return streamRequest('/api/v1/stream/status', {
+    method: 'GET',
+    deviceKey,
+    query,
+  });
+}
+
+/**
+ * 测试 SRS 连通性: POST /api/v1/stream/test-srs
+ * @param {string} deviceKey
+ * @param {object} body
+ */
+async function streamTestSrs(deviceKey, body) {
+  return streamRequest('/api/v1/stream/test-srs', {
+    method: 'POST',
+    deviceKey,
+    body,
+  });
 }

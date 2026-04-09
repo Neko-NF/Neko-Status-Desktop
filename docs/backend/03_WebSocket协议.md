@@ -54,6 +54,7 @@ wss://api.koirin.com/neko/ws?device_id=dev_abc123xyz&api_key=nk_stat_xxxx
 | `config_push`       | S2C  | 服务端下推配置变更           |
 | `update_available`  | S2C  | 服务端主动推送有新版本       |
 | `force_update`      | S2C  | 服务端推送强制更新通知       |
+| `stream_status`     | S2C  | 推流状态变更通知（v1.2.0）   |
 | `disconnect`        | 双向 | 主动断开通知                 |
 
 ---
@@ -193,6 +194,40 @@ wss://api.koirin.com/neko/ws?device_id=dev_abc123xyz&api_key=nk_stat_xxxx
     "reason": "当前版本存在严重安全漏洞，必须立即更新",
     "download_url": "https://...",
     "deadline_minutes": 10
+  }
+}
+```
+
+---
+
+### stream_status（S2C，v1.2.0 预留）
+
+> 当 SRS `on_publish` / `on_unpublish` 回调触发时，服务端通过 WebSocket 主动推送推流状态变更，  
+> 替代客户端 10s 轮询 REST 接口的方式，降低 SRS 查询压力。  
+> v1.1.0 客户端暂使用轮询方案，v1.2.0 切换为此 WebSocket 推送方案。
+
+```json
+{
+  "type": "stream_status",
+  "timestamp": "2026-04-06T14:30:00Z",
+  "payload": {
+    "status": "live",
+    "stream_key": "nk_dev_abc12_f3e2d1c0",
+    "viewers": 3,
+    "bitrate_kbps": 2500,
+    "started_at": "2026-04-06T14:00:00Z"
+  }
+}
+```
+
+```json
+{
+  "type": "stream_status",
+  "timestamp": "2026-04-06T15:00:00Z",
+  "payload": {
+    "status": "idle",
+    "stream_key": "nk_dev_abc12_f3e2d1c0",
+    "duration_seconds": 3600
   }
 }
 ```

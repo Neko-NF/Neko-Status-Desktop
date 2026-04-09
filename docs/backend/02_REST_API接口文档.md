@@ -408,13 +408,198 @@ GET /api/v1/config/remote
 
 ---
 
-## 六、速率限制说明
+## 六、直播推流模块（v1.1.0 新增）
 
-| 接口类型 | 限制             |
-| -------- | ---------------- |
-| 状态上报 | 60 次/分钟/设备  |
-| 截图上传 | 10 次/分钟/设备  |
-| 更新检查 | 10 次/小时/设备  |
-| 其他接口 | 120 次/分钟/设备 |
+> 统一前缀：`/api/v1/stream`  
+> 所有接口须携带 `X-API-Key` 请求头（沿用现有鉴权体系，见《06\_认证与设备管理.md》）。  
+> 关联功能文档：《SRS直播推流-后端实现方案.md》
+
+---
+
+### 6.1 获取 / 初始化 Stream Key
+
+> 首次调用时，服务端自动为该设备生成唯一 Stream Key 并持久化；后续调用返回已有 Key。
+
+```
+GET /api/v1/stream/key
+```
+
+**Response 200**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "stream_key": "nk_dev_abc123_f3e2d1c0",
+    "created_at": "2026-04-01T08:00:00Z"
+  }
+}
+```
+
+---
+
+### 6.2 重置 Stream Key
+
+> 使旧 Key 立即失效，生成并返回新 Key。  
+> 频率限制：每设备每分钟最多 3 次，防止枚举攻击。
+
+```
+POST /api/v1/stream/key/reset
+```
+
+**Response 200**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "stream_key": "nk_dev_abc123_9a8b7c6d"
+  }
+}
+```
+
+---
+
+### 6.3 推流状态查询（代理 SRS HTTP API）
+
+> 后端代理请求 SRS 的 `GET http://{srsHost}:{srsApiPort}/api/v1/streams`，解析并返回当前推流状态。  
+> 此接口隔离客户端直连 SRS 的需求（客户端在内网，SRS 可能部署于服务器侧）。
+
+```
+GET /api/v1/stream/status
+```
+
+**Query 参数**
+
+| 参数           | 类型   | 是否必须 | 说明                         |
+| -------------- | ------ | -------- | ---------------------------- |
+| `srs_host`     | string | ✅       | SRS 服务器地址               |
+| `srs_api_port` | number | 否       | SRS HTTP API 端口，默认 1985 |
+| `stream_key`   | string | ✅       | 当前设备的 Stream Key        |
+
+**Response 200 — 推流中**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "live",
+    "viewers": 3,
+    "bitrate_kbps": 2500,
+    "duration_seconds": 1240
+  }
+}
+```
+
+**Response 200 — 未推流**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "idle"
+  }
+}
+```
+
+---
+
+### 6.4 SRS 连通性测试（代理测试）
+
+> 后端代理完成两项检测：
+>
+> 1. 向 `http://{srs_host}:{srs_api_port}/api/v1/versions` 发起 GET 请求，测试 SRS HTTP API 可达性
+> 2. 向 `{srs_host}:{srs_rtmp_port}` 发起 TCP 握手，验证 RTMP 端口可用
+
+```
+POST /api/v1/stream/test-srs
+```
+
+**Request Body**
+
+```json
+{
+  "srs_host": "192.168.1.100",
+  "srs_rtmp_port": 1935,
+  "srs_api_port": 1985
+}
+```
+
+**Response 200（成功）**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "srs_version": "5.0.200",
+    "rtmp_reachable": true,
+    "api_reachable": true
+  }
+}
+```
+
+**Response 200（失败，保持 ok:true，通过内部字段表示）**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "rtmp_reachable": false,
+    "api_reachable": false,
+    "reason": "RTMP 端口不可达，请检查服务器防火墙设置"
+  }
+}
+```
+
+---
+
+### 6.5 SRS on_publish 回调（v1.2.0，提前占位）
+
+> 在 SRS 配置文件中 `on_publish` 指向此 URL，SRS 推流开始时主动通知。  
+> 后端收到回调后，匹配 `stream` 字段与 DB 中的 `stream_key`，记录推流开始时间。
+
+```
+POST /api/v1/stream/on-publish
+```
+
+**Request Body（SRS 标准回调格式）**
+
+```json
+{
+  "action": "on_publish",
+  "client_id": "xxx",
+  "ip": "1.2.3.4",
+  "vhost": "__defaultVhost__",
+  "app": "live",
+  "stream": "nk_dev_abc123_f3e2d1c0",
+  "param": ""
+}
+```
+
+**Response 200**（SRS 要求返回 `0` 表示允许推流）
+
+```json
+{ "code": 0 }
+```
+
+---
+
+### 6.6 Stream Key 格式说明
+
+- **格式**：`nk_{deviceId前8位}_{8位随机hex}`，例如 `nk_dev_abc12_f3e2d1c0`
+- **生成**：使用 `crypto.randomBytes(4)` 密码学安全随机数，**严禁使用 `Math.random()`**
+- **日志脱敏**：所有含 `stream_key` 的日志行须掩码，如 `nk_dev_****`
+
+---
+
+## 七、速率限制说明
+
+| 接口类型        | 限制             |
+| --------------- | ---------------- |
+| 状态上报        | 60 次/分钟/设备  |
+| 截图上传        | 10 次/分钟/设备  |
+| 更新检查        | 10 次/小时/设备  |
+| Stream Key 重置 | 3 次/分钟/设备   |
+| 其他接口        | 120 次/分钟/设备 |
 
 超限返回 `429 Too Many Requests`，响应头包含 `Retry-After: <秒数>`。

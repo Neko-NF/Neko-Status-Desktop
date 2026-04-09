@@ -39,6 +39,15 @@
             --fw-medium:  500;
             --fw-semibold: 600;
             --fw-bold:   700;
+            /* ===== SRS 直播推流 Design Tokens ===== */
+            --stream-online-color: #10b981;
+            --stream-idle-color: var(--text-secondary);
+            --stream-error-color: #ef4444;
+            --stream-card-gap: 16px;
+            --obs-ws-connected: #10b981;
+            --obs-ws-disconnected: #6b7280;
+            --stream-url-bg: rgba(0, 0, 0, 0.15);
+            --stream-live-bg: color-mix(in srgb, #10b981 6%, transparent);
         }
 
         /* 昼夜模式切换 (Light Mode) */
@@ -1837,6 +1846,7 @@
     height: 28px;
     outline: none;
     -webkit-appearance: textfield;
+    appearance: textfield;
 }
 .neko-stepper-input::-webkit-inner-spin-button,
 .neko-stepper-input::-webkit-outer-spin-button { -webkit-appearance: none; }
@@ -3341,6 +3351,306 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 .first-time-status-success {
     color: var(--success-green, #22c55e);
 }
+
+/* ========================================
+   直播推流页 (page-stream)
+   ======================================== */
+
+.page-header {
+    margin-bottom: 20px;
+}
+.page-title-text {
+    font-size: 20px;
+    font-weight: var(--fw-semibold);
+    color: var(--text-main);
+    margin: 0 0 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.page-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* --- 状态横幅 --- */
+.stream-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    border-radius: var(--radius-card);
+    background: var(--glass-bg);
+    border: 1px solid var(--sidebar-border);
+    margin-bottom: 20px;
+    transition: border-color 0.3s;
+}
+.stream-status-banner[data-status="live"] {
+    border-color: var(--stream-online-color);
+    background: var(--stream-live-bg);
+}
+.stream-status-banner[data-status="error"] {
+    border-color: var(--stream-error-color);
+}
+.stream-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--stream-idle-color);
+    transition: background 0.3s;
+    flex-shrink: 0;
+}
+.stream-status-banner[data-status="live"] .stream-status-dot {
+    background: var(--stream-online-color);
+    box-shadow: 0 0 8px var(--stream-online-color);
+    animation: pulse-dot 1.5s infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+.stream-status-label {
+    font-size: 14px;
+    font-weight: var(--fw-medium);
+    color: var(--text-main);
+}
+.stream-status-duration {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+
+/* --- 通用推流卡片 --- */
+.stream-card {
+    background: var(--glass-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: var(--radius-card);
+    padding: 20px 24px;
+    margin-bottom: var(--stream-card-gap);
+}
+.card-section-title {
+    font-size: 13px;
+    font-weight: var(--fw-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* --- 推流 URL 展示 --- */
+.stream-url-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.stream-url-display {
+    flex: 1;
+    font-family: "Consolas", monospace;
+    font-size: 13px;
+    color: var(--theme-color);
+    background: var(--stream-url-bg);
+    padding: 8px 12px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--sidebar-border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.stream-key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.stream-key-value {
+    font-family: "Consolas", monospace;
+    color: var(--text-main);
+    letter-spacing: 0.05em;
+}
+.label-muted {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* --- OBS 联动区 --- */
+.obs-mode-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.obs-ws-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--obs-ws-disconnected);
+    flex-shrink: 0;
+    transition: background 0.3s;
+}
+.obs-ws-status-dot[data-connected="true"] {
+    background: var(--obs-ws-connected);
+    box-shadow: 0 0 6px var(--obs-ws-connected);
+}
+.obs-ws-config-row {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+}
+/* OBS 输入行内的 glass-input 覆盖：让 host/password flex 撑开，port 固定 */
+.obs-ws-config-row .glass-input {
+    flex: 1;
+    width: auto;
+    min-width: 80px;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+.obs-ws-config-row .glass-input.obs-port-input {
+    flex: 0 0 80px;
+    width: 80px;
+}
+.obs-actions-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.obs-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+.obs-divider::before,
+.obs-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--sidebar-border);
+}
+.obs-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 12px;
+}
+
+/* --- 帮助折叠区 --- */
+.stream-help-card { cursor: default; }
+.stream-help-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s;
+}
+.stream-help-toggle:hover { color: var(--text-main); }
+#streamHelpCaret {
+    margin-left: auto;
+    transition: transform 0.25s;
+}
+#streamHelpCaret.open { transform: rotate(180deg); }
+.stream-help-content { margin-top: 14px; }
+.help-steps {
+    padding-left: 18px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.help-steps li {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* --- 引导卡片 --- */
+.stream-guide-card {
+    text-align: center;
+    padding: 48px 24px;
+}
+.guide-icon {
+    font-size: 48px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+.stream-guide-card h3 {
+    font-size: 18px;
+    font-weight: var(--fw-semibold);
+    color: var(--text-main);
+    margin-bottom: 8px;
+}
+.stream-guide-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-bottom: 24px;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.stream-guide-action-row {
+    display: flex;
+    justify-content: center;
+}
+/* 引导卡片 CTA 按钮：居中、适宜宽度 */
+.stream-guide-btn {
+    justify-content: center;
+    padding: 12px 32px;
+    min-width: 180px;
+    font-weight: var(--fw-medium);
+    letter-spacing: 0.01em;
+}
+
+/* --- 测试结果标签 --- */
+.test-result-label {
+    font-size: 13px;
+    margin-left: 8px;
+}
+.test-result-label.success { color: var(--stream-online-color); }
+.test-result-label.error   { color: var(--stream-error-color); }
+
+/* --- 推流主控区容器 --- */
+.stream-main-area {
+    display: flex;
+    flex-direction: column;
+}
+
+/* icon-btn-sm 小尺寸图标按钮 */
+.icon-btn-sm {
+    font-size: 14px;
+    padding: 4px 6px;
+}
+
+/* SRS 设置页专属：输入框宽度约束类 */
+.srs-input-host { width: 220px; }
+.srs-input-port { width: 80px; }
+.srs-input-app  { width: 110px; }
+
+/* SRS 设置页操作行（分隔线 + 间距） */
+.srs-settings-action-row {
+    border-top: 1px solid var(--sidebar-border);
+    padding-top: 12px;
+    margin-top: 4px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* SRS / 推流页 紧凑型操作按钮（复用 action-btn，缩减 padding）*/
+.action-btn.stream-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
 .first-time-status-error {
     color: var(--error-coral, #ff6b6b);
 }

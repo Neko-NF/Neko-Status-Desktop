@@ -103,6 +103,17 @@ const nekoIPC = {
   // ── 设备元数据同步（上报/截图开关状态推送至服务端）─────────────────
   syncMeta: () => ipcRenderer.invoke('device:syncMeta'),
 
+  // ── 直播推流 ─────────────────────────────────────────────────────────
+  getStreamConfig:       ()      => ipcRenderer.invoke('stream:getConfig'),
+  saveStreamConfig:      (cfg)   => ipcRenderer.invoke('stream:saveConfig', cfg),
+  getStreamKey:          ()      => ipcRenderer.invoke('stream:getKey'),
+  resetStreamKey:        ()      => ipcRenderer.invoke('stream:resetKey'),
+  getStreamLiveStatus:   ()      => ipcRenderer.invoke('stream:getLiveStatus'),
+  testSrsConnection:     (cfg)   => ipcRenderer.invoke('stream:testSrs', cfg),
+  testObsWebSocket:      (wsCfg) => ipcRenderer.invoke('stream:testObsWs', wsCfg),
+  applyStreamConfigToObs:(wsCfg) => ipcRenderer.invoke('stream:applyToObs', wsCfg),
+  exportObsServiceConfig:()      => ipcRenderer.invoke('stream:exportConfig'),
+
   // ── 事件监听 ─────────────────────────────────────────────────────────
   /**
    * 监听主进程推送的事件

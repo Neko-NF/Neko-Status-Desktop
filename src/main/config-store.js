@@ -66,7 +66,29 @@ const DEFAULTS = {
   authPromptDismissed: false,     // 首次登录提示是否已关闭
   serverConfigured: false,        // 用户是否已成功配置并测试过服务器连接
   localTestAccounts: [],          // 本地测试账户 [{username, password, createdAt}]
+  // 直播推流配置
+  streamConfig: {
+    srsHost: '',
+    srsRtmpPort: 1935,
+    srsApp: 'live',
+    srsApiPort: 1985,
+    streamKey: '',
+    obsWsHost: '127.0.0.1',
+    obsWsPort: 4455,
+    obsWsPasswordEncrypted: '',
+  },
 };
+
+function mergeDefaults(data = {}) {
+  return {
+    ...DEFAULTS,
+    ...data,
+    streamConfig: {
+      ...DEFAULTS.streamConfig,
+      ...(data.streamConfig || {}),
+    },
+  };
+}
 
 class ConfigStore {
   constructor() {
@@ -85,9 +107,9 @@ class ConfigStore {
     if (this._data !== null) return;
     try {
       const raw = fs.readFileSync(this._getPath(), 'utf8');
-      this._data = { ...DEFAULTS, ...JSON.parse(raw) };
+      this._data = mergeDefaults(JSON.parse(raw));
     } catch {
-      this._data = { ...DEFAULTS };
+      this._data = mergeDefaults();
     }
   }
 
@@ -106,19 +128,32 @@ class ConfigStore {
 
   set(key, value) {
     this._load();
-    this._data[key] = value;
+    if (key === 'streamConfig') {
+      this._data.streamConfig = {
+        ...DEFAULTS.streamConfig,
+        ...(value || {}),
+      };
+    } else {
+      this._data[key] = value;
+    }
     this._save();
   }
 
   setMany(obj) {
     this._load();
     Object.assign(this._data, obj);
+    if (Object.prototype.hasOwnProperty.call(obj, 'streamConfig')) {
+      this._data.streamConfig = {
+        ...DEFAULTS.streamConfig,
+        ...(obj.streamConfig || {}),
+      };
+    }
     this._save();
   }
 
   getAll() {
     this._load();
-    return { ...this._data };
+    return mergeDefaults(this._data);
   }
 
   /** 获取当前使用的服务器基础 URL */

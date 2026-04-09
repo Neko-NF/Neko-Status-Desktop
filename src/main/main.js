@@ -26,6 +26,7 @@ const configStore   = require('./config-store');
 const statusService = require('./status-service');
 const systemUtils   = require('./system-utils');
 const apiService    = require('./api-service');
+const streamService = require('./stream-service');
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
 const APP_NAME    = 'Neko Status';
@@ -469,6 +470,17 @@ function setupIPC() {
 
   // ── 连接测试 ──────────────────────────────────────────────────────────
   ipcMain.handle('api:testConnection', (_, serverUrl) => apiService.testConnection(serverUrl));
+
+  // ── 直播推流 ──────────────────────────────────────────────────────────
+  ipcMain.handle('stream:getConfig', () => streamService.getStreamConfig());
+  ipcMain.handle('stream:saveConfig', (_, config) => streamService.saveStreamConfig(config));
+  ipcMain.handle('stream:getKey', () => streamService.getOrInitStreamKey());
+  ipcMain.handle('stream:resetKey', () => streamService.resetStreamKey());
+  ipcMain.handle('stream:getLiveStatus', () => streamService.getStreamLiveStatus());
+  ipcMain.handle('stream:testSrs', (_, config) => streamService.testSrsConnection(config));
+  ipcMain.handle('stream:testObsWs', (_, config) => streamService.testObsWebSocket(config));
+  ipcMain.handle('stream:applyToObs', (_, config) => streamService.applyStreamConfigToObs(config));
+  ipcMain.handle('stream:exportConfig', () => streamService.exportObsServiceConfig());
 
   // ── 设备密钥验证 ──────────────────────────────────────────────────────
   ipcMain.handle('api:validateKey', async () => {
@@ -1447,4 +1459,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   statusService.stop();
+  streamService.disconnectObs();
 });

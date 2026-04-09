@@ -354,6 +354,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _islandQueue.push({ text, type, durationMs });
     if (!_islandActive) _drainIslandQueue();
   }
+  // 暴露为全局，供 app.js 内的推流页函数调用
+  window.showNekoIsland = showNekoIsland;
 
   function _drainIslandQueue() {
     const host = document.getElementById('nekoIsland');
@@ -3825,6 +3827,60 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeAuthModal() {
     if (authModal) authModal.style.display = 'none';
   }
+
+  // ===== MOCK IPC — 直播推流（仅显式开启时使用）=====
+  // 默认走真实主进程 IPC，只有手动设置 window.__NEKO_ENABLE_STREAM_MOCK__ = true 时才启用本地 Mock。
+  if (window.__NEKO_ENABLE_STREAM_MOCK__ === true && window.nekoIPC) {
+    // Mock 内存存储
+    window._mockStreamConfig = {
+      srsHost: '',
+      srsRtmpPort: 1935,
+      srsApp: 'live',
+      srsApiPort: 1985,
+      streamKey: '',
+      obsWsHost: '127.0.0.1',
+      obsWsPort: 4455,
+      obsWsPassword: '',
+    };
+
+    window.nekoIPC.getStreamConfig = async () => ({ ...window._mockStreamConfig });
+
+    window.nekoIPC.saveStreamConfig = async (cfg) => {
+      Object.assign(window._mockStreamConfig, cfg);
+      return { ok: true };
+    };
+
+    window.nekoIPC.getStreamKey = async () => ({ stream_key: window._mockStreamConfig.streamKey || '' });
+
+    window.nekoIPC.resetStreamKey = async () => {
+      const newKey = 'nk_mock_' + Math.random().toString(36).slice(2, 10);
+      window._mockStreamConfig.streamKey = newKey;
+      return { stream_key: newKey };
+    };
+
+    window.nekoIPC.getStreamLiveStatus = async () => 'idle';
+
+    window.nekoIPC.testSrsConnection = async () => ({
+      ok: false,
+      reason: 'Mock 模式：尚无真实 SRS 服务器',
+      rtmp_reachable: false,
+      api_reachable: false,
+    });
+
+    window.nekoIPC.testObsWebSocket = async () => ({
+      connected: false,
+      reason: 'Mock 模式：尚无真实 OBS 进程',
+    });
+
+    window.nekoIPC.applyStreamConfigToObs = async () => ({
+      ok: false,
+      error: 'Mock 模式：尚无真实 OBS 进程',
+    });
+
+    window.nekoIPC.exportObsServiceConfig = async () =>
+      'C:\\Users\\Demo\\Desktop\\neko-obs-stream-config.json';
+  }
+  // ===== END MOCK =====
 
   // 关闭按钮
   const closeAuthBtn = document.getElementById('closeAuthModal');

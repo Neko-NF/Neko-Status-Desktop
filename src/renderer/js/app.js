@@ -44,6 +44,7 @@
                             consoleArea: document.getElementById('consoleArea'),
                             'page-device-status': document.getElementById('page-device-status'),
                             'page-screenshot': document.getElementById('page-screenshot'),
+                            'page-stream': document.getElementById('page-stream'),
                             'page-services': document.getElementById('page-services'),
                             'page-update': document.getElementById('page-update'),
                             'page-settings': document.getElementById('page-settings'),
@@ -97,6 +98,16 @@
                             if (topNavEditBtn) topNavEditBtn.classList.add('hidden-action');
                             if (headerTitleText) {
                                 headerTitleText.innerHTML = '<i class="ph ph-gear" style="color: var(--theme-color);"></i>\n                    设置 / Settings';
+                            }
+                        } else if (targetAreaId === 'page-stream') {
+                            if (topNavEditBtn) topNavEditBtn.classList.add('hidden-action');
+                            if (headerTitleText) {
+                                headerTitleText.innerHTML = '<i class="ph ph-broadcast" style="color: var(--theme-color);"></i>\n                    直播推流 / Live Stream';
+                            }
+                            // 首次进入推流页时初始化
+                            if (typeof initStreamPage === 'function' && !window._streamPageInited) {
+                                window._streamPageInited = true;
+                                initStreamPage();
                             }
                         } else if (targetAreaId === 'page-about') {
                             if (topNavEditBtn) topNavEditBtn.classList.add('hidden-action');
@@ -1217,6 +1228,238 @@
 
             // ======== 更新中心：回滚按钮 UI 占位（实际逻辑由 app-ipc.js 覆盖）======== //
             // rollbackBtn 的真实处理由 app-ipc.js replaceHandler('rollbackBtn') 接管
+
+            // ======== 直播推流页 初始化逻辑 ======== //
+            // showNekoIsland 由 app-ipc.js 暴露到 window，此处统一代理调用
+            function showNekoIsland(text, type = 'info') {
+                if (typeof window.showNekoIsland === 'function') window.showNekoIsland(text, type);
+            }
+
+            function initStreamPage() {
+                // 1. 读取 SRS 配置，判断显示引导卡片还是主控区
+                if (!window.nekoIPC || !window.nekoIPC.getStreamConfig) return;
+                window.nekoIPC.getStreamConfig().then((config) => {
+                    const hasSrsConfig = config && config.srsHost && config.srsHost.trim() !== '';
+                    const guideCard = document.getElementById('streamGuideCard');
+                    const mainArea  = document.getElementById('streamMainArea');
+                    if (guideCard) guideCard.style.display = hasSrsConfig ? 'none' : '';
+                    if (mainArea)  mainArea.style.display  = hasSrsConfig ? '' : 'none';
+                    if (hasSrsConfig) {
+                        renderStreamUrl(config);
+                        startStreamStatusPolling();
+                    }
+                    // 回写设置页输入框
+                    if (config) {
+                        const h = document.getElementById('srsHost'); if (h) h.value = config.srsHost || '';
+                        const p = document.getElementById('srsRtmpPort'); if (p) p.value = config.srsRtmpPort || 1935;
+                        const a = document.getElementById('srsApp'); if (a) a.value = config.srsApp || 'live';
+                        const ap = document.getElementById('srsApiPort'); if (ap) ap.value = config.srsApiPort || 1985;
+                    }
+                });
+
+                // 2. 前往配置按钮
+                const goBtn = document.getElementById('goToStreamSettings');
+                if (goBtn) {
+                    goBtn.addEventListener('click', () => {
+                        const settingsNav = document.querySelector('[data-target="page-settings"]');
+                        if (settingsNav) settingsNav.click();
+                        setTimeout(() => {
+                            const el = document.getElementById('settings-stream');
+                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }, 150);
+                    });
+                }
+
+                // 3. 复制 RTMP URL
+                const copyBtn = document.getElementById('copyRtmpUrlBtn');
+                if (copyBtn) {
+                    copyBtn.addEventListener('click', () => {
+                        const url = (document.getElementById('streamRtmpUrl') || {}).textContent || '';
+                        navigator.clipboard.writeText(url.trim()).then(() => {
+                            showNekoIsland('✅ 已复制推流地址');
+                        });
+                    });
+                }
+
+                // 4. 重置 Stream Key
+                const resetBtn = document.getElementById('resetStreamKeyBtn');
+                if (resetBtn) {
+                    resetBtn.addEventListener('click', () => {
+                        if (!confirm('重置后旧 Stream Key 立即失效，OBS 需重新配置。确认重置？')) return;
+                        window.nekoIPC.resetStreamKey().then((res) => {
+                            const newKey = typeof res === 'string' ? res : (res && res.stream_key);
+                            if (newKey) {
+                                const keyEl = document.getElementById('streamKeyDisplay');
+                                if (keyEl) keyEl.textContent = newKey;
+                                window.nekoIPC.getStreamConfig().then(cfg => renderStreamUrl({ ...cfg, streamKey: newKey }));
+                                showNekoIsland('✅ Stream Key 已重置');
+                            }
+                        });
+                    });
+                }
+
+                // 5. 测试 OBS WebSocket
+                const testObsBtn = document.getElementById('testObsWsBtn');
+                if (testObsBtn) testObsBtn.addEventListener('click', testObsWebSocket);
+
+                // 6. 一键配置 OBS
+                const applyBtn = document.getElementById('applyToObsBtn');
+                if (applyBtn) applyBtn.addEventListener('click', applyStreamConfigToObs);
+
+                // 7. 导出 OBS 配置文件
+                const exportBtn = document.getElementById('exportObsConfigBtn');
+                if (exportBtn) {
+                    exportBtn.addEventListener('click', () => {
+                        window.nekoIPC.exportObsServiceConfig().then((savedPath) => {
+                            showNekoIsland('✅ 已导出: ' + savedPath);
+                        }).catch(e => showNekoIsland('❌ 导出失败: ' + e.message));
+                    });
+                }
+
+                // 8. 帮助折叠展开
+                const helpToggle = document.getElementById('streamHelpToggle');
+                if (helpToggle) {
+                    helpToggle.addEventListener('click', () => {
+                        const content = document.getElementById('streamHelpContent');
+                        const caret   = document.getElementById('streamHelpCaret');
+                        if (!content) return;
+                        const isOpen = content.style.display !== 'none';
+                        content.style.display = isOpen ? 'none' : '';
+                        if (caret) caret.classList.toggle('open', !isOpen);
+                    });
+                }
+
+                // 9. 设置页保存按钮
+                const saveSrsBtn = document.getElementById('saveSrsSettingsBtn');
+                if (saveSrsBtn) {
+                    saveSrsBtn.addEventListener('click', () => {
+                        const cfg = collectSrsSettings();
+                        window.nekoIPC.saveStreamConfig(cfg).then(() => {
+                            showNekoIsland('✅ SRS 配置已保存');
+                            // 保存后刷新推流页显示状态
+                            window.nekoIPC.getStreamConfig().then((config) => {
+                                const hasSrsConfig = config && config.srsHost && config.srsHost.trim() !== '';
+                                const guideCard = document.getElementById('streamGuideCard');
+                                const mainArea  = document.getElementById('streamMainArea');
+                                if (guideCard) guideCard.style.display = hasSrsConfig ? 'none' : '';
+                                if (mainArea)  mainArea.style.display  = hasSrsConfig ? '' : 'none';
+                                if (hasSrsConfig) { renderStreamUrl(config); startStreamStatusPolling(); }
+                            });
+                        });
+                    });
+                }
+
+                // 10. 设置页测试按钮
+                const testSrsBtn = document.getElementById('testSrsConnectionBtn');
+                if (testSrsBtn) {
+                    testSrsBtn.addEventListener('click', () => {
+                        const cfg = collectSrsSettings();
+                        const resultEl = document.getElementById('srsTestResult');
+                        if (resultEl) { resultEl.textContent = '测试中...'; resultEl.className = 'test-result-label'; }
+                        window.nekoIPC.testSrsConnection(cfg).then((res) => {
+                            if (resultEl) {
+                                if (res && res.ok) {
+                                    resultEl.textContent = '✅ 连通成功' + (res.srsVersion ? ' (SRS ' + res.srsVersion + ')' : '');
+                                    resultEl.className = 'test-result-label success';
+                                } else {
+                                    resultEl.textContent = '❌ ' + (res && res.reason ? res.reason : '连接失败');
+                                    resultEl.className = 'test-result-label error';
+                                }
+                            }
+                        }).catch(e => {
+                            if (resultEl) { resultEl.textContent = '❌ ' + e.message; resultEl.className = 'test-result-label error'; }
+                        });
+                    });
+                }
+            }
+
+            function renderStreamUrl(config) {
+                const key  = config.streamKey || '';
+                const host = config.srsHost || 'your-server';
+                const port = config.srsRtmpPort || 1935;
+                const app  = config.srsApp || 'live';
+                const url  = 'rtmp://' + host + ':' + port + '/' + app + '/' + key;
+                const urlEl = document.getElementById('streamRtmpUrl');
+                const keyEl = document.getElementById('streamKeyDisplay');
+                if (urlEl) urlEl.textContent = url;
+                if (keyEl) keyEl.textContent = key;
+            }
+
+            let streamPollTimer = null;
+            function startStreamStatusPolling() {
+                if (streamPollTimer) clearInterval(streamPollTimer);
+                streamPollTimer = setInterval(() => {
+                    if (!window.nekoIPC || !window.nekoIPC.getStreamLiveStatus) return;
+                    window.nekoIPC.getStreamLiveStatus().then((status) => {
+                        updateStreamStatusBanner(status);
+                    });
+                }, 10000);
+                // 立即刷新一次
+                if (window.nekoIPC && window.nekoIPC.getStreamLiveStatus) {
+                    window.nekoIPC.getStreamLiveStatus().then(updateStreamStatusBanner);
+                }
+            }
+
+            function updateStreamStatusBanner(status) {
+                const banner = document.getElementById('streamStatusBanner');
+                const label  = document.getElementById('streamStatusLabel');
+                const labels = { live: '直播中', idle: '未推流', error: '连接失败' };
+                if (banner) banner.dataset.status = status;
+                if (label)  label.textContent = labels[status] || '未知';
+            }
+
+            async function testObsWebSocket() {
+                const host = (document.getElementById('obsWsHost') || {}).value || '127.0.0.1';
+                const port = (document.getElementById('obsWsPort') || {}).value || '4455';
+                const pass = (document.getElementById('obsWsPassword') || {}).value || '';
+                const dot  = document.getElementById('obsWsDot');
+                const lbl  = document.getElementById('obsWsLabel');
+                const applyBtn = document.getElementById('applyToObsBtn');
+                if (lbl) lbl.textContent = '连接中...';
+                try {
+                    const res = await window.nekoIPC.testObsWebSocket({ host, port: Number(port), password: pass });
+                    if (res && res.connected) {
+                        if (dot) dot.setAttribute('data-connected', 'true');
+                        if (lbl) lbl.textContent = 'OBS 已连接' + (res.obsVersion ? ' (v' + res.obsVersion + ')' : '');
+                        if (applyBtn) applyBtn.disabled = false;
+                        showNekoIsland('✅ OBS WebSocket 连接成功');
+                    } else {
+                        if (dot) dot.setAttribute('data-connected', 'false');
+                        if (lbl) lbl.textContent = 'OBS WebSocket 未连接';
+                        if (applyBtn) applyBtn.disabled = true;
+                        showNekoIsland('❌ ' + (res && res.reason ? res.reason : 'OBS 连接失败'));
+                    }
+                } catch (e) {
+                    if (dot) dot.setAttribute('data-connected', 'false');
+                    if (lbl) lbl.textContent = 'OBS WebSocket 未连接';
+                    showNekoIsland('❌ OBS 连接异常: ' + e.message);
+                }
+            }
+
+            async function applyStreamConfigToObs() {
+                const host = (document.getElementById('obsWsHost') || {}).value || '127.0.0.1';
+                const port = (document.getElementById('obsWsPort') || {}).value || '4455';
+                const pass = (document.getElementById('obsWsPassword') || {}).value || '';
+                try {
+                    const res = await window.nekoIPC.applyStreamConfigToObs({ host, port: Number(port), password: pass });
+                    if (res && res.ok) {
+                        showNekoIsland('✅ OBS 推流配置已应用，可在 OBS 中开始推流');
+                    } else {
+                        showNekoIsland('❌ 配置失败: ' + (res && res.error ? res.error : '未知错误'));
+                    }
+                } catch (e) {
+                    showNekoIsland('❌ 配置异常: ' + e.message);
+                }
+            }
+
+            function collectSrsSettings() {
+                return {
+                    srsHost:     (document.getElementById('srsHost') || {}).value || '',
+                    srsRtmpPort: Number((document.getElementById('srsRtmpPort') || {}).value) || 1935,
+                    srsApp:      (document.getElementById('srsApp') || {}).value || 'live',
+                    srsApiPort:  Number((document.getElementById('srsApiPort') || {}).value) || 1985,
+                };
+            }
 
             // ======== 服务与自启动 - 危险操作二次确认 ======== //
             // 带 data-confirm 属性的按钮点击后进入「确认态」，3s 内再次点击才执行

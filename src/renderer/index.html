@@ -33,6 +33,7 @@
             <a class="nav-item active" data-target="mainDashboardArea"><i class="ph ph-squares-four"></i>仪表盘</a>
             <a class="nav-item" data-target="page-device-status"><i class="ph ph-hard-drives"></i>设备状态</a>
             <a class="nav-item" data-target="page-screenshot"><i class="ph ph-image"></i>截图与活动</a>
+            <a class="nav-item" data-target="page-stream"><i class="ph ph-broadcast"></i>直播推流</a>
             <a class="nav-item" data-target="page-services"><i class="ph ph-cpu"></i>服务与自启动</a>
             <a class="nav-item" data-target="page-update"><i class="ph ph-cloud-arrow-down"></i>更新中心</a>
             <!-- 隐藏的控制台入口，默认不显示 -->
@@ -911,6 +912,106 @@
                 </div>
             </div>
 
+    <!-- ========== 直播推流页 ========== -->
+    <div class="page" id="page-stream" style="display:none; animation: fadeIn 0.3s ease;">
+        <div class="content-safe-area">
+            <!-- 页头 -->
+            <div class="page-header">
+                <h2 class="page-title-text"><i class="ph ph-broadcast"></i> 直播推流</h2>
+                <span class="page-subtitle">通过 SRS 服务器一键推流至 OBS</span>
+            </div>
+
+            <!-- 推流状态横幅 -->
+            <div class="stream-status-banner" id="streamStatusBanner" data-status="idle">
+                <div class="stream-status-dot" id="streamStatusDot"></div>
+                <span class="stream-status-label" id="streamStatusLabel">未推流</span>
+                <span class="stream-status-duration" id="streamStatusDuration"></span>
+            </div>
+
+            <!-- 引导卡片（SRS 未配置时显示） -->
+            <div class="stream-card stream-guide-card" id="streamGuideCard">
+                <div class="guide-icon"><i class="ph ph-broadcast"></i></div>
+                <h3>开始使用直播推流</h3>
+                <p>你还没有配置 SRS 流媒体服务器。前往设置填写服务器地址后，即可自动生成专属推流链接。</p>
+                <div class="stream-guide-action-row">
+                    <button class="action-btn primary stream-guide-btn" id="goToStreamSettings">
+                        <i class="ph ph-gear-six"></i>前往推流配置
+                    </button>
+                </div>
+            </div>
+
+            <!-- 推流主控区（SRS 已配置时显示） -->
+            <div class="stream-main-area" id="streamMainArea" style="display:none;">
+
+                <!-- 推流 URL 展示卡 -->
+                <div class="stream-card" id="streamUrlCard">
+                    <div class="card-section-title"><i class="ph ph-link"></i> 推流地址</div>
+                    <div class="stream-url-row">
+                        <div class="stream-url-display" id="streamRtmpUrl">rtmp://your-srs-server/live/nk_dev_000_xxxxxxxx</div>
+                        <button class="icon-btn" id="copyRtmpUrlBtn" title="复制推流地址"><i class="ph ph-copy"></i></button>
+                    </div>
+                    <div class="stream-key-row">
+                        <span class="label-muted">Stream Key：</span>
+                        <span class="stream-key-value" id="streamKeyDisplay">nk_dev_000_xxxxxxxx</span>
+                        <button class="icon-btn icon-btn-sm" id="resetStreamKeyBtn" title="重置 Stream Key"><i class="ph ph-arrows-clockwise"></i></button>
+                    </div>
+                </div>
+
+                <!-- OBS 联动卡 -->
+                <div class="stream-card" id="obsLinkCard">
+                    <div class="card-section-title"><i class="ph ph-monitor-play"></i> OBS 快速联动</div>
+
+                    <!-- OBS WebSocket 模式 -->
+                    <div class="obs-mode-section" id="obsModeWebsocket">
+                        <div class="obs-mode-indicator">
+                            <div class="obs-ws-status-dot" id="obsWsDot" data-connected="false"></div>
+                            <span id="obsWsLabel">OBS WebSocket 未连接</span>
+                        </div>
+                        <p class="obs-hint">确保 OBS 已安装并开启 WebSocket 服务（OBS → 工具 → obs-websocket 设置 → 启用）。</p>
+                        <div class="obs-ws-config-row">
+                            <input type="text" class="glass-input" id="obsWsHost" placeholder="127.0.0.1" value="127.0.0.1" />
+                            <input type="number" class="glass-input obs-port-input" id="obsWsPort" placeholder="4455" value="4455" />
+                            <input type="password" class="glass-input" id="obsWsPassword" placeholder="密码（可选）" />
+                        </div>
+                        <div class="obs-actions-row">
+                            <button class="action-btn stream-btn" id="testObsWsBtn"><i class="ph ph-plug"></i> 测试连接</button>
+                            <button class="action-btn primary stream-btn" id="applyToObsBtn" disabled><i class="ph ph-magic-wand"></i> 一键配置 OBS 推流</button>
+                        </div>
+                    </div>
+
+                    <!-- 分隔线 + 降级方案 -->
+                    <div class="obs-divider"><span>或者</span></div>
+
+                    <!-- 文件导出降级模式 -->
+                    <div class="obs-mode-section" id="obsModeExport">
+                        <p class="obs-hint">无法使用 WebSocket？导出配置文件后在 OBS 中手动导入（仅需操作一次）。</p>
+                        <button class="action-btn stream-btn" id="exportObsConfigBtn"><i class="ph ph-download-simple"></i> 导出 OBS 服务配置文件</button>
+                    </div>
+                </div>
+
+                <!-- 推流操作说明折叠区 -->
+                <div class="stream-card stream-help-card" id="streamHelpCard">
+                    <div class="stream-help-toggle" id="streamHelpToggle">
+                        <i class="ph ph-question"></i> 如何使用 OBS 推流？
+                        <i class="ph ph-caret-down" id="streamHelpCaret"></i>
+                    </div>
+                    <div class="stream-help-content" id="streamHelpContent" style="display:none;">
+                        <ol class="help-steps">
+                            <li>确保 SRS 服务器已启动（可在设置页「测试 SRS 连通性」中验证）</li>
+                            <li>点击「一键配置 OBS 推流」，等待提示「OBS 已就绪」</li>
+                            <li>在 OBS 中点击「开始推流」，本页面状态将自动更新为「直播中」</li>
+                            <li>如 OBS WebSocket 不可用，导出配置文件后在 OBS「文件 → 导入」中载入</li>
+                        </ol>
+                    </div>
+                </div>
+
+            </div>
+            <!-- /streamMainArea -->
+        </div>
+        <!-- /content-safe-area -->
+    </div>
+    <!-- /page-stream -->
+
     <!-- ========== 更新中心 ========== -->
     <div class="page" id="page-update" style="display: none; animation: fadeIn 0.3s ease;">
         <div class="content-safe-area">
@@ -1376,6 +1477,59 @@
                                 <div class="toggle-switch on" id="stg2FASwitch"></div>
                             </div>
                         </div>
+
+                        <!-- ========== 直播推流配置 ========== -->
+                        <div class="settings-group-label"><i class="ph ph-broadcast"></i> 直播推流</div>
+                        <div class="glass-card settings-group-card" id="settings-stream">
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-globe settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">SRS 服务器地址</div>
+                                        <div class="settings-row-desc">填写 SRS 服务器 IP 或域名（不含协议头）</div>
+                                    </div>
+                                </div>
+                                <input type="text" class="glass-input srs-input-host" id="srsHost" placeholder="例：192.168.1.100 或 live.example.com" />
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-network settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">RTMP 端口</div>
+                                        <div class="settings-row-desc">SRS 默认监听端口为 1935</div>
+                                    </div>
+                                </div>
+                                <input type="number" class="glass-input srs-input-port" id="srsRtmpPort" placeholder="1935" value="1935" min="1" max="65535" />
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-tag settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">应用名（App）</div>
+                                        <div class="settings-row-desc">SRS 推流应用名，默认为 live</div>
+                                    </div>
+                                </div>
+                                <input type="text" class="glass-input srs-input-app" id="srsApp" placeholder="live" value="live" />
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-plugs settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">SRS HTTP API 端口</div>
+                                        <div class="settings-row-desc">用于查询推流状态，SRS 默认为 1985</div>
+                                    </div>
+                                </div>
+                                <input type="number" class="glass-input srs-input-port" id="srsApiPort" placeholder="1985" value="1985" min="1" max="65535" />
+                            </div>
+                            <div class="settings-row srs-settings-action-row">
+                                <div class="settings-row-left">
+                                    <button class="action-btn primary stream-btn" id="saveSrsSettingsBtn"><i class="ph ph-floppy-disk"></i> 保存配置</button>
+                                    <button class="action-btn stream-btn" id="testSrsConnectionBtn"><i class="ph ph-wifi-high"></i> 测试连通性</button>
+                                    <span class="test-result-label" id="srsTestResult"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- /直播推流配置 -->
 
                     </div>
                 </div>
