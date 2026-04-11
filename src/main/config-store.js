@@ -60,6 +60,7 @@ const DEFAULTS = {
   autoDownload: true,              // 发现更新时自动下载安装包
   skippedVersion: '',
   lastUpdateCheck: 0,
+  pendingInstall: null,            // 已下载待安装的更新 { version, filePath, sha256 }（跨会话持久化）
   // 用户认证
   authToken: '',                  // JWT token（桌面客户端专用）
   authUser: null,                 // { id, username, email, avatar, role }

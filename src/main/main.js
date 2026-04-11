@@ -676,18 +676,28 @@ function setupIPC() {
     if (_autoDownloadState && _autoDownloadState.stage === 'ready') {
       return { hasPending: true, version: _autoDownloadState.version, filePath: _autoDownloadState.filePath, sha256: _autoDownloadState.sha256 };
     }
+    // 回退：检查跨会话持久化的待安装记录（重启后内存状态已清空时使用）
+    const persisted = configStore.get('pendingInstall');
+    if (persisted && persisted.filePath && fs.existsSync(persisted.filePath)) {
+      return { hasPending: true, version: persisted.version, filePath: persisted.filePath, sha256: persisted.sha256 };
+    }
     return { hasPending: false };
   });
 
   // ── 安装已下载的待安装更新 ────────────────────────────────────────────
   ipcMain.handle('update:installPending', async () => {
-    if (!_autoDownloadState || _autoDownloadState.stage !== 'ready') {
+    // 优先使用内存状态，回退到持久化记录
+    const state = (_autoDownloadState && _autoDownloadState.stage === 'ready')
+      ? _autoDownloadState
+      : configStore.get('pendingInstall');
+    if (!state || !state.filePath) {
       return { success: false, error: '没有待安装的更新' };
     }
-    const { filePath, sha256 } = _autoDownloadState;
+    const { filePath, sha256 } = state;
     const resolvedPath = path.resolve(filePath);
     if (!fs.existsSync(resolvedPath)) {
       _autoDownloadState = null;
+      configStore.set('pendingInstall', null);
       return { success: false, error: '安装文件已不存在，请重新下载' };
     }
     if (sha256) {
@@ -695,9 +705,12 @@ function setupIPC() {
       const actual = crypto.createHash('sha256').update(data).digest('hex').toLowerCase();
       if (actual !== sha256.toLowerCase()) {
         _autoDownloadState = null;
+        configStore.set('pendingInstall', null);
         return { success: false, error: 'SHA256 校验失败，文件可能已损坏' };
       }
     }
+    configStore.set('pendingInstall', null);
+    _autoDownloadState = null;
     shell.openPath(resolvedPath).then(() => {
       setTimeout(() => { isQuitting = true; app.quit(); }, 1000);
     });
@@ -1134,9 +1147,11 @@ async function autoDownloadUpdate(result) {
       await shell.openPath(filePath);
       setTimeout(() => { isQuitting = true; app.quit(); }, 1500);
     } else {
-      // 普通自动下载：存储结果，等待用户下次启动时安装
+      // 普通自动下载：持久化到配置文件（跨进程存活），内存状态同步保留
+      // 持久化是修复死循环的关键：重启后能识别已下载版本，不再重复下载
+      configStore.set('pendingInstall', { version: result.latestVersion, filePath, sha256 });
       _autoDownloadState = { stage: 'ready', version: result.latestVersion, filePath, sha256 };
-      console.log(`[AutoDL] 普通更新 v${result.latestVersion} 已下载，等待用户下次启动时安装`);
+      console.log(`[AutoDL] 普通更新 v${result.latestVersion} 已下载并持久化，下次启动将自动安装`);
       sendToRenderer('update:autoDownloaded', { version: result.latestVersion, filePath, sha256 });
     }
   } catch (err) {
@@ -1322,6 +1337,40 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  // ── 启动时自动安装已下载的待安装更新 ────────────────────────────────────
+  // 修复死循环 Bug：持久化记录跨进程存活，检测到后直接自动安装并退出，
+  // 从根本上避免"每次启动重新检查→重新下载"的循环。
+  setTimeout(async () => {
+    try {
+      const pending = configStore.get('pendingInstall');
+      if (!pending || !pending.filePath) return;
+      const resolvedPath = path.resolve(pending.filePath);
+      if (!fs.existsSync(resolvedPath)) {
+        configStore.set('pendingInstall', null);
+        console.log('[AutoInstall] 待安装文件已不存在，已清除过期记录');
+        return;
+      }
+      if (pending.sha256) {
+        const data = fs.readFileSync(resolvedPath);
+        const actual = crypto.createHash('sha256').update(data).digest('hex').toLowerCase();
+        if (actual !== pending.sha256.toLowerCase()) {
+          configStore.set('pendingInstall', null);
+          console.warn('[AutoInstall] SHA256 校验失败，已清除损坏记录');
+          return;
+        }
+      }
+      // 先清除记录再安装，防止安装失败后下次启动重试死循环
+      configStore.set('pendingInstall', null);
+      _autoDownloadState = null;
+      console.log(`[AutoInstall] 检测到待安装更新 v${pending.version}，正在启动安装程序...`);
+      showNotification('正在自动更新', `Neko Status v${pending.version} 正在安装，完成后程序将自动重启`);
+      await shell.openPath(resolvedPath);
+      setTimeout(() => { isQuitting = true; app.quit(); }, 2000);
+    } catch (err) {
+      console.error('[AutoInstall] 自动安装启动失败:', err.message);
+    }
+  }, 3000);
+
   // StatusService 日志/Tick/状态变更 → 推送到渲染进程
   statusService.setLogCallback((level, msg, time) => {
     sendToRenderer('log:entry', { level, msg, time });
@@ -1382,8 +1431,16 @@ app.whenReady().then(async () => {
         // 判断是否需要自动下载
         const shouldAutoDownload = result.forceUpdate || configStore.get('autoDownload') === true;
         if (shouldAutoDownload) {
-          // 后台自动下载（强制更新下载完立刻安装，普通更新等待下次启动）
-          autoDownloadUpdate(result);
+          // 防止重复下载：若该版本已下载且文件仍存在，跳过
+          const pending = configStore.get('pendingInstall');
+          const alreadyDownloaded = pending && pending.version === result.latestVersion
+            && pending.filePath && fs.existsSync(pending.filePath);
+          if (!alreadyDownloaded) {
+            // 后台自动下载（强制更新下载完立刻安装，普通更新等待下次启动自动安装）
+            autoDownloadUpdate(result);
+          } else {
+            console.log(`[Main] 版本 v${result.latestVersion} 已下载，跳过重复下载`);
+          }
         } else {
           // 不自动下载，只通知渲染进程弹窗提示
           sendToRenderer('update:available', result);
@@ -1403,7 +1460,14 @@ app.whenReady().then(async () => {
 
         const shouldAutoDownload = result.forceUpdate || configStore.get('autoDownload') === true;
         if (shouldAutoDownload) {
-          autoDownloadUpdate(result);
+          const pending = configStore.get('pendingInstall');
+          const alreadyDownloaded = pending && pending.version === result.latestVersion
+            && pending.filePath && fs.existsSync(pending.filePath);
+          if (!alreadyDownloaded) {
+            autoDownloadUpdate(result);
+          } else {
+            console.log(`[Main] 定期检查 - 版本 v${result.latestVersion} 已下载，跳过重复下载`);
+          }
         } else {
           sendToRenderer('update:available', result);
         }
