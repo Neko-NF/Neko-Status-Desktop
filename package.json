@@ -1,7 +1,7 @@
-﻿{
+{
   "name": "neko-status-desktop",
   "version": "1.2.0-beta.2",
-  "description": "Neko Status Desktop Client 鈥?Windows 鐘舵€佺洃鎺у伐鍏?,
+  "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
   "license": "ISC",
@@ -24,7 +24,7 @@
   "build": {
     "appId": "com.koirin.neko-status",
     "productName": "NekoStatus",
-    "copyright": "Copyright 漏 2026 NF Team",
+    "copyright": "Copyright © 2026 NF Team",
     "directories": {
       "output": "dist",
       "buildResources": "assets"
