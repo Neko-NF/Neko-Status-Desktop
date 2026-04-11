@@ -486,6 +486,49 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-
 npm install
 ```
 
+### Q: CI 构建报错 `EJSONPARSE` / `Bad control character in string literal`
+
+**根因**：用 PowerShell 修改 `package.json` 时，`Set-Content -Encoding UTF8` 会在文件头部写入 **UTF-8 BOM**（`EF BB BF`），JSON 解析器不识别 BOM，导致 `npm run build` / `npm ci` 崩溃。
+
+**正确的修改方式**：使用 .NET API 写入无 BOM 的 UTF-8 文件：
+
+```powershell
+# ✅ 正确：无 BOM 写入
+$content = Get-Content package.json -Raw
+$content = $content -replace '"version": "旧版本号"', '"version": "新版本号"'
+[System.IO.File]::WriteAllText(
+    (Resolve-Path "package.json").Path,
+    $content,
+    (New-Object System.Text.UTF8Encoding $false)   # $false = 不含 BOM
+)
+```
+
+**禁止用法**：
+```powershell
+# ❌ 错误：Out-File / Set-Content 默认写 BOM，会破坏 JSON
+$content | Set-Content package.json -Encoding UTF8
+$content | Out-File package.json -Encoding utf8
+```
+
+**验证是否含 BOM**：
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes("package.json")
+"First byte: $($bytes[0])"   # 应为 123（ASCII '{'），若为 239 则含 BOM
+```
+
+**已含 BOM 的快速修复**：
+```powershell
+# 从 git 恢复原文件后用正确方式重写版本号
+$content = git show HEAD:package.json | Out-String
+$content = $content -replace '"version": "旧版本号"', '"version": "新版本号"'
+[System.IO.File]::WriteAllText(
+    (Resolve-Path "package.json").Path,
+    $content.TrimStart([char]0xFEFF),   # 额外剥离 BOM 字符
+    (New-Object System.Text.UTF8Encoding $false)
+)
+node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('JSON valid')"
+```
+
 ---
 
 ## 13. 紧急撤包与重发
