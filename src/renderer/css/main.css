@@ -3573,6 +3573,38 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     line-height: 1.6;
 }
 
+.stream-firewall-guide {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--glass-border);
+}
+
+.stream-firewall-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--text-main);
+    font-size: 14px;
+    font-weight: var(--fw-semibold);
+}
+
+.stream-firewall-icon {
+    color: var(--warning-amber);
+}
+
+.stream-firewall-list {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.stream-firewall-list li:not(:last-child) {
+    margin-bottom: 6px;
+}
+
 /* --- 引导卡片 --- */
 .stream-guide-card {
     text-align: center;

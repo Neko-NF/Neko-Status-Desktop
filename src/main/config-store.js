@@ -6,6 +6,10 @@ const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
+const DEFAULT_SRS_HOST = 'rtmp1.koirin.com';
+const DEFAULT_SRS_RTMP_PORT = 51935;
+const DEFAULT_SRS_API_PORT = 51985;
+
 const DEFAULTS = {
   // 设备配置
   deviceKey: '',
@@ -69,10 +73,10 @@ const DEFAULTS = {
   localTestAccounts: [],          // 本地测试账户 [{username, password, createdAt}]
   // 直播推流配置
   streamConfig: {
-    srsHost: '',
-    srsRtmpPort: 1935,
+    srsHost: DEFAULT_SRS_HOST,
+    srsRtmpPort: DEFAULT_SRS_RTMP_PORT,
     srsApp: 'live',
-    srsApiPort: 1985,
+    srsApiPort: DEFAULT_SRS_API_PORT,
     streamKey: '',
     obsWsHost: '127.0.0.1',
     obsWsPort: 4455,
@@ -81,7 +85,7 @@ const DEFAULTS = {
 };
 
 function mergeDefaults(data = {}) {
-  return {
+  const merged = {
     ...DEFAULTS,
     ...data,
     streamConfig: {
@@ -89,6 +93,18 @@ function mergeDefaults(data = {}) {
       ...(data.streamConfig || {}),
     },
   };
+
+  const streamConfig = merged.streamConfig || {};
+  const srsHost = String(streamConfig.srsHost || '').trim().toLowerCase();
+  if (
+    srsHost === DEFAULT_SRS_HOST &&
+    Number(streamConfig.srsRtmpPort) === DEFAULT_SRS_RTMP_PORT &&
+    Number(streamConfig.srsApiPort) === DEFAULT_SRS_RTMP_PORT
+  ) {
+    streamConfig.srsApiPort = DEFAULT_SRS_API_PORT;
+  }
+
+  return merged;
 }
 
 class ConfigStore {

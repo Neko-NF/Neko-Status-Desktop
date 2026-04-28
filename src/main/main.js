@@ -19,7 +19,7 @@ if (!app.isPackaged) {
 }
 
 // ─── Windows 通知通道身份标识（必须在 app.whenReady 前设置）─────────
-app.setAppUserModelId('com.neko.neko-status');
+app.setAppUserModelId('com.koirin.neko-status');
 
 // ─── 核心服务 ────────────────────────────────────────────────────────
 const configStore   = require('./config-store');
@@ -54,6 +54,24 @@ function isRunAsAdmin() {
 let mainWindow = null;
 let tray       = null;
 let isQuitting = false;
+
+function launchInstaller(filePath, { silent = true } = {}) {
+  const resolvedPath = path.resolve(filePath);
+  const ext = path.extname(resolvedPath).toLowerCase();
+
+  if (process.platform === 'win32' && ext === '.exe') {
+    const args = silent ? ['/S'] : [];
+    const child = require('child_process').spawn(resolvedPath, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.unref();
+    return Promise.resolve('');
+  }
+
+  return shell.openPath(resolvedPath);
+}
 
 /**
  * 自动下载互斥状态（防止并发重入）
@@ -91,12 +109,14 @@ function createWindow() {
   const savedScale = configStore.get('uiScale') || 100;
   const zoomFactor = Math.max(0.5, Math.min(3.0, savedScale / 100));
 
+  const _winIconPath = getTrayIconPath();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 1180,
     minHeight: 700,
     show: false,  // 先隐藏，ready-to-show 后再显示（防白屏闪烁）
+    icon: _winIconPath ? nativeImage.createFromPath(_winIconPath) : undefined,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -711,7 +731,8 @@ function setupIPC() {
     }
     configStore.set('pendingInstall', null);
     _autoDownloadState = null;
-    shell.openPath(resolvedPath).then(() => {
+    launchInstaller(resolvedPath, { silent: true }).then((error) => {
+      if (error) console.error('[Update] installer launch failed:', error);
       setTimeout(() => { isQuitting = true; app.quit(); }, 1000);
     });
     return { success: true };
@@ -825,7 +846,8 @@ function setupIPC() {
       }
     }
     // 启动安装程序，1s 后退出当前应用
-    shell.openPath(resolvedPath).then(() => {
+    launchInstaller(resolvedPath, { silent: true }).then((error) => {
+      if (error) console.error('[Update] installer launch failed:', error);
       setTimeout(() => { isQuitting = true; app.quit(); }, 1000);
     });
     return { success: true };
@@ -1144,7 +1166,8 @@ async function autoDownloadUpdate(result) {
       console.log('[AutoDL] 强制更新，立即启动安装程序...');
       _autoDownloadState = null;
       sendToRenderer('update:forceInstallStarted', { version: result.latestVersion });
-      await shell.openPath(filePath);
+      const installError = await launchInstaller(filePath, { silent: true });
+      if (installError) console.error('[AutoDL] installer launch failed:', installError);
       setTimeout(() => { isQuitting = true; app.quit(); }, 1500);
     } else {
       // 普通自动下载：持久化到配置文件（跨进程存活），内存状态同步保留
@@ -1364,7 +1387,8 @@ app.whenReady().then(async () => {
       _autoDownloadState = null;
       console.log(`[AutoInstall] 检测到待安装更新 v${pending.version}，正在启动安装程序...`);
       showNotification('正在自动更新', `Neko Status v${pending.version} 正在安装，完成后程序将自动重启`);
-      await shell.openPath(resolvedPath);
+      const installError = await launchInstaller(resolvedPath, { silent: true });
+      if (installError) console.error('[AutoInstall] installer launch failed:', installError);
       setTimeout(() => { isQuitting = true; app.quit(); }, 2000);
     } catch (err) {
       console.error('[AutoInstall] 自动安装启动失败:', err.message);

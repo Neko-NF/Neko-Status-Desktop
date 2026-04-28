@@ -1251,9 +1251,9 @@
                     // 回写设置页输入框
                     if (config) {
                         const h = document.getElementById('srsHost'); if (h) h.value = config.srsHost || '';
-                        const p = document.getElementById('srsRtmpPort'); if (p) p.value = config.srsRtmpPort || 1935;
+                        const p = document.getElementById('srsRtmpPort'); if (p) p.value = config.srsRtmpPort || 51935;
                         const a = document.getElementById('srsApp'); if (a) a.value = config.srsApp || 'live';
-                        const ap = document.getElementById('srsApiPort'); if (ap) ap.value = config.srsApiPort || 1985;
+                        const ap = document.getElementById('srsApiPort'); if (ap) ap.value = config.srsApiPort || 51985;
                     }
                 });
 
@@ -1376,7 +1376,7 @@
             function renderStreamUrl(config) {
                 const key  = config.streamKey || '';
                 const host = config.srsHost || 'your-server';
-                const port = config.srsRtmpPort || 1935;
+                const port = config.srsRtmpPort || 51935;
                 const app  = config.srsApp || 'live';
                 const url  = 'rtmp://' + host + ':' + port + '/' + app + '/' + key;
                 const urlEl = document.getElementById('streamRtmpUrl');
@@ -1455,14 +1455,19 @@
             function collectSrsSettings() {
                 return {
                     srsHost:     (document.getElementById('srsHost') || {}).value || '',
-                    srsRtmpPort: Number((document.getElementById('srsRtmpPort') || {}).value) || 1935,
+                    srsRtmpPort: Number((document.getElementById('srsRtmpPort') || {}).value) || 51935,
                     srsApp:      (document.getElementById('srsApp') || {}).value || 'live',
-                    srsApiPort:  Number((document.getElementById('srsApiPort') || {}).value) || 1985,
+                    srsApiPort:  Number((document.getElementById('srsApiPort') || {}).value) || 51985,
                 };
             }
 
             // ======== 服务与自启动 - 危险操作二次确认 ======== //
             // 带 data-confirm 属性的按钮点击后进入「确认态」，3s 内再次点击才执行
+            if (typeof initStreamPage === 'function' && !window._streamPageInited) {
+                window._streamPageInited = true;
+                initStreamPage();
+            }
+
             document.querySelectorAll('.svc-action-btn[data-confirm]').forEach(btn => {
                 let confirmTimer = null;
                 const originalHTML = btn.innerHTML;

@@ -1002,6 +1002,17 @@
                             <li>在 OBS 中点击「开始推流」，本页面状态将自动更新为「直播中」</li>
                             <li>如 OBS WebSocket 不可用，导出配置文件后在 OBS「文件 → 导入」中载入</li>
                         </ol>
+                        
+                        <div class="stream-firewall-guide">
+                            <div class="stream-firewall-title">
+                                <i class="ph ph-shield-warning stream-firewall-icon"></i> SRS 防火墙与映射避坑指南
+                            </div>
+                            <ul class="stream-firewall-list">
+                                <li><strong>端口映射</strong>：若 SRS 部署在 Docker 中或使用了内网穿透，请确保在设置中填写的是<strong>最终暴露在公网的端口</strong>（例如公网的 51935，而不是内部的 1935）。</li>
+                                <li><strong>云服务器安全组</strong>：务必在云服务器提供商的控制台（如阿里云/腾讯云），为 RTMP 端口和 HTTP API 端口放行 <strong>TCP 协议</strong>。</li>
+                                <li><strong>API 无响应排查</strong>：如果在设置页测试时提示连接失败，请检查 SRS 的 <code>srs.conf</code> 配置文件，确保 <code>http_api { listen 0.0.0.0:1985; }</code> 监听地址必须是 <code>0.0.0.0</code> 而不能是 <code>127.0.0.1</code>，否则外部无法访问。</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 
@@ -1496,10 +1507,10 @@
                                     <i class="ph ph-network settings-row-icon"></i>
                                     <div class="settings-row-info">
                                         <div class="settings-row-name">RTMP 端口</div>
-                                        <div class="settings-row-desc">SRS 默认监听端口为 1935</div>
+                                        <div class="settings-row-desc">默认 1935，如有端口映射请填最终公网端口</div>
                                     </div>
                                 </div>
-                                <input type="number" class="glass-input srs-input-port" id="srsRtmpPort" placeholder="1935" value="1935" min="1" max="65535" />
+                                <input type="number" class="glass-input srs-input-port" id="srsRtmpPort" placeholder="51935" value="51935" min="1" max="65535" />
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
@@ -1516,10 +1527,10 @@
                                     <i class="ph ph-plugs settings-row-icon"></i>
                                     <div class="settings-row-info">
                                         <div class="settings-row-name">SRS HTTP API 端口</div>
-                                        <div class="settings-row-desc">用于查询推流状态，SRS 默认为 1985</div>
+                                        <div class="settings-row-desc">查询推流状态，默认 1985，如有映射请填公网端口</div>
                                     </div>
                                 </div>
-                                <input type="number" class="glass-input srs-input-port" id="srsApiPort" placeholder="1985" value="1985" min="1" max="65535" />
+                                <input type="number" class="glass-input srs-input-port" id="srsApiPort" placeholder="51985" value="51985" min="1" max="65535" />
                             </div>
                             <div class="settings-row srs-settings-action-row">
                                 <div class="settings-row-left">

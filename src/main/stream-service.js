@@ -9,10 +9,10 @@ const configStore = require('./config-store');
 const obs = new OBSWebSocket();
 
 const DEFAULT_STREAM_CONFIG = {
-  srsHost: '',
-  srsRtmpPort: 1935,
+  srsHost: 'rtmp1.koirin.com',
+  srsRtmpPort: 51935,
   srsApp: 'live',
-  srsApiPort: 1985,
+  srsApiPort: 51985,
   streamKey: '',
   obsWsHost: '127.0.0.1',
   obsWsPort: 4455,
