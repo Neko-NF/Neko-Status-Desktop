@@ -430,6 +430,22 @@ document.addEventListener('DOMContentLoaded', () => {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function setIncognitoScopeUI(scope) {
+    const normalized = ['screenshot', 'title', 'both'].includes(scope) ? scope : 'screenshot';
+    const group = document.getElementById('incognitoScopeGroup');
+    const pill = document.getElementById('incognitoScopePill');
+    if (!group) return;
+    group.querySelectorAll('.filter-segmented-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.scope === normalized);
+    });
+    const active = group.querySelector('.filter-segmented-btn.active');
+    if (pill && active) {
+      pill.style.width = active.offsetWidth + 'px';
+      pill.style.transform = `translateX(${active.offsetLeft - 4}px)`;
+    }
+    document.dispatchEvent(new CustomEvent('neko:privacy-scope-changed', { detail: { scope: normalized } }));
+  }
+
   /** 灵动岛通知（type: 'success'|'warn'|'error'|'info'） */
   // ── 灵动岛通知队列（串行、去重，保证等宽统一呈现）─────────────────────
   const _islandQueue = [];
@@ -685,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = `data:image/png;base64,${data.screenshotBase64}`;
       const isBlurred = !!data.screenshotBlurred;
       const sizeKB = ((data.screenshotSize || 0) / 1024).toFixed(0);
+      if (isBlurred) window._nekoActivityHelpers?.incrementBlurCount?.();
 
       // 截图&活动页大预览
       const frame = document.querySelector('.screenshot-frame');
@@ -1222,11 +1239,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let url = URL.createObjectURL(blob);
     let isBlurred = false;
 
-    // 隐私模糊检测（仅在隐身模式开启时生效）
+    // 隐私模糊检测（按隐身保护范围生效）
     const helpers = window._nekoActivityHelpers;
-    const incognitoOn = helpers && helpers.isIncognitoOn();
-    // 1) 全局截图模糊：仅在隐身模式开启时生效
-    if (incognitoOn) {
+    const screenshotPrivacyOn = helpers && helpers.isScreenshotPrivacyEnabled && helpers.isScreenshotPrivacyEnabled();
+    // 1) 全局截图模糊：仅在截图隐私保护开启时生效
+    if (screenshotPrivacyOn) {
       const blurAllEl = document.getElementById('blurAllSwitch');
       if (blurAllEl && blurAllEl.classList.contains('on')) {
         isBlurred = true;
@@ -1234,14 +1251,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (helpers) helpers.incrementBlurCount();
       }
     }
-    // 2) 隐身模式 + 前台应用匹配规则 → 模糊截图
-    if (!isBlurred && incognitoOn) {
+    // 2) 截图隐私保护 + 前台应用匹配规则 → 模糊截图
+    if (!isBlurred && screenshotPrivacyOn) {
       try {
         const activeWin = await ipc.getActiveWindow();
         const rules = helpers.getPrivacyRules();
         if (activeWin && activeWin.processName && rules.length > 0) {
-          const procLower = activeWin.processName.toLowerCase();
-          const matched = rules.some(r => procLower === r.toLowerCase());
+          const procLower = helpers.normalizePrivacyRule(activeWin.processName).toLowerCase();
+          const matched = rules.some(r => procLower === helpers.normalizePrivacyRule(r).toLowerCase());
           if (matched) {
             isBlurred = true;
             addLogLine('INFO', `隐私规则命中: ${activeWin.processName}，截图已模糊`);
@@ -1698,9 +1715,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
     if (!downloadUrl) {
       addLogLine('ERROR', '没有找到可用的下载链接');
+      _isDownloading = false;
       return;
     }
 
+    try {
     // 显示并重置进度条
     const progressRow   = document.getElementById('updateProgressRow');
     const progressBar   = document.getElementById('updateProgressBar');
@@ -1736,7 +1755,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       addLogLine('SUCCESS', '安装程序已启动，应用即将关闭');
     }
-    _isDownloading = false;
+    } finally {
+      _isDownloading = false;
+    }
   }
 
 
@@ -1821,14 +1842,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  //  版本回滚（二次确认 → 下载历史版本 → 主按钮变为「安装回滚版本」）
+  //  版本回滚（二次确认 → 查询历史版本 → 回滚按钮直接下载并安装）
   // ══════════════════════════════════════════════════════════════
   replaceHandler('rollbackBtn', async () => {
     const btn    = document.getElementById('rollbackBtn');
-    const cbtn   = document.getElementById('checkUpdateBtn');
-    const cicon  = document.getElementById('checkUpdateIcon');
-    const clabel = document.getElementById('checkUpdateLabel');
     if (!btn) return;
+    const icon = btn.querySelector('i');
     const labelSpan = btn.querySelector('span');
 
     if (!btn.classList.contains('confirming')) {
@@ -1845,6 +1864,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(btn._confirmTimer);
     btn.classList.remove('confirming');
     btn.disabled = true;
+    if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
     if (labelSpan) labelSpan.textContent = '查询中...';
 
     try {
@@ -1858,33 +1878,20 @@ document.addEventListener('DOMContentLoaded', () => {
       addLogLine('INFO', `找到历史版本 v${result.version}，开始下载...`);
       showNekoIsland(`正在下载回滚版本 v${result.version}...`, 'warn', 4000);
 
-      // 主按钮改为「安装回滚版本」（琥珀色）
-      if (cbtn) {
-        cbtn._updateMode  = 'rollback-install';
-        cbtn._rollbackData = { latestVersion: result.version, exeDownloadUrl: result.downloadUrl, zipDownloadUrl: null };
-        cbtn.classList.remove('primary');
-        cbtn.classList.add('rollback-install-btn');
-        if (cicon)  { cicon.className = 'ph ph-package'; cicon.style.animation = ''; }
-        if (clabel) clabel.textContent = '下载中...';
-        cbtn.disabled = true;
-      }
-
-      await doDownloadAndInstall({ latestVersion: result.version, exeDownloadUrl: result.downloadUrl, zipDownloadUrl: null });
+      if (labelSpan) labelSpan.textContent = '下载中...';
+      const rollbackPayload = {
+        latestVersion: result.version,
+        exeDownloadUrl: result.exeDownloadUrl || result.downloadUrl,
+        zipDownloadUrl: result.zipDownloadUrl || null
+      };
+      await doDownloadAndInstall(rollbackPayload);
 
     } catch (e) {
       showNekoIsland(`版本回滚失败: ${e.message}`, 'error', 4000);
       addLogLine('ERROR', `版本回滚失败: ${e.message}`);
-      // 恢复主按钮
-      if (cbtn) {
-        cbtn.classList.remove('rollback-install-btn');
-        cbtn.classList.add('primary');
-        cbtn.disabled = false;
-        if (cicon)  { cicon.className = 'ph ph-arrows-clockwise'; }
-        if (clabel) clabel.textContent = '检查更新';
-        cbtn._updateMode = 'check';
-      }
     } finally {
       btn.disabled = false;
+      if (icon) { icon.className = 'ph ph-arrow-counter-clockwise'; icon.style.animation = ''; }
       if (labelSpan) labelSpan.textContent = '版本回滚';
     }
   });
@@ -2384,6 +2391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 隐身模式
     const incognitoSwitch = document.getElementById('stgIncognitoSwitch');
     if (incognitoSwitch) incognitoSwitch.classList.toggle('on', !!cfg.enableIncognito);
+    setIncognitoScopeUI(cfg.incognitoScope || 'screenshot');
 
     // 全局截图模糊
     const blurAllSwitch = document.getElementById('blurAllSwitch');
@@ -2392,12 +2400,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 从 config 恢复隐私规则到 localStorage 以确保同步
     if (cfg.privacyRules && Array.isArray(cfg.privacyRules)) {
       localStorage.setItem('neko_privacy_rules', JSON.stringify(cfg.privacyRules));
+      document.dispatchEvent(new CustomEvent('neko:privacy-rules-loaded'));
     }
 
     // 隐身模式关闭时隐藏「设置隐私规则」按钮，卡片始终可见
     setTimeout(() => {
       const privacyRulesBtn = document.getElementById('openPrivacyRulesBtn');
-      if (privacyRulesBtn) privacyRulesBtn.style.display = cfg.enableIncognito ? '' : 'none';
+      if (privacyRulesBtn) privacyRulesBtn.style.display = '';
       const privacyBarTitle = document.getElementById('privacyBarTitle');
       const privacyBarDesc = document.getElementById('privacyBarDesc');
       const privacyBarIcon = document.getElementById('privacyBarIcon');
@@ -2408,6 +2417,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (privacyBarIcon) privacyBarIcon.innerHTML = cfg.enableIncognito
         ? '<i class="ph ph-shield-check"></i>'
         : '<i class="ph ph-shield-slash"></i>';
+      window._nekoActivityHelpers?.syncPrivacyBar?.();
     }, 50);
 
     // 双重认证
@@ -2857,7 +2867,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── 主题色板切换时重绘图表（响应 app.js 发出的自定义事件）──────────────
-  document.addEventListener('neko:themeChange', () => _rebuildTrendChartDeferred());
+  document.addEventListener('neko:themeChange', () => {
+    _rebuildTrendChartDeferred();
+    _applySparklineTheme();
+  });
 
   // ── 系统指标更新 → 按区间节流图表刷新 ─────────────────────────────────
   // 1m 区间: 每 5s 刷新, 1h 区间: 每 60s 刷新, 12h 区间: 每 3600s 刷新
@@ -3163,6 +3176,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     await ipc.setConfig('enableNotification', isOn);
+    if (isOn) {
+      const result = await ipc.notify('Neko Status', '系统推送通知已启用');
+      if (result && result.shown === false) {
+        addLogLine('WARN', `系统通知未显示: ${result.reason || 'unknown'}`);
+      }
+    }
   });
 
   // 勿扰模式（同步 Windows 免打扰）
@@ -3223,7 +3242,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addLogLine('INFO', `隐身模式 → ${isOn ? '已启用（截图将模糊处理）' : '已禁用'}`);
     // 隐身模式关闭时隐藏「设置隐私规则」按钮，卡片始终可见
     const privacyRulesBtn = document.getElementById('openPrivacyRulesBtn');
-    if (privacyRulesBtn) privacyRulesBtn.style.display = isOn ? '' : 'none';
+    if (privacyRulesBtn) privacyRulesBtn.style.display = '';
     const privacyBarTitle = document.getElementById('privacyBarTitle');
     const privacyBarDesc = document.getElementById('privacyBarDesc');
     const privacyBarIcon = document.getElementById('privacyBarIcon');
@@ -3234,6 +3253,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (privacyBarIcon) privacyBarIcon.innerHTML = isOn
       ? '<i class="ph ph-shield-check"></i>'
       : '<i class="ph ph-shield-slash"></i>';
+    window._nekoActivityHelpers?.syncPrivacyBar?.();
+  });
+
+  document.getElementById('incognitoScopeGroup')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.filter-segmented-btn');
+    if (!btn) return;
+    const scope = btn.dataset.scope || 'screenshot';
+    setIncognitoScopeUI(scope);
+    await ipc.setConfig('incognitoScope', scope);
+    window._nekoActivityHelpers?.syncPrivacyBar?.();
+    addLogLine('INFO', `隐身保护范围 → ${scope}`);
   });
 
   // 全局截图模糊开关（在隐私规则弹窗中）
@@ -3600,17 +3630,45 @@ document.addEventListener('DOMContentLoaded', () => {
   const _sparkData = { cpu: [], mem: [], net: [], battery: [] };
   const _sparkCharts = {};
 
-  function _createSparkline(canvasId, color) {
+  function getSparklineThemeColor() {
+    return getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || 'rgb(99,102,241)';
+  }
+
+  function sparklineFillColor(color, alpha = 0.12) {
+    const probe = document.createElement('span');
+    probe.style.color = color;
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    const nums = resolved.match(/\d+(\.\d+)?/g) || [];
+    const [r, g, b] = nums.map(Number);
+    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)
+      ? `rgba(${r}, ${g}, ${b}, ${alpha})`
+      : `rgba(99, 102, 241, ${alpha})`;
+  }
+
+  function _applySparklineTheme() {
+    const themeColor = getSparklineThemeColor();
+    Object.values(_sparkCharts).forEach((chart) => {
+      if (!chart) return;
+      chart.data.datasets[0].borderColor = themeColor;
+      chart.data.datasets[0].backgroundColor = sparklineFillColor(themeColor);
+      chart.update('none');
+    });
+  }
+
+  function _createSparkline(canvasId) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return null;
+    const themeColor = getSparklineThemeColor();
     return new Chart(canvas, {
       type: 'line',
       data: {
         labels: Array(SPARK_MAX).fill(''),
         datasets: [{
           data: [],
-          borderColor: color,
-          backgroundColor: color.replace(')', ', 0.12)').replace('rgb', 'rgba'),
+          borderColor: themeColor,
+          backgroundColor: sparklineFillColor(themeColor),
           borderWidth: 1.5,
           pointRadius: 0,
           tension: 0.4,
@@ -3633,11 +3691,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function _initSparklines() {
     if (_sparkCharts.cpu) return; // 已初始化
-    const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || 'rgb(99,102,241)';
-    _sparkCharts.cpu = _createSparkline('sparkCpu', themeColor);
-    _sparkCharts.mem = _createSparkline('sparkMem', 'rgb(245, 158, 11)');
-    _sparkCharts.net = _createSparkline('sparkNet', 'rgb(16, 185, 129)');
-    _sparkCharts.battery = _createSparkline('sparkBattery', 'rgb(34, 197, 94)');
+    _sparkCharts.cpu = _createSparkline('sparkCpu');
+    _sparkCharts.mem = _createSparkline('sparkMem');
+    _sparkCharts.net = _createSparkline('sparkNet');
+    _sparkCharts.battery = _createSparkline('sparkBattery');
+    _applySparklineTheme();
   }
 
   function _setSparklineData(key, value) {

@@ -34,6 +34,8 @@ const nekoIPC = {
 
   // ── 前台窗口 ─────────────────────────────────────────────────────────
   getActiveWindow: () => ipcRenderer.invoke('system:activeWindow'),
+  listWindows: () => ipcRenderer.invoke('system:listWindows'),
+  pickPrivacyWindow: () => ipcRenderer.invoke('privacy:pickWindow'),
 
   // ── 系统信息 ─────────────────────────────────────────────────────────
   getSystemInfo: () => ipcRenderer.invoke('system:info'),

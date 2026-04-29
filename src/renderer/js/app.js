@@ -22,10 +22,26 @@
 
             // ======== 导航切换逻辑 ======== //
             const navItems = document.querySelectorAll('.nav-menu .nav-item');
+            const navMenu = document.querySelector('.nav-menu');
+            const navIndicator = document.getElementById('navActiveIndicator');
             const mainDashboardArea = document.getElementById('mainDashboardArea');
             const consoleArea = document.getElementById('consoleArea');
             const headerTitleText = document.querySelector('.page-title');
             const topNavEditBtn = document.getElementById('editLayoutBtn');
+
+            function syncNavIndicator(target) {
+                if (!navMenu || !navIndicator) return;
+                const item = target || document.querySelector('.nav-menu .nav-item.active');
+                if (!item || getComputedStyle(item).display === 'none') return;
+                const menuRect = navMenu.getBoundingClientRect();
+                const itemRect = item.getBoundingClientRect();
+                navMenu.style.setProperty('--nav-indicator-y', `${itemRect.top - menuRect.top}px`);
+                navMenu.style.setProperty('--nav-indicator-h', `${itemRect.height}px`);
+                navIndicator.classList.add('is-ready');
+            }
+
+            requestAnimationFrame(() => syncNavIndicator());
+            window.addEventListener('resize', () => syncNavIndicator());
 
             navItems.forEach(item => {
                 item.addEventListener('click', function() {
@@ -37,6 +53,7 @@
                         // 更新导航激活状态
                         navItems.forEach(nav => nav.classList.remove('active'));
                         this.classList.add('active');
+                        syncNavIndicator(this);
 
                         // 切换视图显示及工具栏按钮状态
                         const areas = {
@@ -888,6 +905,8 @@
 
             function syncPrivacyBarWithIncognito() {
                 const isOn = stgIncognitoSwitch && stgIncognitoSwitch.classList.contains('on');
+                const scope = typeof getIncognitoScope === 'function' ? getIncognitoScope() : 'screenshot';
+                const canBlurScreenshot = scope === 'screenshot' || scope === 'both';
                 if (privacyBarCard) privacyBarCard.classList.toggle('disabled', !isOn);
                 if (privacyBarTitle) privacyBarTitle.textContent = isOn ? '隐私防护已启用' : '隐私防护已关闭';
                 if (privacyBarIcon) {
@@ -896,9 +915,17 @@
                         : '<i class="ph ph-shield-slash"></i>';
                 }
                 if (privacyBarDesc) {
-                    privacyBarDesc.textContent = isOn
-                        ? '匹配隐私规则的前台应用截图将自动模糊后再上传，截图仅上传至已配置的自有服务器。'
-                        : '隐身模式已关闭，截图将以原图上传。前往设置页开启隐身模式以启用隐私防护。';
+                    if (!isOn) {
+                        privacyBarDesc.textContent = '隐身模式已关闭，截图和标题将按原始信息上传。';
+                    } else if (scope === 'title') {
+                        privacyBarDesc.textContent = '仅隐藏上传到服务器的前台应用标题和进程名，截图不做模糊处理。';
+                    } else if (scope === 'both') {
+                        privacyBarDesc.textContent = '隐藏上传标题，并在全局模糊或隐私规则命中时模糊截图。';
+                    } else {
+                        privacyBarDesc.textContent = canBlurScreenshot
+                            ? '匹配隐私规则的前台应用截图将自动模糊后再上传，标题保持原始信息。'
+                            : '隐私防护已启用。';
+                    }
                 }
             }
 
@@ -942,14 +969,59 @@
             const closePrivacyRulesBtn = document.getElementById('closePrivacyRulesBtn');
             const privacyRuleInput = document.getElementById('privacyRuleInput');
             const addPrivacyRuleBtn = document.getElementById('addPrivacyRuleBtn');
+            const addActiveProcessRuleBtn = document.getElementById('addActiveProcessRuleBtn');
+            const selectPrivacyExeBtn = document.getElementById('selectPrivacyExeBtn');
+            const refreshPrivacyWindowsBtn = document.getElementById('refreshPrivacyWindowsBtn');
+            const privacyWindowPicker = document.getElementById('privacyWindowPicker');
+            const privacyWindowPickerList = document.getElementById('privacyWindowPickerList');
             const privacyRulesList = document.getElementById('privacyRulesList');
             const privacyRulesEmpty = document.getElementById('privacyRulesEmpty');
+            const incognitoScopeGroup = document.getElementById('incognitoScopeGroup');
+            const incognitoScopePill = document.getElementById('incognitoScopePill');
 
             // 从 localStorage 加载规则
-            let privacyRules = [];
-            try { privacyRules = JSON.parse(localStorage.getItem('neko_privacy_rules') || '[]'); } catch { privacyRules = []; }
+            function loadPrivacyRulesFromStorage() {
+                let rules = [];
+                try { rules = JSON.parse(localStorage.getItem('neko_privacy_rules') || '[]'); } catch { rules = []; }
+                return rules.map(normalizePrivacyRule).filter(Boolean);
+            }
+
+            let privacyRules = loadPrivacyRulesFromStorage();
+
+            function normalizePrivacyRule(value) {
+                const raw = String(value || '').trim().replace(/^["']+|["']+$/g, '');
+                if (!raw) return '';
+                const exeMatch = raw.match(/([^\\/:"<>|?*\r\n]+?\.exe)\b/i);
+                const baseName = exeMatch ? exeMatch[1] : raw.split(/[\\/]/).pop().trim();
+                if (!baseName) return '';
+                return /\.[a-z0-9]+$/i.test(baseName) ? baseName : `${baseName}.exe`;
+            }
+
+            function privacyRuleKey(value) {
+                return normalizePrivacyRule(value).toLowerCase();
+            }
+
+            function getIncognitoScope() {
+                const group = document.getElementById('incognitoScopeGroup');
+                const active = group?.querySelector('.filter-segmented-btn.active');
+                return active?.dataset.scope || 'screenshot';
+            }
+
+            function syncIncognitoScopePill() {
+                const group = document.getElementById('incognitoScopeGroup');
+                const active = group?.querySelector('.filter-segmented-btn.active');
+                if (!incognitoScopePill || !active) return;
+                incognitoScopePill.style.width = active.offsetWidth + 'px';
+                incognitoScopePill.style.transform = `translateX(${active.offsetLeft - 4}px)`;
+            }
+
+            function screenshotPrivacyEnabled() {
+                const scope = getIncognitoScope();
+                return !!stgIncognitoSwitch?.classList.contains('on') && (scope === 'screenshot' || scope === 'both');
+            }
 
             function savePrivacyRules() {
+                privacyRules = privacyRules.map(normalizePrivacyRule).filter(Boolean);
                 localStorage.setItem('neko_privacy_rules', JSON.stringify(privacyRules));
                 if (window.nekoIPC) window.nekoIPC.setConfig('privacyRules', privacyRules);
             }
@@ -963,16 +1035,24 @@
                 privacyRules.forEach((rule, idx) => {
                     const item = document.createElement('div');
                     item.className = 'privacy-rule-item';
-                    item.innerHTML = `
-                        <div class="privacy-rule-icon"><i class="ph ph-app-window"></i></div>
-                        <div class="privacy-rule-name">${rule}</div>
-                        <button class="privacy-rule-remove" data-idx="${idx}" title="移除"><i class="ph ph-trash"></i></button>`;
+                    const icon = document.createElement('div');
+                    icon.className = 'privacy-rule-icon';
+                    icon.innerHTML = '<i class="ph ph-app-window"></i>';
+                    const name = document.createElement('div');
+                    name.className = 'privacy-rule-name';
+                    name.textContent = rule;
+                    const remove = document.createElement('button');
+                    remove.className = 'privacy-rule-remove';
+                    remove.dataset.idx = String(idx);
+                    remove.title = '移除';
+                    remove.innerHTML = '<i class="ph ph-trash"></i>';
+                    item.append(icon, name, remove);
                     privacyRulesList.appendChild(item);
                 });
 
                 // 更新预设按钮状态
                 document.querySelectorAll('.privacy-preset-btn').forEach(btn => {
-                    btn.classList.toggle('added', privacyRules.includes(btn.dataset.process));
+                    btn.classList.toggle('added', privacyRules.some(rule => privacyRuleKey(rule) === privacyRuleKey(btn.dataset.process)));
                 });
 
                 // 更新模糊计数统计
@@ -980,11 +1060,75 @@
             }
 
             function addPrivacyRule(processName) {
-                const name = processName.trim();
-                if (!name || privacyRules.includes(name)) return;
+                const name = normalizePrivacyRule(processName);
+                if (!name || privacyRules.some(rule => privacyRuleKey(rule) === privacyRuleKey(name))) return;
                 privacyRules.push(name);
                 savePrivacyRules();
                 renderPrivacyRules();
+            }
+
+            function renderPrivacyWindowPicker(windows) {
+                if (!privacyWindowPicker || !privacyWindowPickerList) return;
+                privacyWindowPicker.hidden = false;
+                privacyWindowPickerList.innerHTML = '';
+
+                if (!Array.isArray(windows) || windows.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'privacy-rules-empty';
+                    empty.textContent = '未找到可选择的窗口';
+                    privacyWindowPickerList.appendChild(empty);
+                    return;
+                }
+
+                const seen = new Set();
+                windows.forEach((win) => {
+                    const processName = normalizePrivacyRule(win.processName);
+                    if (!processName) return;
+                    const key = `${processName.toLowerCase()}::${String(win.title || '').toLowerCase()}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'privacy-window-item';
+                    item.dataset.process = processName;
+
+                    const icon = document.createElement('div');
+                    icon.className = 'privacy-window-icon';
+                    icon.innerHTML = '<i class="ph ph-app-window"></i>';
+
+                    const text = document.createElement('div');
+                    const title = document.createElement('div');
+                    title.className = 'privacy-window-title';
+                    title.textContent = win.title || processName;
+                    const proc = document.createElement('div');
+                    proc.className = 'privacy-window-process';
+                    proc.textContent = processName;
+                    text.append(title, proc);
+
+                    const pid = document.createElement('div');
+                    pid.className = 'privacy-window-pid';
+                    pid.textContent = win.pid ? `PID ${win.pid}` : '';
+
+                    item.append(icon, text, pid);
+                    privacyWindowPickerList.appendChild(item);
+                });
+            }
+
+            async function refreshPrivacyWindowPicker() {
+                if (!privacyWindowPicker || !privacyWindowPickerList) return;
+                privacyWindowPicker.hidden = false;
+                privacyWindowPickerList.innerHTML = '';
+                const loading = document.createElement('div');
+                loading.className = 'privacy-rules-empty';
+                loading.textContent = '正在读取窗口列表...';
+                privacyWindowPickerList.appendChild(loading);
+                try {
+                    const windows = await window.nekoIPC?.listWindows?.();
+                    renderPrivacyWindowPicker(windows || []);
+                } catch {
+                    renderPrivacyWindowPicker([]);
+                }
             }
 
             function removePrivacyRule(idx) {
@@ -1031,6 +1175,57 @@
                 });
             }
 
+            if (addActiveProcessRuleBtn) {
+                addActiveProcessRuleBtn.addEventListener('click', async () => {
+                    try {
+                        const selected = await window.nekoIPC?.pickPrivacyWindow?.();
+                        if (selected?.processName) addPrivacyRule(selected.processName);
+                    } catch { /* ignore */ }
+                });
+            }
+
+            if (refreshPrivacyWindowsBtn) {
+                refreshPrivacyWindowsBtn.addEventListener('click', refreshPrivacyWindowPicker);
+            }
+
+            if (privacyWindowPickerList) {
+                privacyWindowPickerList.addEventListener('click', (e) => {
+                    const item = e.target.closest('.privacy-window-item');
+                    if (!item) return;
+                    addPrivacyRule(item.dataset.process || '');
+                    if (privacyWindowPicker) privacyWindowPicker.hidden = true;
+                });
+            }
+
+            if (selectPrivacyExeBtn) {
+                selectPrivacyExeBtn.addEventListener('click', async () => {
+                    try {
+                        const filePath = await window.nekoIPC?.selectFile?.({
+                            title: '选择要加入隐私规则的 EXE',
+                            filters: [{ name: 'Windows 可执行文件', extensions: ['exe'] }],
+                        });
+                        addPrivacyRule(filePath || '');
+                    } catch { /* ignore */ }
+                });
+            }
+
+            if (incognitoScopeGroup) {
+                requestAnimationFrame(syncIncognitoScopePill);
+                window.addEventListener('resize', syncIncognitoScopePill);
+                incognitoScopeGroup.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.filter-segmented-btn');
+                    if (!btn) return;
+                    incognitoScopeGroup.querySelectorAll('.filter-segmented-btn').forEach(item => item.classList.remove('active'));
+                    btn.classList.add('active');
+                    syncIncognitoScopePill();
+                    syncPrivacyBarWithIncognito();
+                });
+                document.addEventListener('neko:privacy-scope-changed', () => {
+                    syncIncognitoScopePill();
+                    syncPrivacyBarWithIncognito();
+                });
+            }
+
             // 快捷预设
             document.querySelectorAll('.privacy-preset-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -1050,6 +1245,10 @@
             // 初始渲染
             renderPrivacyRules();
             syncPrivacyBarWithIncognito();
+            document.addEventListener('neko:privacy-rules-loaded', () => {
+                privacyRules = loadPrivacyRulesFromStorage();
+                renderPrivacyRules();
+            });
 
             // ======== 活动流 - 空态管理 ======== //
             // 暴露给 app-ipc 使用的辅助函数
@@ -1062,12 +1261,16 @@
                     const sw = document.getElementById('stgIncognitoSwitch');
                     return sw ? sw.classList.contains('on') : false;
                 },
+                getIncognitoScope,
+                isScreenshotPrivacyEnabled: screenshotPrivacyEnabled,
+                normalizePrivacyRule,
                 getPrivacyRules() { return privacyRules; },
                 incrementBlurCount() {
                     const count = parseInt(localStorage.getItem('neko_blur_count') || '0', 10) + 1;
                     localStorage.setItem('neko_blur_count', String(count));
                     updateBlurCount();
-                }
+                },
+                syncPrivacyBar: syncPrivacyBarWithIncognito,
             };
 
             // ======== 服务与自启动 - 上报服务自启联动 ======== //

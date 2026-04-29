@@ -1,6 +1,6 @@
 const {
   app, BrowserWindow, Tray, Menu, nativeImage,
-  ipcMain, dialog, Notification, shell,
+  ipcMain, dialog, Notification, shell, screen, desktopCapturer,
 } = require('electron');
 const path = require('path');
 const os = require('os');
@@ -19,7 +19,8 @@ if (!app.isPackaged) {
 }
 
 // ─── Windows 通知通道身份标识（必须在 app.whenReady 前设置）─────────
-app.setAppUserModelId('com.koirin.neko-status');
+const APP_USER_MODEL_ID = 'com.koirin.neko-status';
+app.setAppUserModelId(APP_USER_MODEL_ID);
 
 // ─── 核心服务 ────────────────────────────────────────────────────────
 const configStore   = require('./config-store');
@@ -54,6 +55,7 @@ function isRunAsAdmin() {
 let mainWindow = null;
 let tray       = null;
 let isQuitting = false;
+let privacyPickerWindow = null;
 
 const CACHE_DIR_NAMES = [
   'Cache',
@@ -303,6 +305,208 @@ function showWindow() {
   mainWindow.focus();
 }
 
+function getVirtualScreenBounds() {
+  const displays = screen.getAllDisplays();
+  const left = Math.min(...displays.map(d => d.bounds.x));
+  const top = Math.min(...displays.map(d => d.bounds.y));
+  const right = Math.max(...displays.map(d => d.bounds.x + d.bounds.width));
+  const bottom = Math.max(...displays.map(d => d.bounds.y + d.bounds.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function normalizePickerWindows(windows) {
+  const seen = new Set();
+  return windows
+    .filter((win) => win && win.processName && win.bounds && win.bounds.width > 40 && win.bounds.height > 40)
+    .map((win) => ({
+      title: String(win.title || win.processName),
+      processName: String(win.processName),
+      pid: Number(win.pid) || 0,
+      path: String(win.path || ''),
+      bounds: {
+        x: Math.round(Number(win.bounds.x) || 0),
+        y: Math.round(Number(win.bounds.y) || 0),
+        width: Math.round(Number(win.bounds.width) || 0),
+        height: Math.round(Number(win.bounds.height) || 0),
+      },
+    }))
+    .filter((win) => {
+      const key = `${win.processName.toLowerCase()}|${win.title.toLowerCase()}|${win.bounds.x},${win.bounds.y},${win.bounds.width},${win.bounds.height}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function getPickerThemeColor() {
+  const color = String(configStore.get('seedColor') || '#06b6d4').trim();
+  return /^#[0-9a-f]{6}$/i.test(color) || /^rgb/i.test(color) ? color : '#06b6d4';
+}
+
+function pickerColorToRgb(color) {
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return {
+      r: parseInt(color.slice(1, 3), 16),
+      g: parseInt(color.slice(3, 5), 16),
+      b: parseInt(color.slice(5, 7), 16),
+    };
+  }
+  const nums = color.match(/\d+(\.\d+)?/g) || [];
+  const [r, g, b] = nums.map(Number);
+  return {
+    r: Number.isFinite(r) ? r : 6,
+    g: Number.isFinite(g) ? g : 182,
+    b: Number.isFinite(b) ? b : 212,
+  };
+}
+
+async function getPrivacyPickerWindows() {
+  let windows = [];
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 1, height: 1 },
+      fetchWindowIcons: false,
+    });
+    const handles = sources
+      .map(source => {
+        const match = String(source.id || '').match(/^window:(\d+):/);
+        return match ? Number(match[1]) : 0;
+      })
+      .filter(Boolean);
+    const byHandle = await systemUtils.getWindowsByHandles(handles);
+    const sourceNameByHandle = new Map();
+    sources.forEach((source) => {
+      const match = String(source.id || '').match(/^window:(\d+):/);
+      if (match) sourceNameByHandle.set(Number(match[1]), source.name || '');
+    });
+    windows = byHandle.map((win) => ({
+      ...win,
+      title: win.title || sourceNameByHandle.get(win.handle) || win.processName,
+    }));
+  } catch { /* fallback below */ }
+
+  if (windows.length === 0) {
+    windows = await systemUtils.listVisibleWindows();
+  }
+  return normalizePickerWindows(windows);
+}
+
+function createPrivacyPickerHtml({ windows, bounds, token, themeColor }) {
+  const rgb = pickerColorToRgb(themeColor);
+  const payload = JSON.stringify({ windows, bounds, token, themeColor, rgb }).replace(/</g, '\\u003c');
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: rgba(0,0,0,0.10); cursor: crosshair; font-family: "Segoe UI", system-ui, sans-serif; user-select: none; }
+    #frame { position: absolute; display: none; box-sizing: border-box; border: 3px solid ${themeColor}; background: rgba(${rgb.r},${rgb.g},${rgb.b},0.10); box-shadow: 0 0 0 9999px rgba(0,0,0,0.16), 0 0 24px rgba(${rgb.r},${rgb.g},${rgb.b},0.55); pointer-events: none; }
+    #label { position: absolute; left: 0; top: -34px; max-width: min(520px, 100vw - 24px); padding: 7px 10px; border-radius: 7px; background: rgba(15,23,42,0.92); color: #fff; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hint { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); padding: 9px 14px; border-radius: 8px; background: rgba(15,23,42,0.92); color: #fff; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,0.28); }
+    #empty { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 18px; border-radius: 8px; background: rgba(15,23,42,0.92); color: #fff; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="hint">移动鼠标点选要加入隐私规则的窗口，单击确认，Esc 取消</div>
+  <div id="empty">未找到可框选窗口</div>
+  <div id="frame"><div id="label"></div></div>
+  <script>
+    const { ipcRenderer } = require('electron');
+    const payload = ${payload};
+    const windows = payload.windows
+      .slice()
+      .sort((a, b) => (a.bounds.width * a.bounds.height) - (b.bounds.width * b.bounds.height));
+    const origin = payload.bounds;
+    const frame = document.getElementById('frame');
+    const label = document.getElementById('label');
+    const empty = document.getElementById('empty');
+    let selected = null;
+    if (!windows.length) empty.style.display = 'block';
+    function contains(win, x, y) {
+      const b = win.bounds;
+      return x >= b.x && y >= b.y && x <= b.x + b.width && y <= b.y + b.height;
+    }
+    function setSelected(win) {
+      selected = win || null;
+      if (!selected) {
+        frame.style.display = 'none';
+        return;
+      }
+      const b = selected.bounds;
+      frame.style.display = 'block';
+      frame.style.left = (b.x - origin.x) + 'px';
+      frame.style.top = (b.y - origin.y) + 'px';
+      frame.style.width = b.width + 'px';
+      frame.style.height = b.height + 'px';
+      label.textContent = selected.title + ' · ' + selected.processName;
+    }
+    window.addEventListener('mousemove', (event) => {
+      const hit = windows.find(win => contains(win, event.screenX, event.screenY));
+      if (hit !== selected) setSelected(hit);
+    });
+    window.addEventListener('click', () => {
+      if (selected) ipcRenderer.send('privacy-picker-result-' + payload.token, selected);
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') ipcRenderer.send('privacy-picker-result-' + payload.token, null);
+      if (event.key === 'Enter' && selected) ipcRenderer.send('privacy-picker-result-' + payload.token, selected);
+    });
+  </script>
+</body>
+</html>`;
+}
+
+async function pickPrivacyWindow() {
+  if (privacyPickerWindow && !privacyPickerWindow.isDestroyed()) return null;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  await new Promise(resolve => setTimeout(resolve, 60));
+
+  const windows = await getPrivacyPickerWindows();
+  const bounds = getVirtualScreenBounds();
+  const themeColor = getPickerThemeColor();
+  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const cleanup = (value) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeAllListeners(`privacy-picker-result-${token}`);
+      if (privacyPickerWindow && !privacyPickerWindow.isDestroyed()) privacyPickerWindow.destroy();
+      privacyPickerWindow = null;
+      showWindow();
+      resolve(value || null);
+    };
+
+    privacyPickerWindow = new BrowserWindow({
+      ...bounds,
+      frame: false,
+      transparent: true,
+      show: false,
+      resizable: false,
+      movable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      fullscreenable: false,
+      hasShadow: false,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+      },
+    });
+    privacyPickerWindow.setAlwaysOnTop(true, 'screen-saver');
+    privacyPickerWindow.setMenuBarVisibility(false);
+    privacyPickerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createPrivacyPickerHtml({ windows, bounds, token, themeColor }))}`);
+    privacyPickerWindow.once('ready-to-show', () => {
+      privacyPickerWindow.show();
+      privacyPickerWindow.focus();
+    });
+    privacyPickerWindow.on('closed', () => cleanup(null));
+    ipcMain.once(`privacy-picker-result-${token}`, (_, value) => cleanup(value));
+  });
+}
+
 function refreshTrayMenu() {
   if (!tray) return;
   const running = statusService.isRunning;
@@ -349,16 +553,72 @@ function pushInitialState() {
 // ═══════════════════════════════════════════════════════════════════════
 //  系 统 通 知（受 enableNotification + doNotDisturb 控制）
 // ═══════════════════════════════════════════════════════════════════════
+function getAppIconPath() {
+  return path.join(app.getAppPath(), 'assets', 'app_icon.ico');
+}
+
+function ensureWindowsNotificationShortcut() {
+  if (process.platform !== 'win32') return { ok: true, skipped: true };
+  try {
+    const programsDir = path.join(
+      app.getPath('appData'),
+      'Microsoft',
+      'Windows',
+      'Start Menu',
+      'Programs'
+    );
+    const shortcutPath = path.join(programsDir, 'Neko Status.lnk');
+    const target = process.execPath;
+    const args = app.isPackaged ? '' : `"${app.getAppPath()}"`;
+    const cwd = app.getAppPath();
+    const icon = getAppIconPath();
+    fs.mkdirSync(programsDir, { recursive: true });
+
+    let shouldWrite = true;
+    try {
+      const current = shell.readShortcutLink(shortcutPath);
+      shouldWrite = current.target !== target
+        || (current.args || '') !== args
+        || current.appUserModelId !== APP_USER_MODEL_ID;
+    } catch { /* shortcut does not exist yet */ }
+
+    if (shouldWrite) {
+      const operation = fs.existsSync(shortcutPath) ? 'replace' : 'create';
+      const written = shell.writeShortcutLink(shortcutPath, operation, {
+        target,
+        args,
+        cwd,
+        description: APP_NAME,
+        icon: fs.existsSync(icon) ? icon : target,
+        iconIndex: 0,
+        appUserModelId: APP_USER_MODEL_ID,
+      });
+      if (!written) return { ok: false, error: 'shortcut-write-failed' };
+    }
+    return { ok: true, shortcutPath };
+  } catch (err) {
+    console.warn('[Notification] Failed to prepare Windows shortcut:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 function showNotification(title, body) {
-  if (!configStore.get('enableNotification')) return;
-  if (configStore.get('doNotDisturb')) return;
+  if (!configStore.get('enableNotification')) return { shown: false, reason: 'disabled' };
+  if (configStore.get('doNotDisturb')) return { shown: false, reason: 'do-not-disturb' };
+  if (!Notification.isSupported()) return { shown: false, reason: 'unsupported' };
+  const shortcut = ensureWindowsNotificationShortcut();
   const notification = new Notification({
     title: title || APP_NAME,
     body,
+    icon: getAppIconPath(),
     silent: false,
-    toastXml: undefined, // 使用 Windows 原生通知通道
+    timeoutType: 'default',
+  });
+  notification.on('failed', (_, error) => {
+    console.warn('[Notification] show failed:', error || 'unknown');
   });
   notification.show();
+  return { shown: true, shortcutReady: shortcut.ok, shortcutError: shortcut.error || null };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -544,6 +804,8 @@ function setupIPC() {
 
   // ── 前台窗口 ────────────────────────────────────────────────────────
   ipcMain.handle('system:activeWindow', () => systemUtils.getActiveWindow());
+  ipcMain.handle('system:listWindows', () => systemUtils.listVisibleWindows());
+  ipcMain.handle('privacy:pickWindow', () => pickPrivacyWindow());
 
   // ── 系统信息 ──────────────────────────────────────────────────────────
   ipcMain.handle('system:info', async () => {
@@ -952,7 +1214,7 @@ function setupIPC() {
 
   // ── 系统通知 ─────────────────────────────────────────────────────────
   ipcMain.handle('notification:show', (_, { title, body }) => {
-    showNotification(title, body);
+    return showNotification(title, body);
   });
 
   // ── Windows 免打扰 (Focus Assist) ───────────────────────────────────
@@ -1182,9 +1444,11 @@ function setupIPC() {
       const zipAsset = (prev.assets || []).find((a) => a.name.endsWith('.zip') && a.name.toLowerCase().includes('win'));
       // 私有仓库使用 asset API URL
       const pickUrl = (a) => a ? (token ? a.url : a.browser_download_url) : null;
-      const downloadUrl = pickUrl(exeAsset) || pickUrl(zipAsset);
+      const exeDownloadUrl = pickUrl(exeAsset);
+      const zipDownloadUrl = pickUrl(zipAsset);
+      const downloadUrl = exeDownloadUrl || zipDownloadUrl;
       if (!downloadUrl) return { success: false, error: `找不到 v${prevVersion} 的安装包` };
-      return { success: true, version: prevVersion, downloadUrl };
+      return { success: true, version: prevVersion, downloadUrl, exeDownloadUrl, zipDownloadUrl };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -1456,6 +1720,7 @@ async function waitForNetwork(timeoutMs = 30000) {
 //  应 用 生 命 周 期
 // ═══════════════════════════════════════════════════════════════════════
 app.whenReady().then(async () => {
+  ensureWindowsNotificationShortcut();
   setupIPC();
   createWindow();
   createTray();

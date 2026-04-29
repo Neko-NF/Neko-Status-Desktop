@@ -30,6 +30,7 @@
             Neko Status
         </div>
         <div class="nav-menu">
+            <div class="nav-active-indicator" id="navActiveIndicator"></div>
             <a class="nav-item active" data-target="mainDashboardArea"><i class="ph ph-squares-four"></i>仪表盘</a>
             <a class="nav-item" data-target="page-device-status"><i class="ph ph-hard-drives"></i>设备状态</a>
             <a class="nav-item" data-target="page-screenshot"><i class="ph ph-image"></i>截图与活动</a>
@@ -38,7 +39,7 @@
             <a class="nav-item" data-target="page-update"><i class="ph ph-cloud-arrow-down"></i>更新中心</a>
             <!-- 隐藏的控制台入口，默认不显示 -->
             <a class="nav-item console-nav" id="navConsole" data-target="consoleArea" style="display: flex; color: var(--theme-color);"><i class="ph ph-terminal-window"></i>控制台</a>
-            <a class="nav-item" data-target="page-settings" style="margin-top: auto;"><i class="ph ph-gear"></i>设置</a>
+            <a class="nav-item" data-target="page-settings"><i class="ph ph-gear"></i>设置</a>
             <a class="nav-item" data-target="page-about"><i class="ph ph-info"></i>关于</a>
         </div>
     </nav>
@@ -1087,20 +1088,20 @@
                             <div class="update-progress-fill" id="updateProgressFill" style="width:0%"></div>
                         </div>
                         <div class="update-action-row">
-                            <button class="action-btn primary" id="checkUpdateBtn">
+                            <button class="action-btn primary update-action-btn" id="checkUpdateBtn">
                                 <i class="ph ph-arrows-clockwise" id="checkUpdateIcon"></i>
                                 <span id="checkUpdateLabel">检查更新</span>
                             </button>
                             <!--<button class="update-side-btn" id="forceUpdateBtn" title="强制重新下载并安装当前最新版本">
                                 <i class="ph ph-cloud-arrow-down"></i><span>强制更新</span>
                             </button>-->
-                            <button class="update-side-btn" id="updateIntegrityBtn" title="检查系统文件完整性">
+                            <button class="update-side-btn update-action-btn" id="updateIntegrityBtn" title="检查系统文件完整性">
                                 <i class="ph ph-heartbeat"></i><span>完整性检查</span>
                             </button>
-                            <button class="update-side-btn danger" id="rollbackBtn" title="回滚到上一稳定版本">
+                            <button class="update-side-btn danger update-action-btn" id="rollbackBtn" title="回滚到上一稳定版本">
                                 <i class="ph ph-arrow-counter-clockwise"></i><span>版本回滚</span>
                             </button>
-                            <span class="update-status-badge success" id="updateStatusBadge" style="margin-left:auto">
+                            <span class="update-status-badge success" id="updateStatusBadge">
                                 <i class="ph ph-check-circle"></i> 已是最新
                             </span>
                         </div>
@@ -1514,6 +1515,21 @@
                                 </div>
                                 <div class="toggle-switch" id="stgIncognitoSwitch"></div>
                             </div>
+                            <div class="settings-row privacy-scope-row" id="incognitoScopeRow">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-shield-star settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">隐身保护范围</div>
+                                        <div class="settings-row-desc">选择只处理标题、只模糊截图，或同时处理两者</div>
+                                    </div>
+                                </div>
+                                <div class="filter-segmented privacy-scope-segmented" id="incognitoScopeGroup">
+                                    <div class="filter-segmented-pill" id="incognitoScopePill"></div>
+                                    <button class="filter-segmented-btn active" data-scope="screenshot">截图</button>
+                                    <button class="filter-segmented-btn" data-scope="title">标题</button>
+                                    <button class="filter-segmented-btn" data-scope="both">全部</button>
+                                </div>
+                            </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
                                     <i class="ph ph-fingerprint settings-row-icon"></i>
@@ -1805,58 +1821,93 @@
 
     <!-- 隐私规则弹窗 -->
     <div class="modal-overlay" id="privacyRulesModal">
-        <div class="glass-card modal-container" style="max-width: 520px;">
+        <div class="glass-card modal-container privacy-rules-modal-container">
             <div class="modal-header">
                 <h3><i class="ph ph-shield-check" style="color: var(--theme-color);"></i> 隐私模糊规则</h3>
                 <button class="icon-btn close-modal" id="closePrivacyRulesBtn"><i class="ph ph-x"></i></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body privacy-rules-modal-body">
                 <div class="privacy-rules-hint">
                     <i class="ph ph-info"></i>
-                    当检测到前台应用匹配以下规则时，截图将自动高斯模糊后再上传至服务器。
+                    <span>添加需要保护的应用。当前台应用命中规则时，截图会按隐身保护范围进行模糊处理后再上传。</span>
                 </div>
 
-                <!-- 添加规则 -->
-                <div class="privacy-rule-add-row">
-                    <input type="text" class="glass-input" id="privacyRuleInput" placeholder="输入进程名，如 WeChat.exe、chrome.exe">
-                    <button class="action-btn primary" id="addPrivacyRuleBtn" style="white-space:nowrap;">
-                        <i class="ph ph-plus"></i> 添加
-                    </button>
+                <div class="privacy-section">
+                    <div class="privacy-section-title">
+                        <i class="ph ph-plus-circle"></i>
+                        添加应用规则
+                    </div>
+                    <div class="privacy-rule-add-row">
+                        <input type="text" class="glass-input" id="privacyRuleInput" placeholder="如 chrome 或 WeChat">
+                        <button class="action-btn primary privacy-add-btn" id="addPrivacyRuleBtn">
+                            <i class="ph ph-plus"></i> 添加
+                        </button>
+                    </div>
+                    <div class="privacy-rule-tools">
+                        <button class="action-btn" id="addActiveProcessRuleBtn">
+                            <i class="ph ph-crosshair"></i> 点选屏幕窗口
+                        </button>
+                        <button class="action-btn" id="selectPrivacyExeBtn">
+                            <i class="ph ph-folder-open"></i> 选择 EXE 路径
+                        </button>
+                    </div>
+                    <div class="privacy-section-note">
+                        “点选屏幕窗口”会进入选择模式：移动鼠标框选目标窗口，单击后自动加入对应进程。
+                    </div>
+                </div>
+                <div class="privacy-window-picker" id="privacyWindowPicker" hidden>
+                    <div class="privacy-window-picker-head">
+                        <span>选择要保护的窗口</span>
+                        <button class="privacy-window-picker-refresh" id="refreshPrivacyWindowsBtn" title="刷新窗口列表">
+                            <i class="ph ph-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                    <div class="privacy-window-picker-list" id="privacyWindowPickerList"></div>
                 </div>
 
-                <!-- 快捷预设 -->
-                <div class="privacy-presets">
-                    <span class="privacy-preset-label">快捷添加：</span>
-                    <button class="privacy-preset-btn" data-process="WeChat.exe">微信</button>
-                    <button class="privacy-preset-btn" data-process="QQ.exe">QQ</button>
-                    <button class="privacy-preset-btn" data-process="DingTalk.exe">钉钉</button>
-                    <button class="privacy-preset-btn" data-process="Telegram.exe">Telegram</button>
-                    <button class="privacy-preset-btn" data-process="msedge.exe">Edge</button>
-                    <button class="privacy-preset-btn" data-process="chrome.exe">Chrome</button>
+                <div class="privacy-section">
+                    <div class="privacy-section-title">
+                        <i class="ph ph-lightning"></i>
+                        快捷添加
+                    </div>
+                    <div class="privacy-presets">
+                        <button class="privacy-preset-btn" data-process="WeChat.exe">微信</button>
+                        <button class="privacy-preset-btn" data-process="QQ.exe">QQ</button>
+                        <button class="privacy-preset-btn" data-process="DingTalk.exe">钉钉</button>
+                        <button class="privacy-preset-btn" data-process="Telegram.exe">Telegram</button>
+                        <button class="privacy-preset-btn" data-process="msedge.exe">Edge</button>
+                        <button class="privacy-preset-btn" data-process="chrome.exe">Chrome</button>
+                    </div>
                 </div>
 
-                <!-- 已添加的规则列表 -->
-                <div class="privacy-rules-list" id="privacyRulesList">
-                    <!-- JS 动态填充 -->
-                </div>
+                <div class="privacy-section">
+                    <div class="privacy-section-title">
+                        <i class="ph ph-list-checks"></i>
+                        已添加规则
+                    </div>
+                    <div class="privacy-rules-list" id="privacyRulesList">
+                        <!-- JS 动态填充 -->
+                    </div>
 
-                <div class="privacy-rules-empty" id="privacyRulesEmpty">
-                    <i class="ph ph-shield-slash"></i>
-                    <span>暂未添加任何隐私规则</span>
+                    <div class="privacy-rules-empty" id="privacyRulesEmpty">
+                        <i class="ph ph-shield-slash"></i>
+                        <span>暂未添加任何隐私规则</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <div style="border-top:var(--glass-border);padding-top:14px;margin-top:14px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div>
-                            <div style="font-size:13px;font-weight:500;color:var(--text-main);display:flex;align-items:center;gap:6px;"><i class="ph ph-eye-slash" style="color:var(--theme-color);"></i> 全局截图模糊</div>
-                            <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">开启后无论前台应用，所有截图均模糊处理后上传</div>
+                <div class="privacy-global-option">
+                    <div class="privacy-global-option-inner">
+                        <div class="privacy-global-icon"><i class="ph ph-eye-slash"></i></div>
+                        <div class="privacy-global-copy">
+                            <div class="privacy-global-title">全局截图模糊</div>
+                            <div class="privacy-global-desc">开启后无论前台应用，所有截图均模糊处理后上传</div>
                         </div>
                         <div class="toggle-switch" id="blurAllSwitch"></div>
                     </div>
                 </div>
-                <div class="privacy-rules-footer-info" style="margin-top:12px;">
-                    <i class="ph ph-link"></i> 与设置页「隐身模式」联动，关闭隐身模式后规则不生效
+                <div class="privacy-rules-footer-info">
+                    <i class="ph ph-link"></i> 与设置页“隐身模式”和“隐身保护范围”联动
                 </div>
             </div>
         </div>

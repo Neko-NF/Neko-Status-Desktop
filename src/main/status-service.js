@@ -2,7 +2,19 @@
  * status-service.js
  * 核心上报服务：定时获取系统状态并上传至服务端
  */
-const { getActiveWindow, getBatteryInfo, getIdleTimeMs, captureScreen, getMediaInfo, formatDuration, extractAppName } = require('./system-utils');
+const {
+  getActiveWindow,
+  getBatteryInfo,
+  getIdleTimeMs,
+  captureScreen,
+  getMediaInfo,
+  formatDuration,
+  extractAppName,
+  privacyRuleMatchesProcess,
+  shouldMaskIncognitoTitle,
+  shouldBlurIncognitoScreenshot,
+  blurScreenshotBuffer,
+} = require('./system-utils');
 const apiService = require('./api-service');
 const configStore = require('./config-store');
 const os = require('os');
@@ -204,10 +216,16 @@ class StatusService {
 
       // 5. 隐身模式检查
       const isIncognito = configStore.get('enableIncognito');
+      const incognitoScope = configStore.get('incognitoScope');
+      const maskTitle = shouldMaskIncognitoTitle(isIncognito, incognitoScope);
+      const screenshotPrivacyEnabled = shouldBlurIncognitoScreenshot(isIncognito, incognitoScope);
       const blurAll = configStore.get('blurAllScreenshots');
+      const privacyRules = Array.isArray(configStore.get('privacyRules')) ? configStore.get('privacyRules') : [];
 
       // 5b. 截图（若已启用，支持独立间隔）
       let screenshotBuffer = null;
+      let screenshotBlurred = false;
+      let screenshotBlurReason = '';
       if (configStore.get('enableScreenshot')) {
         const syncInterval = configStore.get('syncScreenshotInterval');
         const ssInterval = syncInterval ? configStore.get('reportInterval') : configStore.get('screenshotInterval');
@@ -222,15 +240,20 @@ class StatusService {
           if (screenshotBuffer) this._lastScreenshotTime = now;
 
           // 全局模糊：仅在隐身模式开启时生效
-          if (screenshotBuffer && blurAll && isIncognito) {
+          const ruleMatched = privacyRules.some(rule => privacyRuleMatchesProcess(winInfo.processName, rule));
+          const shouldBlurScreenshot = screenshotPrivacyEnabled && (blurAll || ruleMatched);
+
+          if (screenshotBuffer && shouldBlurScreenshot) {
             try {
-              const { nativeImage } = require('electron');
-              const img = nativeImage.createFromBuffer(screenshotBuffer);
-              const { width, height } = img.getSize();
-              const tiny = img.resize({ width: Math.round(width / 20), height: Math.round(height / 20) });
-              const blurred = tiny.resize({ width, height });
-              screenshotBuffer = blurred.toPNG();
-              this._log('INFO', '全局模糊已应用');
+              const blurred = blurScreenshotBuffer(screenshotBuffer);
+              if (blurred) {
+                screenshotBuffer = blurred;
+                screenshotBlurred = true;
+                screenshotBlurReason = blurAll ? 'global' : 'rule';
+                this._log('INFO', blurAll
+                  ? 'Privacy blur applied globally'
+                  : `Privacy rule matched: ${winInfo.processName || 'unknown'}, screenshot blurred`);
+              }
             } catch { /* 模糊失败则上传原图 */ }
           }
         }
@@ -270,9 +293,9 @@ class StatusService {
         screenshotBuffer = null;
       }
 
-      // 9. 调用上报 API（隐身模式下隐藏窗口标题和进程名）
-      const reportAppName = isIncognito ? '隐身模式' : (winInfo.title || '');
-      const reportPkgName = isIncognito ? '' : (winInfo.processName || '');
+      // 9. 调用上报 API（按隐身保护范围隐藏窗口标题和进程名）
+      const reportAppName = maskTitle ? '隐身模式' : (winInfo.title || '');
+      const reportPkgName = maskTitle ? '' : (winInfo.processName || '');
       const result = await apiService.reportStatusV2({
         deviceKey,
         deviceFingerprint: DEVICE_FINGERPRINT,
@@ -282,8 +305,8 @@ class StatusService {
         isCharging: battery.isCharging,
         status: this._userStatus,
         screenshotBuffer,
-        music: isIncognito ? null : musicPayload,
-        iconBuffer: isIncognito ? null : iconBuffer,
+        music: maskTitle ? null : musicPayload,
+        iconBuffer: maskTitle ? null : iconBuffer,
         captureEnabled: configStore.get('enableScreenshot') === true,
       });
 
@@ -301,7 +324,8 @@ class StatusService {
         hasScreenshot: !!screenshotBuffer,
         screenshotSize: screenshotBuffer ? screenshotBuffer.length : 0,
         screenshotBase64: screenshotBuffer ? screenshotBuffer.toString('base64') : null,
-        screenshotBlurred: !!(screenshotBuffer && blurAll && isIncognito),
+        screenshotBlurred,
+        screenshotBlurReason,
       };
 
       const batteryStr = battery.hasBattery

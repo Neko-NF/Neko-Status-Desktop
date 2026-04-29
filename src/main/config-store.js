@@ -42,8 +42,10 @@ const DEFAULTS = {
   // 通知 & 隐私
   enableNotification: true,       // 系统推送通知
   doNotDisturb: false,            // 勿扰模式
-  enableIncognito: false,         // 隐身模式（截图模糊、隐藏敏感窗口）默认关闭
+  enableIncognito: false,         // 隐身模式总开关
+  incognitoScope: 'screenshot',   // 'screenshot' | 'title' | 'both'
   blurAllScreenshots: false,      // 全局截图模糊（无论前台应用）
+  privacyRules: [],               // 隐私模糊进程规则
   enable2FA: false,               // 双重认证
   restoreLastState: false,        // 启动时恢复上次页面
   authListCollapsed: false,       // 权限列表折叠状态持久化

@@ -80,6 +80,200 @@ try {
   }
 }
 
+async function listVisibleWindows() {
+  const script = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+try {
+  $items = @{}
+  function Add-NekoWindowItem($title, $procName, $pid, $path, $hwnd) {
+    $titleText = ([string]$title).Trim()
+    $procText = ([string]$procName).Trim()
+    if (-not $titleText -or -not $procText) { return }
+    if ($procText -notmatch '\\.exe$') { $procText = $procText + '.exe' }
+    $key = ($procText.ToLowerInvariant() + '|' + $titleText.ToLowerInvariant())
+    $rect = $null
+    if ($script:GetWindowRectFn -and $hwnd) {
+      $rect = & $script:GetWindowRectFn $hwnd
+    }
+    if (-not $items.ContainsKey($key)) {
+      $items[$key] = [pscustomobject]@{
+        title = [string]$titleText
+        processName = [string]$procText
+        pid = [int]$pid
+        path = [string]$path
+        bounds = $rect
+      }
+    } elseif ($rect -and -not $items[$key].bounds) {
+      $items[$key].bounds = $rect
+    }
+  }
+
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle } | ForEach-Object {
+    $path = ''
+    try { $path = [string]$_.Path } catch {}
+    Add-NekoWindowItem $_.MainWindowTitle $_.ProcessName $_.Id $path $_.MainWindowHandle
+  }
+
+  if (-not ('NekoVisibleWindowList' -as [type])) {
+    Add-Type @"
+    using System;
+    using System.Text;
+    using System.Runtime.InteropServices;
+    using System.Collections.Generic;
+    public class NekoVisibleWindowList {
+      public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+      [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+      [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+      [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+      [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+      public static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int maxCount);
+      [StructLayout(LayoutKind.Sequential)]
+      public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+      [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+      public static List<IntPtr> Handles = new List<IntPtr>();
+      public static bool Collect(IntPtr hWnd, IntPtr lParam) { Handles.Add(hWnd); return true; }
+    }
+"@
+  }
+
+  $script:GetWindowRectFn = {
+    param($hwnd)
+    $rect = New-Object NekoVisibleWindowList+RECT
+    if ([NekoVisibleWindowList]::GetWindowRect($hwnd, [ref]$rect)) {
+      @{
+        x = [int]$rect.Left
+        y = [int]$rect.Top
+        width = [int]($rect.Right - $rect.Left)
+        height = [int]($rect.Bottom - $rect.Top)
+      }
+    } else { $null }
+  }
+
+  [NekoVisibleWindowList]::Handles.Clear()
+  [void][NekoVisibleWindowList]::EnumWindows([NekoVisibleWindowList+EnumWindowsProc][NekoVisibleWindowList]::Collect, [IntPtr]::Zero)
+  foreach ($hwnd in [NekoVisibleWindowList]::Handles) {
+    if (-not [NekoVisibleWindowList]::IsWindowVisible($hwnd)) { continue }
+    $sb = New-Object System.Text.StringBuilder 512
+    [void][NekoVisibleWindowList]::GetWindowText($hwnd, $sb, 512)
+    $title = $sb.ToString().Trim()
+    if (-not $title) { continue }
+    $procPid = 0
+    [void][NekoVisibleWindowList]::GetWindowThreadProcessId($hwnd, [ref]$procPid)
+    if ($procPid -le 0) { continue }
+    $p = Get-Process -Id $procPid -ErrorAction SilentlyContinue
+    if (-not $p) { continue }
+    $path = ''
+    try { $path = [string]$p.Path } catch {}
+    Add-NekoWindowItem $title $p.ProcessName $procPid $path $hwnd
+  }
+
+  @($items.Values) |
+    Sort-Object processName,title -Unique |
+    Select-Object -First 100 |
+    ConvertTo-Json -Compress
+} catch {
+  '[]'
+}
+`.trim();
+
+  try {
+    const raw = await runPowerShell(script);
+    const parsed = JSON.parse(raw || '[]');
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    return list
+      .filter(item => item && item.processName)
+      .map(item => ({
+        title: item.title || '',
+        processName: normalizeProcessName(item.processName),
+        pid: Number(item.pid) || 0,
+        path: item.path || '',
+        bounds: item.bounds || null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function getWindowsByHandles(handles = []) {
+  const hwnds = [...new Set(handles.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0))];
+  if (hwnds.length === 0) return [];
+
+  const script = `
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+try {
+  if (-not ('NekoWindowByHandle' -as [type])) {
+    Add-Type @"
+      using System;
+      using System.Text;
+      using System.Runtime.InteropServices;
+      public class NekoWindowByHandle {
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int maxCount);
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+      }
+"@
+  }
+  $handles = @(${hwnds.join(',')})
+  $items = @()
+  foreach ($handle in $handles) {
+    $hwnd = [IntPtr]([int64]$handle)
+    $sb = New-Object System.Text.StringBuilder 512
+    [void][NekoWindowByHandle]::GetWindowText($hwnd, $sb, 512)
+    $title = $sb.ToString().Trim()
+    $procPid = 0
+    [void][NekoWindowByHandle]::GetWindowThreadProcessId($hwnd, [ref]$procPid)
+    if ($procPid -le 0) { continue }
+    $p = Get-Process -Id $procPid -ErrorAction SilentlyContinue
+    if (-not $p) { continue }
+    $path = ''
+    try { $path = [string]$p.Path } catch {}
+    $rect = New-Object NekoWindowByHandle+RECT
+    $bounds = $null
+    if ([NekoWindowByHandle]::GetWindowRect($hwnd, [ref]$rect)) {
+      $bounds = @{
+        x = [int]$rect.Left
+        y = [int]$rect.Top
+        width = [int]($rect.Right - $rect.Left)
+        height = [int]($rect.Bottom - $rect.Top)
+      }
+    }
+    $items += [pscustomobject]@{
+      title = [string]$title
+      processName = [string]($p.ProcessName + '.exe')
+      pid = [int]$procPid
+      path = [string]$path
+      handle = [int64]$handle
+      bounds = $bounds
+    }
+  }
+  $items | ConvertTo-Json -Compress
+} catch {
+  '[]'
+}
+`.trim();
+
+  try {
+    const raw = await runPowerShell(script);
+    const parsed = JSON.parse(raw || '[]');
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    return list
+      .filter(item => item && item.processName)
+      .map(item => ({
+        title: item.title || '',
+        processName: normalizeProcessName(item.processName),
+        pid: Number(item.pid) || 0,
+        path: item.path || '',
+        handle: Number(item.handle) || 0,
+        bounds: item.bounds || null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * 获取电池状态
  * 返回 { level: number, isCharging: boolean, hasBattery: boolean }
@@ -251,6 +445,51 @@ function extractAppName(pkgName) {
   return pkgName;
 }
 
+function normalizeProcessName(value) {
+  const raw = String(value || '').trim().replace(/^["']+|["']+$/g, '');
+  if (!raw) return '';
+
+  const exeMatch = raw.match(/([^\\/:"<>|?*\r\n]+?\.exe)\b/i);
+  const baseName = exeMatch ? exeMatch[1] : raw.split(/[\\/]/).pop().trim();
+  if (!baseName) return '';
+
+  return /\.[a-z0-9]+$/i.test(baseName) ? baseName : `${baseName}.exe`;
+}
+
+function privacyRuleMatchesProcess(processName, rule) {
+  const proc = normalizeProcessName(processName).toLowerCase();
+  const normalizedRule = normalizeProcessName(rule).toLowerCase();
+  return !!proc && !!normalizedRule && proc === normalizedRule;
+}
+
+function normalizeIncognitoScope(scope) {
+  return ['screenshot', 'title', 'both'].includes(scope) ? scope : 'screenshot';
+}
+
+function shouldMaskIncognitoTitle(enabled, scope) {
+  const normalizedScope = normalizeIncognitoScope(scope);
+  return !!enabled && (normalizedScope === 'title' || normalizedScope === 'both');
+}
+
+function shouldBlurIncognitoScreenshot(enabled, scope) {
+  const normalizedScope = normalizeIncognitoScope(scope);
+  return !!enabled && (normalizedScope === 'screenshot' || normalizedScope === 'both');
+}
+
+function blurScreenshotBuffer(buffer) {
+  if (!buffer || buffer.length === 0) return null;
+  const { nativeImage } = require('electron');
+  const img = nativeImage.createFromBuffer(buffer);
+  const size = img.getSize();
+  const width = Math.max(1, size.width || 1);
+  const height = Math.max(1, size.height || 1);
+  const tiny = img.resize({
+    width: Math.max(1, Math.round(width / 20)),
+    height: Math.max(1, Math.round(height / 20)),
+  });
+  return tiny.resize({ width, height }).toPNG();
+}
+
 /**
  * 获取系统实时指标（CPU 负载、内存、网络延迟、网络速度）
  */
@@ -352,4 +591,20 @@ function _getWindowsFriendlyName() {
   return `Windows ${rel}`;
 }
 
-module.exports = { getActiveWindow, getBatteryInfo, getIdleTimeMs, captureScreen, getMediaInfo, formatDuration, extractAppName, getSystemMetrics };
+module.exports = {
+  getActiveWindow,
+  listVisibleWindows,
+  getWindowsByHandles,
+  getBatteryInfo,
+  getIdleTimeMs,
+  captureScreen,
+  getMediaInfo,
+  formatDuration,
+  extractAppName,
+  normalizeProcessName,
+  privacyRuleMatchesProcess,
+  shouldMaskIncognitoTitle,
+  shouldBlurIncognitoScreenshot,
+  blurScreenshotBuffer,
+  getSystemMetrics,
+};
