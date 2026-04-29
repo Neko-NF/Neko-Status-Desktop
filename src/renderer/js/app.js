@@ -402,83 +402,55 @@
                 }
                 card.appendChild(controls);
 
-                // 拖拽拉伸拉手 (右下角)
+                // 拖拽拉伸拉手：右下角同时缩放、右侧横向缩放、底部纵向缩放
                 const resizeHandle = document.createElement('div');
-                resizeHandle.className = 'resize-handle';
+                resizeHandle.className = 'resize-handle resize-handle-corner';
                 card.appendChild(resizeHandle);
 
-                // 拖拽拉伸拉手 (左下角)
-                const resizeHandleLeft = document.createElement('div');
-                resizeHandleLeft.className = 'resize-handle resize-handle-left';
-                card.appendChild(resizeHandleLeft);
+                const resizeHandleRight = document.createElement('div');
+                resizeHandleRight.className = 'resize-handle resize-handle-right';
+                card.appendChild(resizeHandleRight);
 
-                // ============= 辅助：同组卡片自适应宽度 =============
-                function _autoResizeSiblings(targetCard, parentSection, oldW, newW) {
-                    const delta = newW - oldW;
-                    if (delta === 0) return;
-                    // 获取同 section 所有兄弟卡片（排除自身）
-                    const siblings = Array.from(parentSection.querySelectorAll(':scope > .glass-card')).filter(c => c !== targetCard);
-                    if (!siblings.length) return;
-
-                    // 用 getBoundingClientRect 判断哪些卡片与目标卡片在同一视觉行
-                    const targetRect = targetCard.getBoundingClientRect();
-                    const rowMid = targetRect.top + targetRect.height / 2;
-                    const rowSiblings = siblings.filter(s => {
-                        const r = s.getBoundingClientRect();
-                        return r.top < rowMid && (r.top + r.height) > rowMid;
-                    });
-                    if (!rowSiblings.length) return;
-
-                    // 按分配量均匀收缩/扩展（总共分配 -delta）
-                    let remaining = -delta;
-                    for (const sib of rowSiblings) {
-                        const sibW = parseInt(sib.getAttribute('data-w') || 2);
-                        const share = Math.round(remaining / rowSiblings.length);
-                        const adjusted = Math.max(2, Math.min(12, sibW + share));
-                        const actualDelta = adjusted - sibW;
-                        remaining -= actualDelta;
-                        sib.setAttribute('data-w', adjusted);
-                        sib.style.gridColumn = `span ${adjusted}`;
-                    }
-                }
+                const resizeHandleBottom = document.createElement('div');
+                resizeHandleBottom.className = 'resize-handle resize-handle-bottom';
+                card.appendChild(resizeHandleBottom);
 
                 // ============= 拖拽调整大小 (Snap to Grid) — 通用 =============
-                function _initResize(e, direction) {
+                function _initResize(e, mode) {
                     if (!isEditMode) return;
                     e.preventDefault();
                     e.stopPropagation();
 
                     card.setAttribute('draggable', 'false');
                     card.classList.add('resizing');
-                    resizeHandle.classList.add('active');
-                    if (direction === 'left') resizeHandleLeft.classList.add('active');
+                    const activeHandle = e.currentTarget;
+                    activeHandle.classList.add('active');
 
                     const startX = e.clientX;
                     const startY = e.clientY;
                     const startDataW = parseInt(card.getAttribute('data-w') || 1);
                     const startDataH = parseInt(card.getAttribute('data-h') || 1);
                     const parentSection = card.closest('.dashboard-section');
-                    const slotWidth = (parentSection.offsetWidth + 16) / 12;
-                    const slotHeight = 40 + 16;
-                    let prevW = startDataW;
+                    if (!parentSection) return;
 
-                    document.onmousemove = (moveE) => {
-                        let addW, addH;
-                        if (direction === 'left') {
-                            addW = Math.round((startX - moveE.clientX) / slotWidth);
-                            addH = Math.round((moveE.clientY - startY) / slotHeight);
-                        } else {
-                            addW = Math.round((moveE.clientX - startX) / slotWidth);
-                            addH = Math.round((moveE.clientY - startY) / slotHeight);
-                        }
+                    const sectionStyle = getComputedStyle(parentSection);
+                    const gap = parseFloat(sectionStyle.columnGap || sectionStyle.gap || '16') || 16;
+                    const rowGap = parseFloat(sectionStyle.rowGap || sectionStyle.gap || '16') || 16;
+                    const rowHeight = parseFloat(sectionStyle.gridAutoRows || '40') || 40;
+                    const colWidth = (parentSection.clientWidth - gap * 11) / 12;
+                    const colStep = colWidth + gap;
+                    const rowStep = rowHeight + rowGap;
+                    let lastW = startDataW;
+                    let lastH = startDataH;
 
-                        let newW = Math.max(2, Math.min(12, startDataW + addW));
-                        let newH = Math.max(2, startDataH + addH);
-
-                        if (newW !== prevW) {
-                            _autoResizeSiblings(card, parentSection, prevW, newW);
-                            prevW = newW;
-                        }
+                    const onMove = (moveE) => {
+                        const addW = mode === 'bottom' ? 0 : Math.round((moveE.clientX - startX) / colStep);
+                        const addH = mode === 'right' ? 0 : Math.round((moveE.clientY - startY) / rowStep);
+                        const newW = Math.max(2, Math.min(12, startDataW + addW));
+                        const newH = Math.max(2, startDataH + addH);
+                        if (newW === lastW && newH === lastH) return;
+                        lastW = newW;
+                        lastH = newH;
 
                         card.style.gridColumn = `span ${newW}`;
                         card.style.gridRow = `span ${newH}`;
@@ -486,21 +458,24 @@
                         card.setAttribute('data-h', newH);
                     };
 
-                    document.onmouseup = () => {
-                        document.onmousemove = null;
-                        document.onmouseup = null;
+                    const onUp = () => {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
 
                         if (isEditMode) {
                             card.setAttribute('draggable', 'true');
                         }
                         card.classList.remove('resizing');
-                        resizeHandle.classList.remove('active');
-                        resizeHandleLeft.classList.remove('active');
+                        activeHandle.classList.remove('active');
                     };
+
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
                 }
 
-                resizeHandle.addEventListener('mousedown', (e) => _initResize(e, 'right'));
-                resizeHandleLeft.addEventListener('mousedown', (e) => _initResize(e, 'left'));
+                resizeHandle.addEventListener('mousedown', (e) => _initResize(e, 'corner'));
+                resizeHandleRight.addEventListener('mousedown', (e) => _initResize(e, 'right'));
+                resizeHandleBottom.addEventListener('mousedown', (e) => _initResize(e, 'bottom'));
 
                 // ============= 内容替换逻辑 (可双向切换) =============
                 if (btnReplace) {

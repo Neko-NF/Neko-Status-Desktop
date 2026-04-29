@@ -298,6 +298,39 @@
                         </div>
                     </div>
                     <!-- 终端输出区 -->
+                    <div class="console-status-grid" id="consoleStatusGrid">
+                        <div class="console-status-card">
+                            <span class="console-status-label">Runtime</span>
+                            <span class="console-status-value" id="consoleRuntimeValue">--</span>
+                            <span class="console-status-meta" id="consoleRuntimeMeta">Electron / Node</span>
+                        </div>
+                        <div class="console-status-card">
+                            <span class="console-status-label">Service</span>
+                            <span class="console-status-value" id="consoleServiceValue">--</span>
+                            <span class="console-status-meta" id="consoleServiceMeta">Reporter state</span>
+                        </div>
+                        <div class="console-status-card">
+                            <span class="console-status-label">Upload</span>
+                            <span class="console-status-value" id="consoleUploadValue">--</span>
+                            <span class="console-status-meta" id="consoleUploadMeta">Success rate</span>
+                        </div>
+                        <div class="console-status-card">
+                            <span class="console-status-label">Metrics</span>
+                            <span class="console-status-value" id="consoleMetricsValue">--</span>
+                            <span class="console-status-meta" id="consoleMetricsMeta">CPU / Memory</span>
+                        </div>
+                        <div class="console-status-card">
+                            <span class="console-status-label">Cache</span>
+                            <span class="console-status-value" id="consoleCacheValue">--</span>
+                            <span class="console-status-meta" id="consoleCacheMeta">Local cache</span>
+                        </div>
+                        <div class="console-status-card">
+                            <span class="console-status-label">Last Tick</span>
+                            <span class="console-status-value" id="consoleTickValue">--</span>
+                            <span class="console-status-meta" id="consoleTickMeta">Waiting</span>
+                        </div>
+                    </div>
+
                     <div id="consoleOutput" style="flex: 1; padding: 16px 20px; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: var(--text-main); background: color-mix(in srgb, var(--text-main) 3%, transparent);">
                         <div class="log-line"><span class="log-time">[10:42:01]</span> <span class="log-level info" style="color: var(--theme-color);">[INFO]</span> <span class="log-msg">Neko Status Daemon initialized successfully.</span></div>
                         <div class="log-line"><span class="log-time">[10:42:03]</span> <span class="log-level info" style="color: var(--theme-color);">[INFO]</span> <span class="log-msg">Connected to WebSocket server: wss://api.koirin.com/neko/ws</span></div>
@@ -354,6 +387,7 @@
                             </div>
                             <div class="kpi-value-row">
                                 <div class="kpi-value kpi-value-sm">12 <span class="kpi-value-unit">ms 延迟</span></div>
+                                <div class="kpi-chart"><canvas id="sparkNet"></canvas></div>
                             </div>
                             <div class="kpi-footer" id="netSpeedFooter"><i class="ph ph-arrow-down"></i> — &nbsp;&nbsp; <i class="ph ph-arrow-up"></i> —</div>
                         </div>
@@ -365,6 +399,7 @@
                             </div>
                             <div class="kpi-value-row">
                                 <div class="kpi-value">85<small>%</small></div>
+                                <div class="kpi-chart kpi-chart-gauge"><canvas id="sparkBattery"></canvas></div>
                             </div>
                             <div class="kpi-footer">预计充满: 25分钟 / 电池健康度: 92%</div>
                         </div>
@@ -401,23 +436,25 @@
                             </div>
                         </div>
                         <div class="auth-list auth-list-collapsible collapsed" id="metaAuthList">
-                            <div class="auth-item" id="metaAuthAutoStart">
-                                <div>开机自启</div><i class="ph ph-spinner"></i>
-                            </div>
-                            <div class="auth-item" id="metaAuthScreenCapture">
-                                <div>屏幕捕获 API</div><i class="ph ph-spinner"></i>
-                            </div>
-                            <div class="auth-item" id="metaAuthProcessEnum">
-                                <div>进程遍历(WMI)</div><i class="ph ph-spinner"></i>
-                            </div>
-                            <div class="auth-item" id="metaAuthPowerControl">
-                                <div>系统电源控制</div><i class="ph ph-spinner"></i>
-                            </div>
-                            <div class="auth-item" id="metaAuthNetwork">
-                                <div>网络访问</div><i class="ph ph-spinner"></i>
-                            </div>
-                            <div class="auth-item" id="metaAuthFileIO">
-                                <div>文件读写</div><i class="ph ph-spinner"></i>
+                            <div class="auth-list-inner">
+                                <div class="auth-item" id="metaAuthAutoStart">
+                                    <div>开机自启</div><i class="ph ph-spinner"></i>
+                                </div>
+                                <div class="auth-item" id="metaAuthScreenCapture">
+                                    <div>屏幕捕获 API</div><i class="ph ph-spinner"></i>
+                                </div>
+                                <div class="auth-item" id="metaAuthProcessEnum">
+                                    <div>进程遍历(WMI)</div><i class="ph ph-spinner"></i>
+                                </div>
+                                <div class="auth-item" id="metaAuthPowerControl">
+                                    <div>系统电源控制</div><i class="ph ph-spinner"></i>
+                                </div>
+                                <div class="auth-item" id="metaAuthNetwork">
+                                    <div>网络访问</div><i class="ph ph-spinner"></i>
+                                </div>
+                                <div class="auth-item" id="metaAuthFileIO">
+                                    <div>文件读写</div><i class="ph ph-spinner"></i>
+                                </div>
                             </div>
                         </div>
                     </div>

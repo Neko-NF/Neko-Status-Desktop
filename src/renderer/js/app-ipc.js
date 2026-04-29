@@ -157,31 +157,43 @@ document.addEventListener('DOMContentLoaded', () => {
             data: [],
             borderColor: themeColor,
             backgroundColor: `rgba(${r},${g},${b},0.15)`,
-            fill: true, tension: 0.42,
+            fill: true,
+            tension: 0.46,
             cubicInterpolationMode: 'monotone',
             spanGaps: true,
-            pointRadius: 0, pointHoverRadius: 5, borderWidth: 3,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            pointHitRadius: 10,
+            borderWidth: 3,
           },
           {
             label: '内存',
             data: [],
             borderColor: `rgba(${r},${g},${b},0.45)`,
             backgroundColor: `rgba(${r},${g},${b},0.06)`,
-            fill: true, tension: 0.42,
+            fill: true,
+            tension: 0.46,
             cubicInterpolationMode: 'monotone',
             spanGaps: true,
-            pointRadius: 0, pointHoverRadius: 5, borderWidth: 3,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            pointHitRadius: 10,
+            borderWidth: 3,
           }
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        animation: { duration: 380, easing: 'easeInOutQuart' },
+        resizeDelay: 0,
+        animation: { duration: 0 },
+        transitions: {
+          resize: { animation: { duration: 0 } },
+        },
         interaction: { mode: 'index', intersect: false },
         scales: {
           x: {
-            grid: { color: gridColor },
-            ticks: { color: tickColor, maxTicksLimit: 7, maxRotation: 0 },
+            grid: { display: false },
+            ticks: { color: tickColor, maxTicksLimit: 6, maxRotation: 0 },
           },
           y: {
             min: 0, max: 100,
@@ -197,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
             position: 'top', align: 'start',
             labels: {
               color: legendColor, usePointStyle: true,
-              pointStyle: 'line', boxWidth: 26, boxHeight: 2, padding: 20,
+              pointStyle: 'line', boxWidth: 28, boxHeight: 2, padding: 20,
               font: { size: 12, weight: '500' }
             }
           },
@@ -215,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function _updateTrendChart() {
+  function _updateTrendChart(updateMode = 'active') {
     if (!_trendChart) _initTrendChart();
     if (!_trendChart) return;
     const { labels, cpuData, memData } = _buildChartData(_trendRange);
@@ -246,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
       _trendChart.data.datasets[1].borderColor = `rgba(${r},${g},${b},0.45)`;
       _trendChart.data.datasets[1].backgroundColor = mkGrad(r, g, b, 0.12);
     }
-    _trendChart.update('active');
+    _trendChart.update(updateMode);
   }
 
   function applyThemeMode(mode, startTime, endTime) {
@@ -308,6 +320,81 @@ document.addEventListener('DOMContentLoaded', () => {
   const consoleOutput = document.getElementById('consoleOutput');
   let currentLogFilter = 'ALL';
   let autoScroll = true;
+  let _lastMetricsSnapshot = null;
+  let _lastTickSnapshot = null;
+
+  function setConsoleStatus(slot, value, meta, state) {
+    const valueEl = document.getElementById(`console${slot}Value`);
+    const metaEl = document.getElementById(`console${slot}Meta`);
+    if (valueEl) {
+      valueEl.textContent = value ?? '--';
+      valueEl.classList.remove('ok', 'warn', 'error');
+      if (state) valueEl.classList.add(state);
+    }
+    if (metaEl && meta != null) metaEl.textContent = meta;
+  }
+
+  function formatPercent(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${n.toFixed(1)}%` : '--';
+  }
+
+  function formatUptime(sec) {
+    const total = Math.max(0, Number(sec) || 0);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = Math.floor(total % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  function updateConsoleServiceStatus(isRunning) {
+    setConsoleStatus('Service', isRunning ? 'Running' : 'Stopped', 'Reporter service', isRunning ? 'ok' : 'warn');
+  }
+
+  function updateConsoleUploadStatus() {
+    const pct = _healthStats.total > 0 ? (_healthStats.success / _healthStats.total * 100) : null;
+    const state = pct == null ? '' : pct >= 99 ? 'ok' : pct >= 90 ? 'warn' : 'error';
+    setConsoleStatus('Upload', pct == null ? '--' : `${pct.toFixed(1)}%`, `${_healthStats.success}/${_healthStats.total} successful`, state);
+  }
+
+  function updateConsoleMetricsStatus(m) {
+    if (!m) return;
+    const cpu = formatPercent(m.cpuPct);
+    const mem = formatPercent(m.memPct);
+    const state = Number(m.cpuPct) > 90 || Number(m.memPct) > 90 ? 'error' : Number(m.cpuPct) > 70 || Number(m.memPct) > 80 ? 'warn' : 'ok';
+    setConsoleStatus('Metrics', `${cpu} / ${mem}`, 'CPU / Memory', state);
+  }
+
+  function updateConsoleTickStatus(data) {
+    if (!data) return;
+    const ok = data.success !== false;
+    const ts = data.time || data.timestamp || Date.now();
+    setConsoleStatus('Tick', ok ? 'OK' : 'Failed', new Date(ts).toLocaleTimeString(), ok ? 'ok' : 'error');
+  }
+
+  async function refreshConsoleStatus() {
+    try {
+      const [running, proc, cacheSize, metrics] = await Promise.all([
+        ipc.isRunning().catch(() => false),
+        ipc.getProcessInfo().catch(() => null),
+        ipc.getCacheSize().catch(() => 0),
+        ipc.getMetrics().catch(() => null),
+      ]);
+      setConsoleStatus('Runtime', proc ? `PID ${proc.pid}` : '--', proc ? `RSS ${proc.memoryMB} MB / up ${formatUptime(proc.uptimeSec)}` : 'Process unavailable', proc ? 'ok' : 'warn');
+      updateConsoleServiceStatus(running);
+      updateConsoleUploadStatus();
+      setConsoleStatus('Cache', formatBytes(cacheSize), 'Local cache', Number(cacheSize) > 0 ? 'warn' : 'ok');
+      if (metrics) {
+        _lastMetricsSnapshot = metrics;
+        updateConsoleMetricsStatus(metrics);
+      }
+      updateConsoleTickStatus(_lastTickSnapshot);
+    } catch (e) {
+      setConsoleStatus('Runtime', 'Error', e.message, 'error');
+    }
+  }
 
   document.getElementById('consoleAutoScroll')?.addEventListener('change', (e) => {
     autoScroll = e.target.checked;
@@ -401,22 +488,55 @@ document.addEventListener('DOMContentLoaded', () => {
     consoleInput.value = '';
     // 基础命令处理
     if (cmd === 'help') {
-      const cmds = ['help - 显示帮助', 'version - 当前版本', 'config - 显示当前配置', 'start - 启动上报服务', 'stop - 停止上报服务', 'clear - 清空控制台', 'capture - 立即截图'];
+      const cmds = [
+        'help - show commands',
+        'status - refresh runtime snapshot',
+        'health - run health checks',
+        'metrics - print CPU/memory snapshot',
+        'cache - print cache size',
+        'last - print last upload result',
+        'version - app version',
+        'config - current config',
+        'start/stop - control reporter',
+        'clear - clear console',
+        'capture - capture screenshot',
+      ];
       cmds.forEach((c) => addLogLine('INFO', c));
     } else if (cmd === 'version') {
       ipc.getVersion().then((v) => addLogLine('INFO', `Neko Status v${v}`));
     } else if (cmd === 'config') {
-      ipc.getAllConfig().then((cfg) => addLogLine('INFO', JSON.stringify(cfg, null, 2)));
+      ipc.getAllConfig().then((cfg) => addLogLine('INFO', JSON.stringify(cfg)));
     } else if (cmd === 'start') {
-      ipc.startService().then(() => addLogLine('SUCCESS', '上报服务已启动'));
+      ipc.startService().then(() => addLogLine('SUCCESS', 'reporter started'));
     } else if (cmd === 'stop') {
-      ipc.stopService().then(() => addLogLine('INFO', '上报服务已停止'));
+      ipc.stopService().then(() => addLogLine('INFO', 'reporter stopped'));
     } else if (cmd === 'clear') {
       if (consoleOutput) consoleOutput.innerHTML = '';
     } else if (cmd === 'capture') {
       triggerScreenshot();
+    } else if (cmd === 'status') {
+      refreshConsoleStatus().then(() => {
+        addLogLine('INFO', `runtime=${document.getElementById('consoleRuntimeValue')?.textContent || '--'} service=${document.getElementById('consoleServiceValue')?.textContent || '--'} cache=${document.getElementById('consoleCacheValue')?.textContent || '--'}`);
+      });
+    } else if (cmd === 'health') {
+      ipc.runHealthCheck().then((items) => {
+        (items || []).forEach(item => addLogLine(item.ok ? 'INFO' : 'WARN', `[health] ${item.name}: ${item.text}`));
+      }).catch(e => addLogLine('ERROR', `health failed: ${e.message}`));
+    } else if (cmd === 'metrics') {
+      ipc.getMetrics().then((m) => {
+        _lastMetricsSnapshot = m;
+        updateConsoleMetricsStatus(m);
+        addLogLine('INFO', `metrics cpu=${formatPercent(m.cpuPct)} mem=${formatPercent(m.memPct)} used=${formatBytes(m.memUsed)} total=${formatBytes(m.memTotal)}`);
+      }).catch(e => addLogLine('ERROR', `metrics failed: ${e.message}`));
+    } else if (cmd === 'cache') {
+      ipc.getCacheSize().then((size) => {
+        setConsoleStatus('Cache', formatBytes(size), 'Local cache', Number(size) > 0 ? 'warn' : 'ok');
+        addLogLine('INFO', `cache=${formatBytes(size)}`);
+      }).catch(e => addLogLine('ERROR', `cache query failed: ${e.message}`));
+    } else if (cmd === 'last') {
+      ipc.getLastResult().then((result) => addLogLine('INFO', `last=${JSON.stringify(result || {})}`));
     } else {
-      addLogLine('WARN', `未知指令: ${cmd}，输入 help 查看可用指令`);
+      addLogLine('WARN', `Unknown command: ${cmd}. Type help.`);
     }
   }
   document.getElementById('consoleSendBtn')?.addEventListener('click', handleConsoleCommand);
@@ -430,6 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyServiceState(isRunning) {
     _serviceRunning = isRunning;
+    updateConsoleServiceStatus(isRunning);
     // 顶栏状态点 — 需动态查询，因 app:init 会重建 badge innerHTML
     const dot = document.getElementById('deviceStatusDot');
     if (dot) {
@@ -530,6 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
       : '—';
     const healthValueEl = document.getElementById('healthValue');
     if (healthValueEl) healthValueEl.textContent = `${healthPct}%`;
+    updateConsoleUploadStatus();
     const healthTrendEl = document.getElementById('healthTrend');
     if (healthTrendEl) {
       if (!_serviceRunning) {
@@ -1173,11 +1295,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  关键权限详情折叠切换
   // ══════════════════════════════════════════════════════════════
+  function syncDeviceAuthExpandedState() {
+    const authList = document.getElementById('metaAuthList');
+    const grid = document.querySelector('#page-device-status .device-status-grid');
+    if (grid && authList) {
+      grid.classList.toggle('auth-expanded', !authList.classList.contains('collapsed'));
+    }
+  }
+
   document.getElementById('authListToggle')?.addEventListener('click', () => {
     const authList = document.getElementById('metaAuthList');
     const collapseIcon = document.getElementById('authCollapseIcon');
     if (authList) authList.classList.toggle('collapsed');
     if (collapseIcon) collapseIcon.classList.toggle('collapsed');
+    requestAnimationFrame(syncDeviceAuthExpandedState);
     // 持久化折叠状态
     const isCollapsed = authList ? authList.classList.contains('collapsed') : false;
     ipc.setConfig('authListCollapsed', isCollapsed);
@@ -1189,6 +1320,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  权限诊断核心逻辑（可复用）
   // ══════════════════════════════════════════════════════════════
+  syncDeviceAuthExpandedState();
+
   async function runPermissionDiagnosis() {
     const [perms, running, autoStart] = await Promise.all([
       ipc.checkPermissions(),
@@ -2110,6 +2243,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 应用初始化
   ipc.on('app:init', async (data) => {
+    refreshConsoleStatus();
     addLogLine('INFO', `Neko Status v${data.version} 初始化完成`);
     addLogLine('INFO', `设备: ${data.deviceName} | 平台: ${data.platform}`);
 
@@ -2117,7 +2251,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 检查是否有已下载（等待安装）的更新
     try {
-      const pending = await ipc.invoke('update:getPendingInstall');
+      const pending = await ipc.getPendingInstall();
       if (pending && pending.hasPending) {
         showNekoIsland(
           `发现已预下载的更新 v${pending.version}，点击「立即安装」完成更新`,
@@ -2142,7 +2276,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (btn && btn._updateMode === 'install-pending') {
             btn.disabled = true;
             if (label) label.textContent = '安装中...';
-            const res = await ipc.invoke('update:installPending');
+            const res = await ipc.installPendingUpdate();
             if (!res.success) {
               addLogLine('ERROR', `安装失败: ${res.error}`);
               btn.disabled = false;
@@ -2647,6 +2781,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (authList) authList.classList.remove('collapsed');
           if (collapseIcon) collapseIcon.classList.remove('collapsed');
         }
+        requestAnimationFrame(syncDeviceAuthExpandedState);
 
         // 更新仪表盘权限评级
         const ratingBadge = document.querySelector('.rating-badge');
@@ -2682,22 +2817,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 初始电量更新 (设备状态页 + 仪表盘)
       const bat = await ipc.getBattery();
-      // 设备状态页 KPI 卡
-      const batCards = document.querySelectorAll('#page-device-status .kpi-card');
-      if (batCards[3]) {
-        const batValue = batCards[3].querySelector('.kpi-value');
-        const batBadge = batCards[3].querySelector('.kpi-badge');
-        if (bat.hasBattery === false) {
-          if (batValue) batValue.innerHTML = `100<small>%</small>`;
-          if (batBadge) { batBadge.className = 'kpi-badge info'; batBadge.textContent = '桌面供电'; }
-        } else {
-          if (batValue) batValue.innerHTML = `${bat.level}<small>%</small>`;
-          if (batBadge) {
-            batBadge.className = `kpi-badge ${bat.isCharging ? 'info' : bat.level < 20 ? 'error' : 'success'}`;
-            batBadge.textContent = bat.isCharging ? '充电中' : bat.level < 20 ? '电量低' : '使用电池';
-          }
-        }
-      }
+      updatePowerKpi(bat.level, bat.isCharging, bat.hasBattery, bat.hasBattery === false ? '桌面供电 · 无电池' : '电池状态实时采样');
       // 仪表盘电量卡
       updateDashboardCards({
         batteryLevel: bat.hasBattery === false ? 100 : bat.level,
@@ -2725,7 +2845,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 上报成功 Tick
   ipc.on('service:tick', (data) => {
+    _lastTickSnapshot = data;
     updateDashboardCards(data);
+    updateConsoleTickStatus(data);
+    if (data.batteryLevel != null) {
+      updatePowerKpi(data.batteryLevel, data.isCharging, data.hasBattery, null);
+    }
     if (data.success === false && data.reason === 'no_key') {
       // 密钥未配置时不打印过多日志
     }
@@ -2738,6 +2863,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1m 区间: 每 5s 刷新, 1h 区间: 每 60s 刷新, 12h 区间: 每 3600s 刷新
   const _trendThrottleMs = { '1m': 5000, '1h': 60000, '12h': 3600000 };
   ipc.on('system:metricsUpdate', (m) => {
+    _lastMetricsSnapshot = m;
+    updateConsoleMetricsStatus(m);
     _metricsBuffer.push(m);
     if (_metricsBuffer.length > 8640) _metricsBuffer.shift(); // 保留 24h
     // 仅在仪表盘页可见时刷新，且遵守当前区间节流间隔
@@ -2753,12 +2880,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── 仪表盘导航时确保图表已初始化/调整尺寸 ────────────────────────────
-  document.querySelectorAll('.nav-item[data-target="page-dashboard"]').forEach(navItem => {
+  document.querySelectorAll('.nav-item[data-target="mainDashboardArea"]').forEach(navItem => {
     navItem.addEventListener('click', () => {
       setTimeout(() => {
         if (!_trendChart) _initTrendChart();
-        else _trendChart.resize();
-        _updateTrendChart();
+        _lastChartUpdateTs = Date.now();
       }, 60);
     });
   });
@@ -3201,11 +3327,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const result = await ipc.clearCache();
       if (result.success) {
-        addLogLine('SUCCESS', '缓存已清理');
+        addLogLine('SUCCESS', `cache cleared: ${formatBytes(result.clearedBytes || 0)} freed, ${result.removedCount || 0} paths touched`);
         if (icon) { icon.className = 'ph ph-check-circle'; icon.classList.remove('spinning'); }
-        if (label) label.textContent = ' 已完成';
+        if (label) label.textContent = ' \u5df2\u5b8c\u6210';
         const cacheDesc = document.getElementById('cacheSizeDesc');
-        if (cacheDesc) cacheDesc.textContent = '会话缓存（图片、脚本等）· 当前 0 MB';
+        if (cacheDesc) cacheDesc.textContent = `\u4f1a\u8bdd\u7f13\u5b58\uff08\u56fe\u7247\u3001\u811a\u672c\u7b49\uff09\u00b7 \u5f53\u524d ${formatBytes(result.afterBytes || 0)}`;
+        setConsoleStatus('Cache', formatBytes(result.afterBytes || 0), 'Local cache', 'ok');
         await new Promise(r => setTimeout(r, 1200));
       } else {
         addLogLine('ERROR', `清理失败: ${result.error}`);
@@ -3350,6 +3477,54 @@ document.addEventListener('DOMContentLoaded', () => {
     return (bps / 1024 / 1024).toFixed(1) + ' MB/s';
   }
 
+  function clampNumber(value, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return min;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function getNetworkLevel(latency) {
+    if (latency == null || latency < 0) return { level: 'error', text: '离线' };
+    if (latency > 300) return { level: 'error', text: '拥塞' };
+    if (latency > 150) return { level: 'warn', text: '延迟高' };
+    if (latency > 60) return { level: 'info', text: '正常' };
+    return { level: 'success', text: '极佳' };
+  }
+
+  function getNetworkScore(m) {
+    if (!m || m.networkLatency == null || m.networkLatency < 0) return 0;
+    const latencyScore = 100 - clampNumber(m.networkLatency, 0, 300) / 3;
+    const trafficBps = Math.max(0, Number(m.netDownBps || 0) + Number(m.netUpBps || 0));
+    const trafficBoost = trafficBps > 0 ? Math.min(18, Math.log10(trafficBps + 1) * 2.4) : 0;
+    return clampNumber(latencyScore + trafficBoost, 0, 100);
+  }
+
+  function getBatteryLevelInfo(level, isCharging, hasBattery) {
+    if (hasBattery === false) return { level: 'info', text: '桌面供电' };
+    if (isCharging) return { level: 'info', text: '充电中' };
+    if (level < 15) return { level: 'error', text: '电量低' };
+    if (level < 35) return { level: 'warn', text: '偏低' };
+    return { level: 'success', text: '使用电池' };
+  }
+
+  function updatePowerKpi(level, isCharging, hasBattery, footerText) {
+    const kpiCards = document.querySelectorAll('#page-device-status .kpi-card');
+    const card = kpiCards[3];
+    if (!card) return;
+    const displayLevel = hasBattery === false ? 100 : clampNumber(level, 0, 100);
+    const batValue = card.querySelector('.kpi-value');
+    const batBadge = card.querySelector('.kpi-badge');
+    const batFooter = card.querySelector('.kpi-footer');
+    const info = getBatteryLevelInfo(displayLevel, isCharging, hasBattery);
+    if (batValue) batValue.innerHTML = `${displayLevel}<small>%</small>`;
+    if (batBadge) {
+      batBadge.className = `kpi-badge ${info.level}`;
+      batBadge.textContent = info.text;
+    }
+    if (batFooter && footerText) batFooter.textContent = footerText;
+    _updateBatterySparkline(displayLevel);
+  }
+
   function updateDeviceStatusPage(m) {
     if (!m) return;
     const kpiCards = document.querySelectorAll('#page-device-status .kpi-card');
@@ -3389,10 +3564,9 @@ document.addEventListener('DOMContentLoaded', () => {
       netValue.innerHTML = lat >= 0 ? `${lat} <span class="kpi-value-unit">ms 延迟</span>` : `— <span class="kpi-value-unit">不可达</span>`;
     }
     if (netBadge) {
-      const level = m.networkLatency < 0 ? 'error' : m.networkLatency > 200 ? 'warn' : 'success';
-      const text = m.networkLatency < 0 ? '离线' : m.networkLatency > 200 ? '延迟高' : '正常';
-      netBadge.className = `kpi-badge ${level}`;
-      netBadge.textContent = text;
+      const netState = getNetworkLevel(m.networkLatency);
+      netBadge.className = `kpi-badge ${netState.level}`;
+      netBadge.textContent = netState.text;
     }
     // 网络上传/下载速度
     const netSpeedFooter = document.getElementById('netSpeedFooter');
@@ -3402,12 +3576,12 @@ document.addEventListener('DOMContentLoaded', () => {
       netSpeedFooter.innerHTML = `<i class="ph ph-arrow-down"></i> ${down} &nbsp;&nbsp; <i class="ph ph-arrow-up"></i> ${up}`;
     }
 
-    // 电量 — 从最近的 service:tick 或 battery 查询获取，这里仅更新运行时间
-    const batFooter = kpiCards[3].querySelector('.kpi-footer');
-    if (batFooter && m.uptime) {
+    // 供电卡保留电池百分比，指标更新时只刷新运行时间说明
+    if (m.uptime) {
       const hr = Math.floor(m.uptime / 3600);
       const min = Math.floor((m.uptime % 3600) / 60);
-      batFooter.textContent = `系统运行: ${hr}h ${min}m`;
+      const batFooter = kpiCards[3].querySelector('.kpi-footer');
+      if (batFooter) batFooter.textContent = `系统运行: ${hr}h ${min}m`;
     }
 
     // 设备元信息 — 仅更新操作系统，指纹由 init 时设置
@@ -3423,7 +3597,7 @@ document.addEventListener('DOMContentLoaded', () => {
   //  迷你 Sparkline 折线（KPI 卡片内嵌小图表）
   // ══════════════════════════════════════════════════════════════
   const SPARK_MAX = 30; // 保留最近 30 个点
-  const _sparkData = { cpu: [], mem: [] };
+  const _sparkData = { cpu: [], mem: [], net: [], battery: [] };
   const _sparkCharts = {};
 
   function _createSparkline(canvasId, color) {
@@ -3462,26 +3636,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || 'rgb(99,102,241)';
     _sparkCharts.cpu = _createSparkline('sparkCpu', themeColor);
     _sparkCharts.mem = _createSparkline('sparkMem', 'rgb(245, 158, 11)');
+    _sparkCharts.net = _createSparkline('sparkNet', 'rgb(16, 185, 129)');
+    _sparkCharts.battery = _createSparkline('sparkBattery', 'rgb(34, 197, 94)');
+  }
+
+  function _setSparklineData(key, value) {
+    _initSparklines();
+    if (value != null) _sparkData[key].push(clampNumber(value, 0, 100));
+    if (_sparkData[key].length > SPARK_MAX) _sparkData[key].shift();
+    const chart = _sparkCharts[key];
+    if (!chart) return;
+    chart.data.labels = _sparkData[key].map(() => '');
+    chart.data.datasets[0].data = [..._sparkData[key]];
+    chart.update('none');
+  }
+
+  function _updateBatterySparkline(level) {
+    if (level == null) return;
+    _initSparklines();
+    const value = clampNumber(level, 0, 100);
+    if (_sparkData.battery.length === 0) {
+      _sparkData.battery = Array(SPARK_MAX).fill(value);
+      const chart = _sparkCharts.battery;
+      if (!chart) return;
+      chart.data.labels = _sparkData.battery.map(() => '');
+      chart.data.datasets[0].data = [..._sparkData.battery];
+      chart.update('none');
+      return;
+    }
+    _setSparklineData('battery', value);
+  }
+
+  function _syncBatterySparklineFromCard() {
+    if (_sparkData.battery.length > 0) return;
+    const valueEl = document.querySelector('#sparkBattery')?.closest('.kpi-card')?.querySelector('.kpi-value');
+    const value = parseFloat(valueEl?.textContent || '');
+    _updateBatterySparkline(Number.isFinite(value) ? value : 100);
   }
 
   function _updateSparklines(m) {
-    _initSparklines();
-    if (m.cpuPct != null) _sparkData.cpu.push(m.cpuPct);
-    if (m.memPct != null) _sparkData.mem.push(m.memPct);
-    if (_sparkData.cpu.length > SPARK_MAX) _sparkData.cpu.shift();
-    if (_sparkData.mem.length > SPARK_MAX) _sparkData.mem.shift();
-
-    if (_sparkCharts.cpu) {
-      _sparkCharts.cpu.data.labels = _sparkData.cpu.map(() => '');
-      _sparkCharts.cpu.data.datasets[0].data = [..._sparkData.cpu];
-      _sparkCharts.cpu.update('none');
-    }
-    if (_sparkCharts.mem) {
-      _sparkCharts.mem.data.labels = _sparkData.mem.map(() => '');
-      _sparkCharts.mem.data.datasets[0].data = [..._sparkData.mem];
-      _sparkCharts.mem.update('none');
-    }
+    _setSparklineData('cpu', m.cpuPct);
+    _setSparklineData('mem', m.memPct);
+    _setSparklineData('net', getNetworkScore(m));
   }
+
+  document.querySelector('.nav-item[data-target="page-device-status"]')?.addEventListener('click', () => {
+    requestAnimationFrame(() => {
+      _initSparklines();
+      _syncBatterySparklineFromCard();
+    });
+  });
 
   // 监听指标推送
   ipc.on('system:metricsUpdate', (m) => {
@@ -3570,124 +3774,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  P2-9: 仪表盘图表（Chart.js 简易实现 — 使用 Canvas 绘制）
-  // ══════════════════════════════════════════════════════════════
-  const CHART_MAX_POINTS = 60;
-  const chartData = { cpu: [], mem: [], timestamps: [] };
-  let chartTimeRange = '1h'; // '1h' | '6h' | '24h'
-
-  function drawChart() {
-    const container = document.querySelector('#card-chart .chart-placeholder');
-    if (!container) return;
-
-    // 用 canvas 替换占位文字
-    let canvas = container.querySelector('canvas');
-    if (!canvas) {
-      container.innerHTML = '';
-      canvas = document.createElement('canvas');
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      container.appendChild(canvas);
-    }
-
-    const rect = container.getBoundingClientRect();
-    canvas.width = rect.width * (window.devicePixelRatio || 1);
-    canvas.height = rect.height * (window.devicePixelRatio || 1);
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-
-    const ctx = canvas.getContext('2d');
-    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-    const W = rect.width, H = rect.height;
-
-    ctx.clearRect(0, 0, W, H);
-
-    const data = chartData;
-    if (data.cpu.length < 2) {
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = '13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('等待数据采集...', W / 2, H / 2);
-      return;
-    }
-
-    const pad = { top: 20, right: 16, bottom: 28, left: 40 };
-    const cW = W - pad.left - pad.right;
-    const cH = H - pad.top - pad.bottom;
-
-    // Y 轴 0-100%
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'right';
-    for (let v = 0; v <= 100; v += 25) {
-      const y = pad.top + cH - (v / 100 * cH);
-      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
-      ctx.fillText(v + '%', pad.left - 6, y + 3);
-    }
-
-    function drawLine(arr, color) {
-      if (arr.length < 2) return;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      const step = cW / (arr.length - 1);
-      arr.forEach((v, i) => {
-        const x = pad.left + i * step;
-        const y = pad.top + cH - (v / 100 * cH);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-    }
-
-    drawLine(data.cpu, 'rgba(6,182,212,0.9)');  // 青色 = CPU
-    drawLine(data.mem, 'rgba(168,85,247,0.9)');  // 紫色 = 内存
-
-    // 图例
-    ctx.font = '11px sans-serif';
-    ctx.fillStyle = 'rgba(6,182,212,0.9)';
-    ctx.textAlign = 'left';
-    ctx.fillText('● CPU', pad.left + 4, H - 6);
-    ctx.fillStyle = 'rgba(168,85,247,0.9)';
-    ctx.fillText('● 内存', pad.left + 60, H - 6);
-  }
-
-  // 接收指标推送 → 更新图表数据
-  ipc.on('system:metricsUpdate', (m) => {
-    chartData.cpu.push(m.cpuPct);
-    chartData.mem.push(m.memPct);
-    chartData.timestamps.push(m.timestamp || Date.now());
-
-    // 根据时间范围限制点数
-    const maxMap = { '1h': 360, '6h': 2160, '24h': 8640 };
-    const max = maxMap[chartTimeRange] || 360;
-    while (chartData.cpu.length > max) { chartData.cpu.shift(); chartData.mem.shift(); chartData.timestamps.shift(); }
-
-    drawChart();
-  });
-
-  // 时间范围切换按钮
-  document.querySelectorAll('#card-chart .toggle-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      document.querySelectorAll('#card-chart .toggle-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      chartTimeRange = btn.textContent.trim().toLowerCase();
-
-      // 从主进程获取历史数据
-      const history = await ipc.getMetricsHistory();
-      chartData.cpu = history.map(h => h.cpuPct);
-      chartData.mem = history.map(h => h.memPct);
-      chartData.timestamps = history.map(h => h.timestamp);
-      drawChart();
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  //  P2-11: 历史诊断筛选器交互
-  // ══════════════════════════════════════════════════════════════
+  // History diagnostic filter
   const historyFilterGroup = document.getElementById('historyFilterGroup');
   if (historyFilterGroup) {
     historyFilterGroup.querySelectorAll('.filter-segmented-btn').forEach((btn) => {
@@ -4137,7 +4224,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 已登录 — 更新 UI，验证 token 有效性
       updateAuthUI(true, state.user);
       // 本地测试 token 无需远程验证
-      if (state.user?.id?.startsWith('local-')) return;
+      if (String(state.user?.id || '').startsWith('local-')) return;
       // 静默刷新用户信息
       const me = await ipc.authGetMe();
       if (me.success && me.user) {

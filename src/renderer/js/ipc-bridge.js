@@ -71,6 +71,8 @@ const nekoIPC = {
   setUpdateChannel: (channel) => ipcRenderer.invoke('update:setChannel', channel),
   downloadUpdate:   (url) => ipcRenderer.invoke('update:download', { url }),
   installUpdate:    (filePath, expectedSha256) => ipcRenderer.invoke('update:install', { filePath, expectedSha256 }),
+  getPendingInstall: () => ipcRenderer.invoke('update:getPendingInstall'),
+  installPendingUpdate: () => ipcRenderer.invoke('update:installPending'),
 
   // ── 文件选择 ─────────────────────────────────────────────────────────
   selectFile: (options) => ipcRenderer.invoke('dialog:selectFile', options),

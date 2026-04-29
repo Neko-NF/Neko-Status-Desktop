@@ -295,6 +295,7 @@ class StatusService {
         packageName: winInfo.processName,
         batteryLevel: battery.level,
         isCharging: battery.isCharging,
+        hasBattery: battery.hasBattery,
         userStatus: this._userStatus,
         music: musicPayload,
         hasScreenshot: !!screenshotBuffer,

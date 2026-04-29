@@ -55,6 +55,92 @@ let mainWindow = null;
 let tray       = null;
 let isQuitting = false;
 
+const CACHE_DIR_NAMES = [
+  'Cache',
+  'Code Cache',
+  'GPUCache',
+  'DawnCache',
+  'DawnGraphiteCache',
+  'DawnWebGPUCache',
+  'ShaderCache',
+  'GrShaderCache',
+  'blob_storage',
+  path.join('Service Worker', 'CacheStorage'),
+  path.join('Service Worker', 'ScriptCache'),
+  path.join('Network', 'Cache'),
+  path.join('Network', 'Code Cache'),
+];
+
+function uniquePaths(paths) {
+  const seen = new Set();
+  return paths.filter((p) => {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) return false;
+    seen.add(resolved);
+    return true;
+  });
+}
+
+function isInside(parent, child) {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+function getCacheTargets(sessionRef) {
+  const roots = [app.getPath('userData')];
+  try {
+    if (sessionRef && typeof sessionRef.getStoragePath === 'function') {
+      const storagePath = sessionRef.getStoragePath();
+      if (storagePath) roots.push(storagePath);
+    }
+  } catch { /* ignore */ }
+
+  const targets = [];
+  for (const root of uniquePaths(roots)) {
+    for (const dir of CACHE_DIR_NAMES) {
+      const target = path.resolve(root, dir);
+      if (isInside(root, target)) targets.push(target);
+    }
+  }
+  return uniquePaths(targets);
+}
+
+async function getPathSize(target) {
+  try {
+    const stat = await fs.promises.stat(target);
+    if (stat.isFile()) return stat.size;
+    if (!stat.isDirectory()) return 0;
+    const entries = await fs.promises.readdir(target, { withFileTypes: true });
+    const sizes = await Promise.all(entries.map((entry) => getPathSize(path.join(target, entry.name))));
+    return sizes.reduce((sum, n) => sum + n, 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function getCacheDiskSize(sessionRef) {
+  const sesSize = sessionRef && typeof sessionRef.getCacheSize === 'function'
+    ? await sessionRef.getCacheSize().catch(() => 0)
+    : 0;
+  const dirSize = (await Promise.all(getCacheTargets(sessionRef).map(getPathSize)))
+    .reduce((sum, n) => sum + n, 0);
+  return Math.max(sesSize, dirSize);
+}
+
+async function removeCacheTargets(sessionRef) {
+  const removed = [];
+  const failed = [];
+  for (const target of getCacheTargets(sessionRef)) {
+    try {
+      await fs.promises.rm(target, { recursive: true, force: true, maxRetries: 2, retryDelay: 80 });
+      removed.push(path.basename(target));
+    } catch (err) {
+      failed.push({ path: target, error: err.message });
+    }
+  }
+  return { removed, failed };
+}
+
 function launchInstaller(filePath, { silent = true } = {}) {
   const resolvedPath = path.resolve(filePath);
   const ext = path.extname(resolvedPath).toLowerCase();
@@ -944,25 +1030,39 @@ function setupIPC() {
     return result.filePaths[0];
   });
 
-  // ── 缓存清理 ──────────────────────────────────────────────────────────
+  // Cache cleanup
   ipcMain.handle('cache:clear', async () => {
     try {
       const ses = mainWindow?.webContents?.session;
-      if (!ses) return { success: false, error: '无法获取 session' };
+      if (!ses) return { success: false, error: 'Unable to access session' };
+      const beforeBytes = await getCacheDiskSize(ses);
       await ses.clearCache();
-      await ses.clearStorageData({ storages: ['cachestorage', 'shadercache', 'serviceworkers'] });
-      return { success: true };
+      await ses.clearStorageData({
+        storages: ['cachestorage', 'shadercache', 'serviceworkers'],
+        quotas: ['temporary', 'syncable'],
+      });
+      const { removed, failed } = await removeCacheTargets(ses);
+      const afterBytes = await getCacheDiskSize(ses);
+      return {
+        success: failed.length === 0,
+        beforeBytes,
+        afterBytes,
+        clearedBytes: Math.max(0, beforeBytes - afterBytes),
+        removedCount: removed.length,
+        failed,
+        error: failed.length ? failed.map(item => item.error).join('; ') : undefined,
+      };
     } catch (e) {
       return { success: false, error: e.message };
     }
   });
 
-  // ── 缓存大小查询 ────────────────────────────────────────────────────
+  // Cache size query
   ipcMain.handle('cache:getSize', async () => {
     try {
       const ses = mainWindow?.webContents?.session;
       if (!ses) return 0;
-      return await ses.getCacheSize();
+      return await getCacheDiskSize(ses);
     } catch {
       return 0;
     }
