@@ -496,10 +496,6 @@
 
                 // ============= 内容替换逻辑 (可双向切换) =============
                 if (btnReplace) {
-                    let isSwapped = false;
-                    const viewDefault = card.querySelector('.view-default');
-                    const viewSwapped = card.querySelector('.view-swapped');
-
                     btnReplace.addEventListener('click', (e) => {
                         e.stopPropagation();
                         // 过渡动画
@@ -507,14 +503,8 @@
                         card.style.transform = 'scale(0.95)';
                         
                         setTimeout(() => {
-                            isSwapped = !isSwapped;
-                            if (isSwapped) {
-                                viewDefault.style.display = 'none';
-                                viewSwapped.style.display = 'flex';
-                            } else {
-                                viewDefault.style.display = 'flex';
-                                viewSwapped.style.display = 'none';
-                            }
+                            const isSwapped = card.dataset.viewState === 'swapped';
+                            setCardViewState(card, !isSwapped);
                             card.style.opacity = '1';
                             card.style.transform = 'scale(1)';
                         }, 300);
@@ -617,6 +607,7 @@
                                     h: c.getAttribute('data-h'),
                                     section: secName,
                                     order: idx,
+                                    swapped: c.dataset.viewState === 'swapped',
                                 });
                             }
                         });
@@ -636,6 +627,16 @@
 
             const restoreDefaultBtn = document.getElementById('restoreDefaultBtn');
             const STORAGE_KEY = 'neko_layout_config';
+
+            function setCardViewState(card, swapped) {
+                if (!card) return;
+                const viewDefault = card.querySelector('.view-default');
+                const viewSwapped = card.querySelector('.view-swapped');
+                if (!viewDefault || !viewSwapped) return;
+                card.dataset.viewState = swapped ? 'swapped' : 'default';
+                viewDefault.style.display = swapped ? 'none' : 'flex';
+                viewSwapped.style.display = swapped ? 'flex' : 'none';
+            }
 
             // ============= 加载持久化布局 =============
             function loadLayoutConfig(layoutData) {
@@ -657,6 +658,7 @@
                             card.setAttribute('data-h', item.h);
                             card.style.gridColumn = `span ${item.w}`;
                             card.style.gridRow = `span ${item.h}`;
+                            setCardViewState(card, !!item.swapped);
                             targetSection.appendChild(card);
                         }
                     });
@@ -692,6 +694,7 @@
                             c.setAttribute('data-h', snap.h);
                             c.style.gridColumn = `span ${snap.w}`;
                             c.style.gridRow = `span ${snap.h}`;
+                            setCardViewState(c, !!snap.swapped);
                             sec.appendChild(c); // 按顺序重新追加以恢复 DOM 顺序
                         });
                     }
@@ -718,7 +721,8 @@
                                 id: c.id,
                                 w: c.getAttribute('data-w'),
                                 h: c.getAttribute('data-h'),
-                                section: secName
+                                section: secName,
+                                swapped: c.dataset.viewState === 'swapped'
                             });
                         }
                     });
@@ -883,7 +887,7 @@
             // ======== div 开关统一 click 处理（截图页 + 服务页 + 设置页） ======== //
             // 只做 UI class 切换，具体配置持久化逻辑统一在 app-ipc.js 中
             [
-                'uploadSwitch', 'autoStartSwitch', 'reportAutoStartSwitch', 'autoRestartSwitch',
+                'uploadSwitch', 'autoStartSwitch', 'autoStartMinimizeSwitch', 'reportAutoStartSwitch', 'autoRestartSwitch',
                 'stgAutoStartSwitch', 'stgTraySwitch', 'stgRestoreSwitch',
                 'stgDarkSwitch', 'stgDarkScheduleSwitch',
                 'stgGlassSwitch', 'stgAutoUploadSwitch', 'stgNotifySwitch', 'stgDndSwitch',
@@ -1137,10 +1141,34 @@
                 renderPrivacyRules();
             }
 
+            const BLUR_EVENTS_KEY = 'neko_blur_events';
+            const BLUR_LEGACY_KEY = 'neko_blur_count';
+            const BLUR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+            function loadBlurEvents() {
+                const now = Date.now();
+                let events = [];
+                try {
+                    const parsed = JSON.parse(localStorage.getItem(BLUR_EVENTS_KEY) || '[]');
+                    if (Array.isArray(parsed)) events = parsed.map(Number).filter(Number.isFinite);
+                } catch { events = []; }
+
+                const legacyCount = parseInt(localStorage.getItem(BLUR_LEGACY_KEY) || '0', 10);
+                if (events.length === 0 && legacyCount > 0) {
+                    const count = Math.min(legacyCount, 10000);
+                    events = Array.from({ length: count }, (_, idx) => now - Math.floor((idx / Math.max(count, 1)) * BLUR_RETENTION_MS));
+                }
+
+                events = events.filter(ts => ts >= now - BLUR_RETENTION_MS && ts <= now + 60000);
+                localStorage.setItem(BLUR_EVENTS_KEY, JSON.stringify(events));
+                localStorage.setItem(BLUR_LEGACY_KEY, String(events.length));
+                return events;
+            }
+
             function updateBlurCount() {
                 const countEl = document.getElementById('privacyBlurCount');
                 if (countEl) {
-                    const count = parseInt(localStorage.getItem('neko_blur_count') || '0', 10);
+                    const count = loadBlurEvents().length;
                     countEl.textContent = count + ' 张';
                 }
             }
@@ -1266,8 +1294,10 @@
                 normalizePrivacyRule,
                 getPrivacyRules() { return privacyRules; },
                 incrementBlurCount() {
-                    const count = parseInt(localStorage.getItem('neko_blur_count') || '0', 10) + 1;
-                    localStorage.setItem('neko_blur_count', String(count));
+                    const events = loadBlurEvents();
+                    events.push(Date.now());
+                    localStorage.setItem(BLUR_EVENTS_KEY, JSON.stringify(events));
+                    localStorage.setItem(BLUR_LEGACY_KEY, String(events.length));
                     updateBlurCount();
                 },
                 syncPrivacyBar: syncPrivacyBarWithIncognito,

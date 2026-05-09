@@ -80,13 +80,19 @@ v{MAJOR}.{MINOR}.{PATCH}[-{channel}.{N}]
 
 | 变更类型                                              | 具体示例                                     | 下一版本号                                          | Release 类型                    |
 | ----------------------------------------------------- | -------------------------------------------- | --------------------------------------------------- | ------------------------------- |
-| **UI / 逻辑 Bug 修复**（不影响核心上报）              | 状态标签显示错误、开关联动失效、界面渲染异常 | 当前在 beta：`beta.N+1`<br>当前在 stable：`PATCH+1` | Pre-Release / 正式 Release      |
+| **优化性 Bug 修复 / 体验补齐**（不引入新产品域）      | 更新后未自动重启、开关联动失效、界面状态未持久化、统计口径修正、已有页面补一个行为开关 | 当前在 beta：`beta.N+1`<br>当前在 stable：`PATCH+1` | Pre-Release / 正式 Release      |
 | **核心功能 Bug 修复**（影响上报、数据上传、密钥验证） | 上报服务无法启动、数据丢失、截图上传失败     | 当前在 beta：`beta.N+1`<br>当前在 stable：`PATCH+1` | Pre-Release / 正式 Release      |
 | **安全漏洞修复**                                      | 密钥泄露风险、IPC 注入防护缺失               | `PATCH+1`（stable）或 `beta.N+1`（beta）            | 正式 Release（优先升为 stable） |
-| **新增功能**（向后兼容）                              | 新增状态同步功能、新 UI 模块、新配置项       | `MINOR+1` 开新 beta，如 `1.2.0-beta.1`              | Pre-Release                     |
+| **新增功能**（向后兼容，且形成新的功能域）            | 新增直播推流模块、新设备管理页、新云同步能力、全新的服务端接口能力 | `MINOR+1` 开新 beta，如 `1.3.0-beta.1`              | Pre-Release                     |
 | **破坏性变更**（API 不兼容、架构重构）                | 更换上报协议、服务端 API 字段不兼容          | `MAJOR+1`，如 `2.0.0-beta.1`                        | Pre-Release                     |
 | **Beta 转正式稳定版**                                 | 当前 beta 轮次已充分测试、无遗留问题         | 去掉 `-beta.N`，如 `1.1.0-beta.4 → 1.1.0`           | 正式 Release                    |
 | **纯文档 / 注释修改**                                 | README、注释、无任何功能变更                 | **不发版**                                          | —                               |
+
+#### 判定补充
+
+- 当前版本是 stable 时，**优化性修复、已有能力补齐、已有页面增加小型行为开关**都视为 `PATCH+1`，不因为出现新配置字段就开 `MINOR`。
+- 只有当变更形成新的产品能力、独立模块、服务端接口面或明显扩展使用场景时，才进入 `MINOR+1 beta`。
+- 若本次代码变更已经在单独提交中完成，发布提交可以只包含 `package.json` / `package-lock.json` / `release_notes.txt`；若尚未提交，应把本次发版相关源码与版本文件一起暂存，确保 Tag 指向的提交包含实际修复。
 
 ---
 
@@ -120,7 +126,7 @@ v{MAJOR}.{MINOR}.{PATCH}[-{channel}.{N}]
       - 如需强制更新，在文件末尾加一行：<!-- FORCE_UPDATE -->
 
 □ 4. 暂存并提交
-      git add package.json release_notes.txt
+      git add <本次发版相关源码> package.json package-lock.json release_notes.txt
       git commit -m "release: v{version}"
 
 □ 5. 打 Tag

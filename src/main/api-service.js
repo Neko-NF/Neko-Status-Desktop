@@ -200,13 +200,20 @@ async function testConnection(serverUrl) {
   const url = serverUrl || configStore.getServerUrl();
   const start = Date.now();
   try {
-    // 尝试 /api/v2/status/report 发一个空请求 (会返回400/403，但说明服务器在线)
-    const response = await fetch(`${url}/api/v2/status/report`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: '{}' }),
+    // Prefer a lightweight ping endpoint; fall back to the status API for older servers.
+    let response = await fetch(`${url}/api/v1/auth/ping`, {
+      method: 'GET',
       signal: withTimeout(7000),
-    });
+    }).catch(() => null);
+
+    if (!response) {
+      response = await fetch(`${url}/api/v2/status/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: '{}' }),
+        signal: withTimeout(7000),
+      });
+    }
     const latencyMs = Date.now() - start;
     // 任何 HTTP 响应（包括 4xx）都说明服务器在线
     return { ok: true, latencyMs, statusCode: response.status };

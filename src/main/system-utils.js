@@ -519,19 +519,12 @@ async function getSystemMetrics() {
     }, 500);
   });
 
-  // 网络延迟：ping 配置的服务器
+  // Network latency: measure an actual configured server response.
   let networkLatency = -1;
   try {
-    const configStore = require('./config-store');
-    const serverUrl = configStore.getServerUrl();
-    const { URL } = require('url');
-    const host = new URL(serverUrl).hostname;
-    const start = Date.now();
-    const dns = require('dns');
-    await new Promise((resolve, reject) => {
-      dns.lookup(host, (err) => err ? reject(err) : resolve());
-    });
-    networkLatency = Date.now() - start;
+    const apiService = require('./api-service');
+    const result = await apiService.testConnection();
+    networkLatency = result && result.ok ? result.latencyMs : -1;
   } catch { /* 网络检测失败 */ }
 
   // 网络速度：通过 PowerShell 读取网络接口计数器

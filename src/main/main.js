@@ -143,7 +143,39 @@ async function removeCacheTargets(sessionRef) {
   return { removed, failed };
 }
 
-function launchInstaller(filePath, { silent = true } = {}) {
+function quotePowerShellString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function scheduleRelaunchAfterInstaller(installerPid) {
+  if (!installerPid || process.platform !== 'win32') return;
+  const exePath = process.execPath;
+  const script = [
+    `$pidToWait = ${Number(installerPid)}`,
+    `$exePath = ${quotePowerShellString(exePath)}`,
+    'try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}',
+    'Start-Sleep -Seconds 2',
+    'if (Test-Path -LiteralPath $exePath) { Start-Process -FilePath $exePath }',
+  ].join('; ');
+
+  try {
+    const helper = require('child_process').spawn('powershell.exe', [
+      '-NoProfile',
+      '-WindowStyle', 'Hidden',
+      '-ExecutionPolicy', 'Bypass',
+      '-Command', script,
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    helper.unref();
+  } catch (err) {
+    console.error('[Update] failed to schedule relaunch:', err.message);
+  }
+}
+
+function launchInstaller(filePath, { silent = true, relaunchAfterInstall = true } = {}) {
   const resolvedPath = path.resolve(filePath);
   const ext = path.extname(resolvedPath).toLowerCase();
 
@@ -154,6 +186,7 @@ function launchInstaller(filePath, { silent = true } = {}) {
       stdio: 'ignore',
       windowsHide: true,
     });
+    if (relaunchAfterInstall) scheduleRelaunchAfterInstaller(child.pid);
     child.unref();
     return Promise.resolve('');
   }
@@ -1789,7 +1822,14 @@ app.whenReady().then(async () => {
       if (!networkReady) {
         console.log('[Main] 网络等待超时，仍尝试启动服务');
       }
-      showWindow();
+      if (configStore.get('minimizeOnAutoStart')) {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.minimize();
+        }
+      } else {
+        showWindow();
+      }
       if (configStore.get('deviceKey')) statusService.start();
     }, delayMs);
   } else if (configStore.get('enableAutoServiceStart') && configStore.get('deviceKey')) {

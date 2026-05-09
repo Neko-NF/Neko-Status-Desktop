@@ -701,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = `data:image/png;base64,${data.screenshotBase64}`;
       const isBlurred = !!data.screenshotBlurred;
       const sizeKB = ((data.screenshotSize || 0) / 1024).toFixed(0);
+      const captureTime = formatDateTime(data.timestamp || Date.now());
       if (isBlurred) window._nekoActivityHelpers?.incrementBlurCount?.();
 
       // 截图&活动页大预览
@@ -729,6 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const dashSize = document.getElementById('dashScreenshotSize');
       if (dashName) dashName.innerHTML = `<i class="ph ph-hard-drive"></i> screenshot_${Date.now()}.png`;
       if (dashSize) dashSize.innerHTML = `<i class="ph ph-arrows-out"></i> ${sizeKB} KB`;
+      setScreenshotPreviewTime(captureTime);
 
       // 活动流追加截图记录
       appendActivityItem('capture', isBlurred ? '自动截图（已模糊）' : '自动截图', `${sizeKB} KB · PNG`, nowStr());
@@ -761,6 +763,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 超过 20 条则移除末尾
     while (list.children.length > 20) list.removeChild(list.lastChild);
+  }
+
+  function formatDateTime(value) {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return formatDateTime(Date.now());
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function setScreenshotPreviewTime(value) {
+    const el = document.querySelector('.screenshot-preview-time');
+    if (el) el.textContent = value;
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -997,6 +1011,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  服务页：上报服务操作按钮
   // ══════════════════════════════════════════════════════════════
+  document.getElementById('autoStartMinimizeSwitch')?.addEventListener('click', async function () {
+    const enabled = this.classList.contains('on');
+    await ipc.setConfig('minimizeOnAutoStart', enabled);
+    addLogLine('INFO', `开机自启最小化 → ${enabled ? '已启用' : '已禁用'}`);
+  });
+
   document.getElementById('btnRestartReporter')?.addEventListener('click', async () => {
     try {
       addLogLine('INFO', '正在重启上报服务...');
@@ -1271,6 +1291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addLogLine('SUCCESS', `截图完成${isBlurred ? '（已模糊）' : ''}，大小 ${(bytes.length / 1024).toFixed(1)} KB`);
     showNekoIsland(isBlurred ? '截图完成（隐私模糊）' : '截图完成', 'success', 2000);
     appendActivityItem('capture', isBlurred ? '截图完成（已模糊）' : '截图完成', `${(bytes.length / 1024).toFixed(0)} KB · PNG`, nowStr());
+    setScreenshotPreviewTime(formatDateTime(Date.now()));
 
     // 更新截图预览
     const frame = document.querySelector('.screenshot-frame');
@@ -2310,6 +2331,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const cfg = data.config;
     const autoStartEnabled = await ipc.isAutoStartEnabled();
     syncAutoStartToggles(autoStartEnabled);
+
+    const autoStartMinimizeSwitch = document.getElementById('autoStartMinimizeSwitch');
+    if (autoStartMinimizeSwitch) autoStartMinimizeSwitch.classList.toggle('on', !!cfg.minimizeOnAutoStart);
 
     if (cfg.enableScreenshot !== undefined) {
       ['toggleScreenshot', 'uploadSwitch'].forEach((id) => {
@@ -3518,7 +3542,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (latency > 300) return { level: 'error', text: '拥塞' };
     if (latency > 150) return { level: 'warn', text: '延迟高' };
     if (latency > 60) return { level: 'info', text: '正常' };
-    return { level: 'success', text: '极佳' };
+    return { level: 'info', text: '极佳' };
   }
 
   function getNetworkScore(m) {

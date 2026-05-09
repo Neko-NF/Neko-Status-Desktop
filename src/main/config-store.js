@@ -25,6 +25,7 @@ const DEFAULTS = {
   screenshotMode: 'auto',         // 'auto' | 'interval' | 'manual'
   syncScreenshotInterval: true,   // 截图间隔是否与上报同步
   enableAutoStart: false,
+  minimizeOnAutoStart: false,
   startupDelayMs: 5000,           // 自启动延迟 (ms)
   enableAutoServiceStart: false,  // 启动时自动开启上报服务
   // 关闭行为: 'ask' | 'minimize' | 'exit'
