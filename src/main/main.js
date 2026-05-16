@@ -150,11 +150,24 @@ function quotePowerShellString(value) {
 function scheduleRelaunchAfterInstaller(installerPid) {
   if (!installerPid || process.platform !== 'win32') return;
   const exePath = process.execPath;
+  const currentVersion = APP_VERSION;
   const script = [
     `$pidToWait = ${Number(installerPid)}`,
     `$exePath = ${quotePowerShellString(exePath)}`,
+    `$currentVersion = ${quotePowerShellString(currentVersion)}`,
     'try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}',
-    'Start-Sleep -Seconds 2',
+    '$deadline = (Get-Date).AddMinutes(3)',
+    'do {',
+    '  Start-Sleep -Seconds 2',
+    '  if (-not (Test-Path -LiteralPath $exePath)) { continue }',
+    '  try {',
+    '    $candidateVersion = (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion',
+    '    if ($candidateVersion -and $candidateVersion -ne $currentVersion) {',
+    '      Start-Process -FilePath $exePath',
+    '      exit 0',
+    '    }',
+    '  } catch {}',
+    '} while ((Get-Date) -lt $deadline)',
     'if (Test-Path -LiteralPath $exePath) { Start-Process -FilePath $exePath }',
   ].join('; ');
 
@@ -214,11 +227,7 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    showWindow();
   });
 }
 
@@ -248,12 +257,39 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
+  const revealIfNeeded = () => {
+    if (isAutoStart || !mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
   mainWindow.once('ready-to-show', () => {
-    if (!isAutoStart) mainWindow.show();
+    revealIfNeeded();
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
     pushInitialState();
+  });
+
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      console.log(`[Renderer:${level}] ${message} (${sourceId}:${line})`);
+    });
+  }
+
+  // Dev and tray-heavy flows occasionally miss `ready-to-show`.
+  // Keep a visible-window fallback so launches don't look like silent exits.
+  setTimeout(() => {
+    revealIfNeeded();
+  }, 1800);
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[MainWindow] renderer process gone:', details?.reason || 'unknown');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[MainWindow] failed to load renderer:', errorCode, errorDescription);
   });
 
   // 处理关闭事件
@@ -300,12 +336,31 @@ function createWindow() {
 // ═══════════════════════════════════════════════════════════════════════
 //  系 统 托 盘
 // ═══════════════════════════════════════════════════════════════════════
+function getAssetPath(...relativePaths) {
+  const roots = [
+    process.resourcesPath,
+    path.dirname(process.execPath),
+    app.getAppPath(),
+    path.join(__dirname, '../..'),
+  ].filter(Boolean);
+  const candidates = [];
+  for (const root of roots) {
+    for (const rel of relativePaths) {
+      candidates.push(path.join(root, rel));
+    }
+  }
+  return candidates.find((p) => {
+    try {
+      fs.accessSync(p);
+      return true;
+    } catch {
+      return false;
+    }
+  }) || null;
+}
+
 function getTrayIconPath() {
-  const candidates = [
-    path.join(__dirname, '../../assets/app_icon.ico'),
-    path.join(__dirname, '../../assets/app_icon.png'),
-  ];
-  return candidates.find((p) => { try { fs.accessSync(p); return true; } catch { return false; } }) || null;
+  return getAssetPath('app_icon.ico', 'app_icon.png', 'assets/app_icon.ico', 'assets/app_icon.png');
 }
 
 function createTray() {
@@ -324,13 +379,13 @@ function createTray() {
 function showWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
-    // 用户主动触发，确保窗口可见（覆盖 isAutoStart 门控）
-    if (mainWindow) {
-      mainWindow.once('ready-to-show', () => {
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.show();
         mainWindow.focus();
-      });
-    }
+      }
+    }, 250);
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -587,11 +642,35 @@ function pushInitialState() {
 //  系 统 通 知（受 enableNotification + doNotDisturb 控制）
 // ═══════════════════════════════════════════════════════════════════════
 function getAppIconPath() {
-  return path.join(app.getAppPath(), 'assets', 'app_icon.ico');
+  return getAssetPath('app_icon.ico', 'assets/app_icon.ico', 'app_icon.png', 'assets/app_icon.png');
+}
+
+function writeShortcutIfNeeded(shortcutPath, target, args, cwd, icon) {
+  let shouldWrite = true;
+  try {
+    const current = shell.readShortcutLink(shortcutPath);
+    shouldWrite = current.target !== target
+      || (current.args || '') !== args
+      || current.appUserModelId !== APP_USER_MODEL_ID
+      || (current.icon || '') !== (icon || '');
+  } catch { /* shortcut does not exist yet */ }
+
+  if (!shouldWrite) return true;
+
+  const operation = fs.existsSync(shortcutPath) ? 'replace' : 'create';
+  return shell.writeShortcutLink(shortcutPath, operation, {
+    target,
+    args,
+    cwd,
+    description: APP_NAME,
+    icon: icon && fs.existsSync(icon) ? icon : target,
+    iconIndex: 0,
+    appUserModelId: APP_USER_MODEL_ID,
+  });
 }
 
 function ensureWindowsNotificationShortcut() {
-  if (process.platform !== 'win32') return { ok: true, skipped: true };
+  if (process.platform !== 'win32' || !app.isPackaged) return { ok: true, skipped: true };
   try {
     const programsDir = path.join(
       app.getPath('appData'),
@@ -600,35 +679,25 @@ function ensureWindowsNotificationShortcut() {
       'Start Menu',
       'Programs'
     );
-    const shortcutPath = path.join(programsDir, 'Neko Status.lnk');
+    const desktopDir = app.getPath('desktop');
     const target = process.execPath;
     const args = app.isPackaged ? '' : `"${app.getAppPath()}"`;
     const cwd = app.getAppPath();
     const icon = getAppIconPath();
+    const shortcutPaths = [
+      path.join(programsDir, 'NekoStatus.lnk'),
+      path.join(programsDir, 'Neko Status.lnk'),
+      path.join(desktopDir, 'NekoStatus.lnk'),
+      path.join(desktopDir, 'Neko Status.lnk'),
+    ];
     fs.mkdirSync(programsDir, { recursive: true });
+    if (desktopDir) fs.mkdirSync(desktopDir, { recursive: true });
 
-    let shouldWrite = true;
-    try {
-      const current = shell.readShortcutLink(shortcutPath);
-      shouldWrite = current.target !== target
-        || (current.args || '') !== args
-        || current.appUserModelId !== APP_USER_MODEL_ID;
-    } catch { /* shortcut does not exist yet */ }
-
-    if (shouldWrite) {
-      const operation = fs.existsSync(shortcutPath) ? 'replace' : 'create';
-      const written = shell.writeShortcutLink(shortcutPath, operation, {
-        target,
-        args,
-        cwd,
-        description: APP_NAME,
-        icon: fs.existsSync(icon) ? icon : target,
-        iconIndex: 0,
-        appUserModelId: APP_USER_MODEL_ID,
-      });
-      if (!written) return { ok: false, error: 'shortcut-write-failed' };
+    for (const shortcutPath of shortcutPaths) {
+      const written = writeShortcutIfNeeded(shortcutPath, target, args, cwd, icon);
+      if (!written) return { ok: false, error: 'shortcut-write-failed', shortcutPath };
     }
-    return { ok: true, shortcutPath };
+    return { ok: true, shortcutPath: shortcutPaths[0] };
   } catch (err) {
     console.warn('[Notification] Failed to prepare Windows shortcut:', err.message);
     return { ok: false, error: err.message };
@@ -749,6 +818,11 @@ function setupIPC() {
   // ── 服务页：一键体检 ──────────────────────────────────────────────────
   ipcMain.handle('service:healthCheck', async () => {
     const results = [];
+    const cfg = configStore.getAll();
+    const serverUrl = cfg.serverMode === 'local' ? cfg.serverUrlLocal : cfg.serverUrlProd;
+    const owner = cfg.githubOwner || '';
+    const repo = cfg.githubRepo || '';
+
     // 1. 主进程
     results.push({
       name: '主进程状态',
@@ -761,7 +835,41 @@ function setupIPC() {
       ok: statusService.isRunning,
       text: statusService.isRunning ? '上报服务运行中' : '上报服务未启动',
     });
-    // 3. 屏幕捕获
+    // 3. 设备密钥
+    results.push({
+      name: '设备密钥配置',
+      ok: !!cfg.deviceKey,
+      text: cfg.deviceKey ? `已配置（末尾 ...${String(cfg.deviceKey).slice(-6)}）` : '未配置设备密钥',
+    });
+    // 4. 更新源
+    results.push({
+      name: '更新源配置',
+      ok: !!(owner && repo),
+      text: owner && repo ? `github.com/${owner}/${repo}` : '未配置 GitHub 更新源',
+    });
+    // 5. 服务器连通性 / 网络延迟
+    try {
+      const connResult = await apiService.testConnection(serverUrl);
+      const latencyText = connResult.ok
+        ? `服务器在线，延迟 ${connResult.latencyMs}ms`
+        : `连接失败: ${connResult.error}`;
+      results.push({
+        name: '服务器连通性',
+        ok: connResult.ok,
+        text: latencyText,
+      });
+      results.push({
+        name: '网络延迟基线',
+        ok: connResult.ok ? (connResult.latencyMs > 200 ? 'warn' : true) : false,
+        text: connResult.ok
+          ? `设备状态页同源采样，当前 ${connResult.latencyMs}ms`
+          : '无法生成延迟基线',
+      });
+    } catch (e) {
+      results.push({ name: '服务器连通性', ok: false, text: `连接异常: ${e.message}` });
+      results.push({ name: '网络延迟基线', ok: false, text: '连接异常，无法生成延迟基线' });
+    }
+    // 6. 屏幕捕获
     try {
       const sources = await require('electron').desktopCapturer.getSources({
         types: ['screen'], thumbnailSize: { width: 1, height: 1 },
@@ -774,7 +882,7 @@ function setupIPC() {
     } catch (e) {
       results.push({ name: '屏幕捕获权限', ok: false, text: `异常: ${e.message}` });
     }
-    // 4. WMI
+    // 7. WMI
     try {
       require('child_process').execFileSync('powershell', [
         '-NoProfile', '-NonInteractive', '-Command',
@@ -784,29 +892,14 @@ function setupIPC() {
     } catch (e) {
       results.push({ name: '进程遍历 (WMI)', ok: false, text: `查询失败: ${e.message}` });
     }
-    // 5. 网络连通性
-    const cfg = configStore.getAll();
-    const serverUrl = cfg.serverMode === 'local' ? cfg.serverUrlLocal : cfg.serverUrlProd;
-    try {
-      const connResult = await apiService.testConnection(serverUrl);
-      results.push({
-        name: '网络连通性',
-        ok: connResult.ok,
-        text: connResult.ok
-          ? `服务器在线，延迟 ${connResult.latencyMs}ms`
-          : `连接失败: ${connResult.error}`,
-      });
-    } catch (e) {
-      results.push({ name: '网络连通性', ok: false, text: `连接异常: ${e.message}` });
-    }
-    // 6. 开机自启
+    // 8. 开机自启
     const autoStartOn = app.getLoginItemSettings().openAtLogin;
     results.push({
       name: '开机自启配置',
       ok: autoStartOn ? true : 'warn',
       text: autoStartOn ? '注册表启动项已配置' : '开机自启未启用',
     });
-    // 7. 本地存储
+    // 9. 本地存储
     try {
       const udp = app.getPath('userData');
       const testFile = path.join(udp, '.health-test');
@@ -816,7 +909,13 @@ function setupIPC() {
     } catch (e) {
       results.push({ name: '本地存储空间', ok: false, text: `写入失败: ${e.message}` });
     }
-    // 8. 故障恢复
+    // 10. 截图上报配置
+    results.push({
+      name: '截图上报配置',
+      ok: cfg.enableScreenshot ? true : 'warn',
+      text: cfg.enableScreenshot ? '截图采集已启用' : '截图采集未启用',
+    });
+    // 11. 故障恢复
     const recoveryOn = cfg.enableAutoRestart !== false;
     results.push({
       name: '故障恢复策略',
@@ -1372,6 +1471,19 @@ function setupIPC() {
     return true;
   });
 
+  ipcMain.on('dev:rendererError', (_event, payload) => {
+    if (app.isPackaged) return;
+    const kind = payload?.kind || 'error';
+    const message = payload?.message || 'unknown renderer error';
+    const source = payload?.source || 'renderer';
+    const line = payload?.line ?? '-';
+    const column = payload?.column ?? '-';
+    console.error(`[Renderer:${kind}] ${message} (${source}:${line}:${column})`);
+    if (payload?.stack) {
+      console.error(payload.stack);
+    }
+  });
+
   // ── 系统安装字体枚举 ──────────────────────────────────────────────────
   ipcMain.handle('system:fonts', async () => {
     try {
@@ -1408,21 +1520,19 @@ function setupIPC() {
       );
       if (!res.ok) throw new Error(`GitHub API ${res.status}`);
       const releases = await res.json();
-      const allEntries = releases.map((r) => ({
-        version:     (r.tag_name || '').replace(/^v/, ''),
-        date:        (r.published_at || '').slice(0, 10),
-        notes:       r.body || '',
-        isPreRelease: r.prerelease,
-      }));
-      // 按当前更新通道过滤，返回最新 4 条
-      const channel = configStore.get('updateChannel') || 'stable';
-      const filtered = allEntries.filter(e => isTagInChannel('v' + e.version, channel));
-      const result = filtered.slice(0, 4);
-      // 本地缓存最多保留 2 条（当前版本 + 上一版本），供离线降级使用
-      configStore.set('changelogCache', result.slice(0, 2));
+      const currentVersion = String(APP_VERSION || '').replace(/^v/, '');
+      const currentRelease = releases.find((r) => String(r.tag_name || '').replace(/^v/, '') === currentVersion);
+      const result = currentRelease ? [{
+        version: currentVersion,
+        date: (currentRelease.published_at || '').slice(0, 10),
+        notes: currentRelease.body || '',
+        isPreRelease: !!currentRelease.prerelease,
+        isCurrent: true,
+      }] : [];
+      configStore.set('changelogCache', result);
       return result;
     } catch {
-      // 网络不可用 → 返回本地缓存（最多 2 条）
+      // 网络不可用 → 返回本地缓存（仅当前版本）
       return configStore.get('changelogCache') || [];
     }
   });

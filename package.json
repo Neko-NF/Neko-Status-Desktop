@@ -1,14 +1,14 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
   "license": "ISC",
   "type": "commonjs",
   "scripts": {
-    "dev": "electron .",
-    "start": "electron .",
+    "dev": "node scripts/start-electron.js",
+    "start": "node scripts/start-electron.js",
     "build": "electron-builder --win --x64",
     "build:nsis": "electron-builder --win nsis --x64",
     "build:zip": "electron-builder --win zip --x64",
@@ -35,8 +35,18 @@
       "node_modules/@phosphor-icons/web/src/regular/**/*",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "assets/app_icon.ico",
+        "to": "app_icon.ico"
+      },
+      {
+        "from": "assets/app_icon.png",
+        "to": "app_icon.png"
+      }
+    ],
     "win": {
+      "executableName": "NekoStatus",
       "target": [
         {
           "target": "nsis",
@@ -65,7 +75,8 @@
       "artifactName": "NekoStatus-Setup-${version}.exe",
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     },
     "publish": null
   },

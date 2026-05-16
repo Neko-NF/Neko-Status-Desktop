@@ -12,10 +12,84 @@ document.addEventListener('DOMContentLoaded', () => {
   // nekoIPC 由 ipc-bridge.js 挂载到 window.nekoIPC
   const ipc = window.nekoIPC;
   const consoleNavEntry = document.getElementById('navConsole');
+  const setExpandableSectionState = window._nekoUIHelpers?.setExpandableSectionState
+    || ((el, expanded, options = {}) => {
+      if (!el) return;
+      el.style.display = expanded ? (options.display || '') : 'none';
+    });
+  const applyUIFontProfile = window._nekoUIHelpers?.applyUIFontProfile
+    || (() => {});
+  const normalizeServiceHealthCheckCopy = window._nekoUIHelpers?.normalizeServiceHealthCheckCopy
+    || (() => {});
+
+  function mountExperimentalSettingsZone() {
+    const zone = document.getElementById('settingsExperimentalZone');
+    const settingsExperimentalLabel = document.getElementById('settingsExperimentalLabel');
+    const settingsExperimental = document.getElementById('settings-experimental');
+    const streamSettingsLabel = document.getElementById('streamSettingsLabel');
+    const streamSettings = document.getElementById('settings-stream');
+    const streamSettingsDisabledNotice = document.getElementById('streamSettingsDisabledNotice');
+    const experimentalDesc = document.getElementById('stgExperimentalDesc');
+
+    if (!zone || !settingsExperimental || zone.dataset.mounted === '1') return;
+
+    if (settingsExperimentalLabel) zone.appendChild(settingsExperimentalLabel);
+    else {
+      const title = document.createElement('div');
+      title.className = 'settings-group-label';
+      title.innerHTML = '<i class="ph ph-flask"></i> 实验性功能';
+      zone.appendChild(title);
+    }
+
+    settingsExperimental.classList.add('settings-experimental-shell');
+    zone.appendChild(settingsExperimental);
+
+    const featureStack = document.createElement('div');
+    featureStack.id = 'settingsExperimentalFeatures';
+    featureStack.className = 'settings-experimental-features';
+    zone.appendChild(featureStack);
+
+    if (streamSettingsLabel) featureStack.appendChild(streamSettingsLabel);
+    if (streamSettingsDisabledNotice) streamSettingsDisabledNotice.remove();
+    if (streamSettings) featureStack.appendChild(streamSettings);
+
+    if (experimentalDesc) {
+      experimentalDesc.textContent = '开启后会显示仍在验证中的新功能、配套入口和相关设置；关闭后这些内容会从侧边栏和设置页一起隐藏。';
+    }
+
+    zone.dataset.mounted = '1';
+  }
+
+  mountExperimentalSettingsZone();
+  normalizeServiceHealthCheckCopy();
   if (!ipc) {
     console.error('[app-ipc] 找不到 nekoIPC，请确认 ipc-bridge.js 已在本文件之前加载');
     return;
   }
+
+  function initHealthResultsScrollFx() {
+    const shell = document.getElementById('healthResultsShell');
+    const list = document.getElementById('healthResultsList');
+    if (!shell || !list) return () => {};
+
+    const updateFades = () => {
+      const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+      const current = list.scrollTop;
+      shell.dataset.topFade = current > 6 ? '1' : '0';
+      shell.dataset.bottomFade = maxScroll - current > 6 ? '1' : '0';
+    };
+
+    if (list.dataset.scrollFxBound !== '1') {
+      list.addEventListener('scroll', updateFades, { passive: true });
+      window.addEventListener('resize', updateFades);
+      list.dataset.scrollFxBound = '1';
+    }
+
+    requestAnimationFrame(updateFades);
+    return updateFades;
+  }
+
+  const refreshHealthResultsScrollFx = initHealthResultsScrollFx();
 
   // ══════════════════════════════════════════════════════════════
   //  工具函数
@@ -1105,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const enabled = this.classList.contains('on');
     await ipc.setConfig('enableAutoServiceStart', enabled);
     const delayRow = document.getElementById('reportAutoDelayRow');
-    if (delayRow) delayRow.style.display = enabled ? '' : 'none';
+    setExpandableSectionState(delayRow, enabled, { display: 'flex' });
     addLogLine('INFO', `启动后自动上报 → ${enabled ? '已启用' : '已禁用'}`);
   });
 
@@ -1525,6 +1599,48 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   const _installedChannelNameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
 
+  function applyExperimentalFeatureState(cfg = {}) {
+    const enabled = !!cfg.enableExperimentalFeatures;
+    const streamGate = document.getElementById('streamExperimentalGate');
+    const streamContent = document.getElementById('streamExperimentalContent');
+    const streamSettings = document.getElementById('settings-stream');
+    const settingsExperimentalFeatures = document.getElementById('settingsExperimentalFeatures');
+    const streamSettingsLabel = document.getElementById('streamSettingsLabel');
+    const streamSettingsDisabledNotice = document.getElementById('streamSettingsDisabledNotice');
+    const streamPage = document.getElementById('page-stream');
+    const experimentalSwitch = document.getElementById('stgExperimentalSwitch');
+    const experimentalDesc = document.getElementById('stgExperimentalDesc');
+    const navStream = document.getElementById('navStream');
+
+    if (experimentalSwitch) experimentalSwitch.classList.toggle('on', enabled);
+    setExpandableSectionState(streamGate, !enabled, { display: 'flex' });
+    if (streamContent) streamContent.style.display = enabled ? '' : 'none';
+    setExpandableSectionState(streamSettings, enabled, { display: 'flex' });
+    setExpandableSectionState(settingsExperimentalFeatures, enabled, { display: 'flex' });
+    setExpandableSectionState(streamSettingsLabel, enabled, { display: 'flex' });
+    if (streamSettingsDisabledNotice) streamSettingsDisabledNotice.style.display = 'none';
+    if (experimentalDesc) {
+      experimentalDesc.textContent = enabled
+        ? '实验性内容已开启，仍在验证中的新功能会显示对应入口、页面和设置项。'
+        : '关闭后会隐藏所有仍在验证中的功能入口、页面和相关设置，仅保留稳定功能。';
+    }
+    if (streamPage && !enabled) streamPage.style.display = 'none';
+    if (navStream) {
+      navStream.classList.toggle('show', enabled);
+      navStream.style.display = '';
+      navStream.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+      if (enabled) navStream.removeAttribute('tabindex');
+      else navStream.setAttribute('tabindex', '-1');
+      navStream.classList.toggle('experimental-off', !enabled);
+    }
+    if (!enabled && document.querySelector('.nav-item.active[data-target="page-stream"]')) {
+      document.querySelector('.nav-item[data-target="mainDashboardArea"]')?.click();
+    }
+    if (!enabled && typeof window.stopStreamStatusPolling === 'function') {
+      window.stopStreamStatusPolling();
+    }
+  }
+
   /** 将 Markdown 风格的 release notes 渲染为更新日志时间线 */
   function renderReleaseNotes(result) {
     if (!result || !result.latestVersion) return;
@@ -1539,42 +1655,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const verTag = document.querySelector('.update-ver-tag');
     if (verTag) {
       const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
-      verTag.textContent = tagMap[result.channel] || 'Stable';
+      const installedChannel = getInstalledChannel(result.currentVersion || result.latestVersion);
+      verTag.textContent = tagMap[installedChannel] || 'Stable';
     }
-
-    // 渲染 release notes 到时间线
-    const timeline = document.querySelector('.update-timeline');
-    if (!timeline || !result.releaseNotes) return;
-
-    const notes = result.releaseNotes;
-    // 简单解析为列表项
-    const lines = notes.split('\n').filter(l => l.trim()).map(l => l.replace(/^[-*•]\s*/, '').trim()).filter(Boolean);
-
-    const dateStr = result.publishedAt ? new Date(result.publishedAt).toISOString().slice(0, 10) : '';
-    const isCurrent = !result.hasUpdate;
-
-    const item = document.createElement('div');
-    item.className = 'update-tl-item';
-    item.innerHTML = `
-      <div class="update-tl-track">
-        <div class="update-tl-dot ${isCurrent ? '' : 'current'}"></div>
-        <div class="update-tl-line"></div>
-      </div>
-      <div class="update-tl-body">
-        <div class="update-tl-header">
-          <span class="update-tl-ver">v${escapeHtml(result.latestVersion)}</span>
-          ${result.hasUpdate ? '<span class="update-tl-badge latest">NEW</span>' : '<span class="update-tl-badge latest">CURRENT</span>'}
-          <span class="update-tl-date">${escapeHtml(dateStr)}</span>
-        </div>
-        <div class="update-tl-block">
-          <ul class="update-tl-list">
-            ${lines.slice(0, 20).map(l => `<li>${escapeHtml(l)}</li>`).join('')}
-          </ul>
-        </div>
-      </div>`;
-
-    // 插入到时间线最前面
-    timeline.insertBefore(item, timeline.firstChild);
   }
 
   /** 渲染在线获取的多版本更新日志（替换时间线静态数据） */
@@ -1582,36 +1665,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const timeline = document.querySelector('.update-timeline');
     if (!timeline || !entries || !entries.length) return;
     timeline.innerHTML = '';
-    entries.forEach((entry, i) => {
-      const isCurrent = i === 0;
-      const isLast    = i === entries.length - 1;
-      const lines = (entry.notes || '').split('\n')
-        .filter(l => l.trim())
-        .map(l => l.replace(/^#+\s*|^[-*•]\s*/g, '').trim())
-        .filter(Boolean)
-        .slice(0, 15);
-      const item = document.createElement('div');
-      item.className = 'update-tl-item';
-      item.innerHTML = `
-        <div class="update-tl-track">
-          <div class="update-tl-dot${isCurrent ? ' current' : ''}"></div>
-          <div class="update-tl-line${isLast ? ' last' : ''}"></div>
+    const entry = entries[0];
+    const lines = (entry.notes || '').split('\n')
+      .filter(l => l.trim())
+      .map(l => l.replace(/^#+\s*|^[-*•]\s*/g, '').trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    const item = document.createElement('div');
+    item.className = 'update-tl-item';
+    item.innerHTML = `
+      <div class="update-tl-track">
+        <div class="update-tl-dot current"></div>
+        <div class="update-tl-line last"></div>
+      </div>
+      <div class="update-tl-body">
+        <div class="update-tl-header">
+          <span class="update-tl-ver">v${escapeHtml(entry.version)}</span>
+          <span class="update-tl-badge latest">CURRENT</span>
+          ${entry.isPreRelease ? '<span class="update-tl-badge pre">PRE</span>' : ''}
+          <span class="update-tl-date">${escapeHtml(entry.date)}</span>
         </div>
-        <div class="update-tl-body">
-          <div class="update-tl-header">
-            <span class="update-tl-ver">v${escapeHtml(entry.version)}</span>
-            ${isCurrent ? '<span class="update-tl-badge latest">LATEST</span>' : ''}
-            ${entry.isPreRelease ? '<span class="update-tl-badge pre">PRE</span>' : ''}
-            <span class="update-tl-date">${escapeHtml(entry.date)}</span>
-          </div>
-          <div class="update-tl-block">
-            <ul class="update-tl-list">
-              ${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('') || '<li>（暂无说明）</li>'}
-            </ul>
-          </div>
-        </div>`;
-      timeline.appendChild(item);
-    });
+        <div class="update-tl-block">
+          <ul class="update-tl-list">
+            ${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('') || '<li>（暂无说明）</li>'}
+          </ul>
+        </div>
+      </div>`;
+    timeline.appendChild(item);
   }
 
   replaceHandler('checkUpdateBtn', async () => {
@@ -1957,11 +2037,6 @@ document.addEventListener('DOMContentLoaded', () => {
         addLogLine('INFO', `更新通道已切换为 ${channel}`);
         // 注意：通道切换不改变版本卡上的徽章（徽章反映当前安装版本）
         // 仅更新版本号旁的通道标签以反映订阅通道
-        const verTag = document.querySelector('.update-ver-tag');
-        if (verTag) {
-          const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
-          verTag.textContent = tagMap[channel] || channel;
-        }
       }
     });
   });
@@ -2298,6 +2373,78 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
 
   // 应用初始化
+  replaceHandler('runHealthCheckBtn', async () => {
+    const btn = document.getElementById('runHealthCheckBtn');
+    const list = document.getElementById('healthResultsList');
+    if (!btn || !list) return;
+
+    const statusMeta = (ok) => {
+      if (ok === true) {
+        return { tone: 'ok', icon: 'ph-check-circle', label: '正常' };
+      }
+      if (ok === 'warn') {
+        return { tone: 'warn', icon: 'ph-warning', label: '关注' };
+      }
+      return { tone: 'fail', icon: 'ph-x-circle', label: '异常' };
+    };
+
+    const renderHealthItem = (result, index = 0) => {
+      const { tone, icon, label } = statusMeta(result.ok);
+      const item = document.createElement('div');
+      item.className = `health-result-item ${tone}`;
+      item.style.animationDelay = `${index * 0.05}s`;
+      item.innerHTML = `
+        <div class="health-result-top">
+          <div class="health-result-title-wrap">
+            <i class="ph ${icon} health-result-icon ${tone}"></i>
+            <div class="health-result-name">${escapeHtml(result.name)}</div>
+          </div>
+          <span class="health-result-badge ${tone}">${label}</span>
+        </div>
+        <div class="health-result-desc">${escapeHtml(result.text)}</div>`;
+      return item;
+    };
+
+    const renderHealthSummary = (results, durationMs) => {
+      const okCount = results.filter(item => item.ok === true).length;
+      const warnCount = results.filter(item => item.ok === 'warn').length;
+      const failCount = results.filter(item => item.ok !== true && item.ok !== 'warn').length;
+      const summary = document.createElement('div');
+      summary.className = 'health-summary-bar';
+      summary.innerHTML = `
+        <div class="health-summary-copy">
+          <div class="health-summary-title">已完成 ${results.length} 项检查</div>
+          <div class="health-summary-subtitle">用时 ${(durationMs / 1000).toFixed(1)} 秒</div>
+        </div>
+        <div class="health-summary-pills">
+          <span class="health-summary-pill ok"><i class="ph ph-check-circle"></i>${okCount} 项正常</span>
+          <span class="health-summary-pill warn"><i class="ph ph-warning"></i>${warnCount} 项关注</span>
+          <span class="health-summary-pill fail"><i class="ph ph-x-circle"></i>${failCount} 项异常</span>
+        </div>`;
+      return summary;
+    };
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 0.8s linear infinite;"></i> 体检中...';
+    list.innerHTML = '';
+    refreshHealthResultsScrollFx();
+    const startedAt = Date.now();
+
+    try {
+      const results = await ipc.runHealthCheck();
+      list.appendChild(renderHealthSummary(results, Date.now() - startedAt));
+      results.forEach((result, index) => list.appendChild(renderHealthItem(result, index)));
+    } catch (e) {
+      const failedResult = { name: '检测异常', text: e.message, ok: false };
+      list.appendChild(renderHealthSummary([failedResult], Date.now() - startedAt));
+      list.appendChild(renderHealthItem(failedResult));
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ph ph-heartbeat"></i> 重新检测';
+    refreshHealthResultsScrollFx();
+  });
+
   ipc.on('app:init', async (data) => {
     refreshConsoleStatus();
     addLogLine('INFO', `Neko Status v${data.version} 初始化完成`);
@@ -2389,7 +2536,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.toggle('active', btn.dataset.mode === reportMode);
     });
     const customRow = document.getElementById('stgCustomIntervalRow');
-    if (customRow) customRow.style.display = reportMode === 'custom' ? '' : 'none';
+    setExpandableSectionState(customRow, reportMode === 'custom', { display: 'flex' });
     const stgIntervalInput = document.getElementById('stgReportIntervalInput');
     if (stgIntervalInput) stgIntervalInput.value = cfg.reportInterval || 10;
     const stgIntervalDesc = document.getElementById('stgReportIntervalDesc');
@@ -2406,12 +2553,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const quickHint = document.getElementById('quickIntervalHint');
     if (reportMode === 'auto') {
       if (quickLabel) quickLabel.textContent = '自动';
-      if (quickStepper) quickStepper.style.display = 'none';
-      if (quickHint) quickHint.style.display = '';
+      setExpandableSectionState(quickStepper, false, { display: 'flex' });
+      setExpandableSectionState(quickHint, true, { display: 'block' });
     } else {
       if (quickLabel) quickLabel.textContent = `${cfg.reportInterval || 10}s · 自定义`;
-      if (quickStepper) quickStepper.style.display = '';
-      if (quickHint) quickHint.style.display = 'none';
+      setExpandableSectionState(quickStepper, true, { display: 'flex' });
+      setExpandableSectionState(quickHint, false, { display: 'block' });
     }
 
     // 截图间隔同步开关
@@ -2488,7 +2635,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const darkTimeRow = document.getElementById('stgDarkTimeRow');
     if (darkSwitch) darkSwitch.classList.toggle('on', isDark);
     if (darkSched)  darkSched.classList.toggle('on', isSchedule);
-    if (darkTimeRow) darkTimeRow.style.display = isSchedule ? '' : 'none';
+    setExpandableSectionState(darkTimeRow, isSchedule, { display: 'flex' });
     const darkStart = document.getElementById('stgDarkStartTime');
     const darkEnd   = document.getElementById('stgDarkEndTime');
     if (darkStart) darkStart.value = cfg.darkModeStart || '18:00';
@@ -2520,7 +2667,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rptAutoSw = document.getElementById('reportAutoStartSwitch');
     const rptDelayRow = document.getElementById('reportAutoDelayRow');
     if (rptAutoSw) rptAutoSw.classList.toggle('on', !!cfg.enableAutoServiceStart);
-    if (rptDelayRow) rptDelayRow.style.display = (cfg.enableAutoServiceStart) ? '' : 'none';
+    setExpandableSectionState(rptDelayRow, !!cfg.enableAutoServiceStart, { display: 'flex' });
 
     // ── 服务页：进程 + 权限初始化 ──────────────────────────────────────
     initServicePage(data);
@@ -2547,18 +2694,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ── 界面字体初始化（同步 config → CSS 变量） ─────────────────────
-    if (cfg.uiFont) {
-      localStorage.setItem('neko-ui-font', cfg.uiFont);
-      document.documentElement.style.setProperty('--ui-font', `"${cfg.uiFont}"`);
-      const stgFontSel = document.getElementById('stgFontSelect');
-      if (stgFontSel) stgFontSel.value = cfg.uiFont;
-    }
+    localStorage.setItem('neko-ui-font', cfg.uiFont || '');
+    if (cfg.uiFont) document.documentElement.style.setProperty('--ui-font', `"${cfg.uiFont}"`);
+    else document.documentElement.style.removeProperty('--ui-font');
+    applyUIFontProfile(cfg.uiFont || '');
+    const stgFontSel = document.getElementById('stgFontSelect');
+    if (stgFontSel) stgFontSel.value = cfg.uiFont || '';
 
     // ── 强调色初始化（同步 config → localStorage） ────────────────────
     if (cfg.seedColor) {
       document.documentElement.style.setProperty('--theme-color', cfg.seedColor);
       localStorage.setItem('neko-theme-color', cfg.seedColor);
-      const builtinSwatches = document.querySelectorAll('.settings-swatch, .color-swatch');
+      const builtinSwatches = document.querySelectorAll('.settings-swatch, .color-swatch[data-color]');
       let matchedBuiltin = false;
       builtinSwatches.forEach(s => {
         const isMatch = s.dataset.color === cfg.seedColor;
@@ -2566,21 +2713,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isMatch) matchedBuiltin = true;
       });
       // 自定义颜色按钮高亮
-      const customBtn = document.getElementById('stgCustomColorBtn');
-      if (customBtn) {
+      const customButtons = [
+        document.getElementById('stgCustomColorBtn'),
+        document.getElementById('topCustomColorBtn'),
+      ].filter(Boolean);
+      customButtons.forEach((customBtn) => {
         customBtn.classList.toggle('active', !matchedBuiltin);
-        if (!matchedBuiltin) customBtn.style.setProperty('--custom-swatch-color', cfg.seedColor);
-      }
+        customBtn.style.setProperty('--custom-swatch-color', cfg.customSeedColor || cfg.seedColor);
+      });
       // 回填自定义取色器预览（保留用户的自定义色）
       if (cfg.customSeedColor) {
+        localStorage.setItem('neko-custom-theme-color', cfg.customSeedColor);
         const cInput = document.getElementById('stgCustomColorInput');
         const cHex   = document.getElementById('stgCustomColorHex');
         const cPrev  = document.getElementById('stgCustomColorPreview');
         if (cInput) cInput.value = cfg.customSeedColor;
-        if (cHex)   cHex.value   = cfg.customSeedColor;
+        if (cHex)   cHex.value   = cfg.customSeedColor.toUpperCase();
         if (cPrev)  cPrev.style.background = cfg.customSeedColor;
       }
     }
+
+    applyExperimentalFeatureState(cfg);
 
     // ── 仪表盘布局从 configStore 恢复（比 localStorage 更可靠）────────
     if (cfg.dashboardLayout && Array.isArray(cfg.dashboardLayout) && cfg.dashboardLayout.length) {
@@ -2634,7 +2787,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'page-update',
       'page-about',
     ]);
-    if (cfg.restoreLastState && cfg.lastPage && restorablePages.has(cfg.lastPage)) {
+    if (cfg.restoreLastState && cfg.lastPage && restorablePages.has(cfg.lastPage) && (cfg.enableExperimentalFeatures || cfg.lastPage !== 'page-stream')) {
       const navItem = document.querySelector(`.nav-item[data-target="${cfg.lastPage}"]`);
       if (navItem) navItem.click();
     }
@@ -2653,9 +2806,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 版本号旁的通道标签（反映订阅通道）
     const verTag = document.querySelector('.update-ver-tag');
     if (verTag) {
-      const ch = cfg.updateChannel || 'stable';
-      const tagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
-      verTag.textContent = tagMap[ch] || 'Stable';
+      const installedChannel = getInstalledChannel(data.version);
+      verTag.textContent = ({ stable: 'Stable', beta: 'Beta', nightly: 'Nightly' }[installedChannel] || 'Stable');
     }
 
     // 导航栏「更新中心」点击时移除脉冲动效
@@ -2670,7 +2822,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── 在线获取更新日志（异步，不阻塞 init）──────────────────────────
     ipc.getChangelog().then((entries) => {
-      if (entries && entries.length > 0) renderChangelogEntries(entries);
+      if (entries && entries.length > 0) {
+        renderChangelogEntries(entries);
+      } else {
+        renderChangelogEntries([{ version: data.version, date: '', notes: '', isPreRelease: getInstalledChannel(data.version) !== 'stable', isCurrent: true }]);
+      }
     }).catch(() => {});
 
     // ── 趋势图表：预加载历史指标数据 ──────────────────────────────────
@@ -2685,11 +2841,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (aboutVerEl) aboutVerEl.textContent = `v${data.version}`;
     const aboutSubEl = document.getElementById('aboutVersionSub');
     if (aboutSubEl) {
-      const ch = (cfg.updateChannel || 'stable').charAt(0).toUpperCase() + (cfg.updateChannel || 'stable').slice(1);
+      const installedChannel = getInstalledChannel(data.version);
+      const ch = _installedChannelNameMap[installedChannel] || '稳定版';
       aboutSubEl.textContent = `${ch} · ${new Date().toLocaleDateString('zh-CN')}`;
     }
     const updateVerEl = document.getElementById('updateVerNumber');
     if (updateVerEl) updateVerEl.textContent = `v${data.version}`;
+    const updateVerTag = document.querySelector('.update-ver-tag');
+    if (updateVerTag) {
+      const installedChannel = getInstalledChannel(data.version);
+      updateVerTag.textContent = ({ stable: 'Stable', beta: 'Beta', nightly: 'Nightly' }[installedChannel] || 'Stable');
+    }
 
     // 更新中心描述文本 — 反映实际运行环境
     const updateVerDesc = document.getElementById('updateVerDesc');
@@ -2719,8 +2881,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const ghRepoUrl = `https://github.com/${ghOwner}/${ghRepo}`;
     const aboutGithubBtn = document.getElementById('aboutGithubBtn');
     const aboutReleaseBtn = document.getElementById('aboutReleaseBtn');
+    const aboutDeveloperCard = document.getElementById('aboutDeveloperCard');
     if (aboutGithubBtn) aboutGithubBtn.href = ghRepoUrl;
     if (aboutReleaseBtn) aboutReleaseBtn.href = `${ghRepoUrl}/releases`;
+    if (aboutDeveloperCard) {
+      aboutDeveloperCard.classList.add('is-link');
+      aboutDeveloperCard.dataset.href = `https://github.com/${ghOwner}`;
+      if (!aboutDeveloperCard.dataset.boundClick) {
+        aboutDeveloperCard.dataset.boundClick = 'true';
+        aboutDeveloperCard.addEventListener('click', () => {
+          const href = aboutDeveloperCard.dataset.href;
+          if (href) ipc.openExternal(href);
+        });
+      }
+    }
 
     // ── 关于页开发者信息从 GitHub 获取 ────────────────────────────────
     (async () => {
@@ -2736,6 +2910,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (label.includes('开发者') && valueEl2 && repoData.owner) {
             valueEl2.textContent = repoData.owner.login || ghOwner;
             if (subEl2) subEl2.textContent = repoData.organization?.login || repoData.owner.login || 'GitHub';
+            if (aboutDeveloperCard) aboutDeveloperCard.dataset.href = repoData.owner.html_url || `https://github.com/${repoData.owner.login || ghOwner}`;
           }
           if (label.includes('开源协议') && valueEl2 && repoData.license?.spdx_id) {
             valueEl2.textContent = repoData.license.spdx_id;
@@ -3107,6 +3282,20 @@ document.addEventListener('DOMContentLoaded', () => {
     addLogLine('INFO', `自动下载更新 → ${isOn ? '开启（后台静默下载，下次启动时安装）' : '已关闭'}`);
   });
 
+  document.getElementById('stgExperimentalSwitch')?.addEventListener('click', async function () {
+    const isOn = this.classList.contains('on');
+    await ipc.setConfig('enableExperimentalFeatures', isOn);
+    applyExperimentalFeatureState({ enableExperimentalFeatures: isOn });
+    addLogLine('INFO', `实验性内容 → ${isOn ? '已开启' : '已关闭'}`);
+  });
+
+  document.getElementById('openExperimentalSettingsBtn')?.addEventListener('click', () => {
+    document.querySelector('.nav-item[data-target="page-settings"]')?.click();
+    setTimeout(() => {
+      document.getElementById('settings-experimental')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+  });
+
 
   // ── 设置页：上报间隔模式切换 ─────────────────────────────
   document.getElementById('stgReportModeGroup')?.addEventListener('click', async (e) => {
@@ -3116,7 +3305,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#stgReportModeGroup .toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
     await ipc.setConfig('reportIntervalMode', mode);
     const customRow = document.getElementById('stgCustomIntervalRow');
-    if (customRow) customRow.style.display = mode === 'custom' ? '' : 'none';
+    setExpandableSectionState(customRow, mode === 'custom', { display: 'flex' });
     const descEl = document.getElementById('stgReportIntervalDesc');
     if (mode === 'auto') {
       await ipc.setConfig('reportInterval', 10);
@@ -3126,9 +3315,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const ql = document.getElementById('quickIntervalLabel');
       if (ql) ql.textContent = '自动';
       const qs = document.getElementById('quickIntervalStepper');
-      if (qs) qs.style.display = 'none';
+      setExpandableSectionState(qs, false, { display: 'flex' });
       const qh = document.getElementById('quickIntervalHint');
-      if (qh) qh.style.display = '';
+      setExpandableSectionState(qh, true, { display: 'block' });
       const hv = document.getElementById('intervalAutoHintValue');
       if (hv) hv.textContent = '10';
     } else {
@@ -3137,9 +3326,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const ql = document.getElementById('quickIntervalLabel');
       if (ql) ql.textContent = `${val}s · 自定义`;
       const qs = document.getElementById('quickIntervalStepper');
-      if (qs) qs.style.display = '';
+      setExpandableSectionState(qs, true, { display: 'flex' });
       const qh = document.getElementById('quickIntervalHint');
-      if (qh) qh.style.display = 'none';
+      setExpandableSectionState(qh, false, { display: 'block' });
     }
     addLogLine('INFO', `上报模式 → ${mode === 'auto' ? '自动 (10s)' : '自定义'}`);
   });
@@ -3215,7 +3404,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 同步设置页
     document.querySelectorAll('#stgReportModeGroup .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'custom'));
     const customRow = document.getElementById('stgCustomIntervalRow');
-    if (customRow) customRow.style.display = '';
+    setExpandableSectionState(customRow, true, { display: 'flex' });
     const stgInput = document.getElementById('stgReportIntervalInput');
     if (stgInput) stgInput.value = val;
     const descEl = document.getElementById('stgReportIntervalDesc');
@@ -3358,7 +3547,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 手动切换时关闭定时
     if (isSchedule) {
       schedSwitch.classList.remove('on');
-      document.getElementById('stgDarkTimeRow').style.display = 'none';
+      setExpandableSectionState(document.getElementById('stgDarkTimeRow'), false, { display: 'flex' });
       await ipc.setConfig('themeMode', isOn ? 'dark' : 'light');
     } else {
       await ipc.setConfig('themeMode', isOn ? 'dark' : 'light');
@@ -3372,7 +3561,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('stgDarkScheduleSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
     const timeRow = document.getElementById('stgDarkTimeRow');
-    if (timeRow) timeRow.style.display = isOn ? '' : 'none';
+    setExpandableSectionState(timeRow, isOn, { display: 'flex' });
     const start = document.getElementById('stgDarkStartTime')?.value || '18:00';
     const end   = document.getElementById('stgDarkEndTime')?.value   || '07:00';
     const mode  = isOn ? 'auto' : (document.getElementById('stgDarkSwitch')?.classList.contains('on') ? 'dark' : 'light');
@@ -3591,6 +3780,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return clampNumber(latencyScore + trafficBoost, 0, 100);
   }
 
+  function getNetworkTrendValue(m) {
+    if (!m || m.networkLatency == null || m.networkLatency < 0) return 100;
+    return clampNumber(m.networkLatency / 3, 0, 100);
+  }
+
   function getBatteryLevelInfo(level, isCharging, hasBattery) {
     if (hasBattery === false) return { level: 'info', text: '桌面供电' };
     if (isCharging) return { level: 'info', text: '充电中' };
@@ -3797,7 +3991,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function _updateSparklines(m) {
     _setSparklineData('cpu', m.cpuPct);
     _setSparklineData('mem', m.memPct);
-    _setSparklineData('net', getNetworkScore(m));
+    _setSparklineData('net', getNetworkTrendValue(m));
   }
 
   document.querySelector('.nav-item[data-target="page-device-status"]')?.addEventListener('click', () => {

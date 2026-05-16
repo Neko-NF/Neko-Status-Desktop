@@ -36,6 +36,7 @@ const DEFAULTS = {
   darkModeEnd: '07:00',           // 定时深色模式结束时间
   seedColor: '#06b6d4',
   customSeedColor: '',            // 用户自定义强调色（切换预置色时保留）
+  enableExperimentalFeatures: false,
   glassEffect: true,              // 玻璃拟态效果
   uiScale: 100,                   // 界面缩放百分比
   uiFont: '',                     // 界面字体
@@ -67,6 +68,7 @@ const DEFAULTS = {
   autoDownload: true,              // 发现更新时自动下载安装包
   skippedVersion: '',
   lastUpdateCheck: 0,
+  changelogCache: [],
   pendingInstall: null,            // 已下载待安装的更新 { version, filePath, sha256 }（跨会话持久化）
   // 用户认证
   authToken: '',                  // JWT token（桌面客户端专用）

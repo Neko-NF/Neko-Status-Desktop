@@ -29,6 +29,180 @@
             const headerTitleText = document.querySelector('.page-title');
             const topNavEditBtn = document.getElementById('editLayoutBtn');
 
+            function setExpandableSectionState(el, expanded, options = {}) {
+                if (!el) return;
+                const targetDisplay = options.display ?? el.dataset.expandedDisplay ?? 'block';
+                const duration = options.duration ?? 280;
+                const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+                el.dataset.expandedDisplay = targetDisplay;
+                el.classList.add('ui-expandable');
+
+                if (el._expandTimer) {
+                    clearTimeout(el._expandTimer);
+                    el._expandTimer = null;
+                }
+
+                if (reduceMotion) {
+                    el.style.display = expanded ? targetDisplay : 'none';
+                    el.style.maxHeight = expanded ? 'none' : '0px';
+                    el.style.opacity = expanded ? '1' : '0';
+                    el.style.transform = expanded ? 'translateY(0) scaleY(1)' : 'translateY(-6px) scaleY(0.98)';
+                    el.classList.toggle('is-expanded', expanded);
+                    el.classList.toggle('is-collapsed', !expanded);
+                    el.classList.remove('is-animating');
+                    return;
+                }
+
+                if (expanded) {
+                    el.style.display = targetDisplay;
+                    el.classList.add('is-animating');
+                    el.classList.remove('is-collapsed');
+                    el.classList.add('is-expanded');
+                    el.style.maxHeight = '0px';
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(-6px) scaleY(0.98)';
+
+                    requestAnimationFrame(() => {
+                        const fullHeight = el.scrollHeight;
+                        el.style.maxHeight = `${fullHeight}px`;
+                        el.style.opacity = '1';
+                        el.style.transform = 'translateY(0) scaleY(1)';
+                    });
+
+                    el._expandTimer = setTimeout(() => {
+                        el.classList.remove('is-animating');
+                        el.style.maxHeight = 'none';
+                        el.style.opacity = '';
+                        el.style.transform = '';
+                        el._expandTimer = null;
+                    }, duration);
+                    return;
+                }
+
+                if (getComputedStyle(el).display === 'none') {
+                    el.classList.remove('is-expanded', 'is-animating');
+                    el.classList.add('is-collapsed');
+                    return;
+                }
+
+                el.classList.add('is-animating');
+                el.classList.remove('is-expanded');
+                el.style.display = targetDisplay;
+                el.style.maxHeight = `${el.scrollHeight}px`;
+                el.style.opacity = '1';
+                el.style.transform = 'translateY(0) scaleY(1)';
+
+                requestAnimationFrame(() => {
+                    el.style.maxHeight = '0px';
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(-6px) scaleY(0.98)';
+                });
+
+                el._expandTimer = setTimeout(() => {
+                    el.style.display = 'none';
+                    el.classList.remove('is-animating');
+                    el.classList.add('is-collapsed');
+                    el.style.maxHeight = '0px';
+                    el._expandTimer = null;
+                }, duration);
+            }
+
+            const FONT_PROFILE_PRESETS = {
+                default: {
+                    '--fw-page-title': '600',
+                    '--fw-page-subtitle': '400',
+                    '--fw-section-title': '600',
+                    '--fw-section-subtitle': '400',
+                    '--fw-section-label': '600',
+                    '--fw-row-title': '500',
+                    '--fw-row-desc': '400',
+                    '--fw-body-strong': '600',
+                    '--fw-value-strong': '700',
+                    '--tracking-section-label': '0.06em',
+                    '--tracking-label-caps': '0.07em'
+                },
+                cjkBalanced: {
+                    '--fw-page-title': '600',
+                    '--fw-page-subtitle': '420',
+                    '--fw-section-title': '580',
+                    '--fw-section-subtitle': '420',
+                    '--fw-section-label': '580',
+                    '--fw-row-title': '500',
+                    '--fw-row-desc': '420',
+                    '--fw-body-strong': '580',
+                    '--fw-value-strong': '650',
+                    '--tracking-section-label': '0.04em',
+                    '--tracking-label-caps': '0.05em'
+                },
+                uiNeutral: {
+                    '--fw-page-title': '650',
+                    '--fw-page-subtitle': '420',
+                    '--fw-section-title': '620',
+                    '--fw-section-subtitle': '420',
+                    '--fw-section-label': '620',
+                    '--fw-row-title': '520',
+                    '--fw-row-desc': '420',
+                    '--fw-body-strong': '620',
+                    '--fw-value-strong': '720',
+                    '--tracking-section-label': '0.06em',
+                    '--tracking-label-caps': '0.07em'
+                },
+                serifReadable: {
+                    '--fw-page-title': '680',
+                    '--fw-page-subtitle': '430',
+                    '--fw-section-title': '640',
+                    '--fw-section-subtitle': '430',
+                    '--fw-section-label': '640',
+                    '--fw-row-title': '520',
+                    '--fw-row-desc': '430',
+                    '--fw-body-strong': '620',
+                    '--fw-value-strong': '720',
+                    '--tracking-section-label': '0.03em',
+                    '--tracking-label-caps': '0.04em'
+                }
+            };
+
+            const FONT_PROFILE_MATCHERS = [
+                { name: 'cjkBalanced', pattern: /(yahei|微软雅黑|pingfang|苹方|hiragino sans|source han sans|思源黑体|noto sans cjk|harmonyos sans|misans|oppo sans|sarasa gothic|lxgw|wenkai)/i },
+                { name: 'serifReadable', pattern: /(simsun|宋体|source han serif|思源宋体|noto serif|songti|times new roman|georgia)/i },
+                { name: 'uiNeutral', pattern: /(segoe ui|aptos|inter|roboto|sf pro|helvetica neue|arial|ubuntu|fira sans)/i }
+            ];
+
+            function resolveUIFontProfile(font = '') {
+                const name = String(font || '').trim();
+                if (!name) return 'default';
+                return FONT_PROFILE_MATCHERS.find(item => item.pattern.test(name))?.name || 'default';
+            }
+
+            function applyUIFontProfile(font = '') {
+                const root = document.documentElement;
+                const profileName = resolveUIFontProfile(font);
+                const profile = FONT_PROFILE_PRESETS[profileName] || FONT_PROFILE_PRESETS.default;
+                Object.entries(profile).forEach(([token, value]) => root.style.setProperty(token, value));
+                root.dataset.fontProfile = profileName;
+                root.dataset.uiFontName = font ? String(font) : 'system-default';
+            }
+
+            function normalizeServiceHealthCheckCopy() {
+                const title = document.querySelector('#page-services .health-check-copy .svc-cfg-title');
+                const subtitle = document.querySelector('#page-services .health-check-copy .svc-cfg-subtitle');
+                if (title) {
+                    title.innerHTML = '<i class="ph ph-stethoscope"></i> 系统一键体检';
+                }
+                if (subtitle) {
+                    subtitle.textContent = '汇总服务运行、网络连通、权限环境与恢复建议，让排障结果保持和其他服务卡片一致的阅读层级。';
+                }
+            }
+
+            window._nekoUIHelpers = window._nekoUIHelpers || {};
+            window._nekoUIHelpers.setExpandableSectionState = setExpandableSectionState;
+            window._nekoUIHelpers.applyUIFontProfile = applyUIFontProfile;
+            window._nekoUIHelpers.resolveUIFontProfile = resolveUIFontProfile;
+            window._nekoUIHelpers.normalizeServiceHealthCheckCopy = normalizeServiceHealthCheckCopy;
+
+            normalizeServiceHealthCheckCopy();
+
             function syncNavIndicator(target) {
                 if (!navMenu || !navIndicator) return;
                 const item = target || document.querySelector('.nav-menu .nav-item.active');
@@ -153,6 +327,7 @@
             // 1. 读取本地存储的主题设置
             const savedMode = localStorage.getItem('neko-theme-mode') || 'light';
             const savedColor = localStorage.getItem('neko-theme-color') || '#06b6d4';
+            const savedCustomColor = localStorage.getItem('neko-custom-theme-color') || '';
 
             // 2. 初始化主题模式
             if (savedMode === 'light') {
@@ -171,10 +346,9 @@
 
             colorSwatches.forEach(swatch => {
                 const color = swatch.getAttribute('data-color');
-                swatch.style.color = color; // For shadow
-                if (color === savedColor) swatch.classList.add('active');
-                else swatch.classList.remove('active');
+                if (color) swatch.style.color = color;
             });
+            syncThemeColorUI(savedColor, savedCustomColor);
 
             // 4. 昼夜切换事件（dock 按钮 → 同步设置页开关 + config）
             themeModeBtn.addEventListener('click', () => {
@@ -196,7 +370,7 @@
                 if (schedSw && schedSw.classList.contains('on')) {
                     schedSw.classList.remove('on');
                     const tr = document.getElementById('stgDarkTimeRow');
-                    if (tr) tr.style.display = 'none';
+                    setExpandableSectionState(tr, false, { display: 'flex' });
                 }
                 const desc = document.getElementById('stgDarkModeDesc');
                 if (desc) desc.textContent = newMode === 'dark' ? '当前：深色模式' : '当前：浅色模式';
@@ -215,29 +389,9 @@
                 swatch.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const newColor = swatch.getAttribute('data-color');
-                    document.documentElement.style.setProperty('--theme-color', newColor);
-                    localStorage.setItem('neko-theme-color', newColor);
-                    
-                    if (profileAvatarImg) {
-                        profileAvatarImg.src = `https://ui-avatars.com/api/?name=User&background=${newColor.replace('#', '')}&color=fff`;
-                    }
-
-                    // 同步 dock 色板
-                    colorSwatches.forEach(s => s.classList.remove('active'));
-                    swatch.classList.add('active');
+                    if (!newColor) return;
+                    applyThemeColor(newColor);
                     colorPalette.classList.remove('show');
-
-                    // 同步设置页色板
-                    document.querySelectorAll('.settings-swatch').forEach(s => {
-                        s.classList.toggle('active', s.dataset.color === newColor);
-                    });
-                    const cb = document.getElementById('stgCustomColorBtn');
-                    if (cb) { cb.classList.remove('active'); }
-
-                    // 持久化到 config
-                    if (window.nekoIPC) window.nekoIPC.setConfig('seedColor', newColor);
-                    // 通知 app-ipc.js 重绘图表以跟随新主题色
-                    document.dispatchEvent(new CustomEvent('neko:themeChange'));
                 });
             });
 
@@ -915,7 +1069,7 @@
                 'stgDarkSwitch', 'stgDarkScheduleSwitch',
                 'stgGlassSwitch', 'stgAutoUploadSwitch', 'stgNotifySwitch', 'stgDndSwitch',
                 'stgIncognitoSwitch', 'stg2FASwitch', 'stgAutoDownloadSwitch',
-                'blurAllSwitch', 'stgSyncScreenshotSwitch'
+                'blurAllSwitch', 'stgSyncScreenshotSwitch', 'stgExperimentalSwitch'
             ].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('click', () => {
@@ -1331,7 +1485,7 @@
             const reportAutoDelayRow = document.getElementById('reportAutoDelayRow');
             if (reportAutoStartSwitch && reportAutoDelayRow) {
                 function updateReportAutoDelayVisibility() {
-                    reportAutoDelayRow.style.display = reportAutoStartSwitch.classList.contains('on') ? '' : 'none';
+                    setExpandableSectionState(reportAutoDelayRow, reportAutoStartSwitch.classList.contains('on'), { display: 'flex' });
                 }
                 updateReportAutoDelayVisibility();
                 reportAutoStartSwitch.addEventListener('click', updateReportAutoDelayVisibility);
@@ -1354,24 +1508,70 @@
             });
 
             // ======== 设置页：色板联动主题色 ======== //
-            function applyThemeColor(color) {
-                document.documentElement.style.setProperty('--theme-color', color);
-                localStorage.setItem('neko-theme-color', color);
-                // 同步两处色板的 active 状态
-                document.querySelectorAll('.settings-swatch, .color-swatch').forEach(s => {
-                    s.classList.toggle('active', s.dataset.color === color);
-                });
-                // 自定义按钮
-                const cb = document.getElementById('stgCustomColorBtn');
-                if (cb) {
-                    const isCustom = !document.querySelector('.settings-swatch.active');
-                    cb.classList.toggle('active', isCustom);
-                    if (isCustom) cb.style.setProperty('--custom-swatch-color', color);
+            function normalizeThemeColorInput(value) {
+                const raw = String(value || '').trim();
+                if (!raw) return '';
+                const plain = raw.replace(/^#/,'').replace(/^0x/i, '');
+                if (/^[0-9a-f]{3}$/i.test(plain)) {
+                    return `#${plain.split('').map(ch => ch + ch).join('').toLowerCase()}`;
                 }
-                // 持久化到 config-store
-                if (window.nekoIPC) window.nekoIPC.setConfig('seedColor', color);
-                // 通知 app-ipc.js 重绘图表以跟随新主题色
+                if (/^[0-9a-f]{6}$/i.test(plain)) {
+                    return `#${plain.toLowerCase()}`;
+                }
+                return '';
+            }
+
+            function getSavedCustomThemeColor() {
+                return normalizeThemeColorInput(
+                    localStorage.getItem('neko-custom-theme-color')
+                    || (document.getElementById('stgCustomColorInput') || {}).value
+                    || localStorage.getItem('neko-theme-color')
+                ) || '#06b6d4';
+            }
+
+            function syncThemeColorUI(color, customColor = getSavedCustomThemeColor()) {
+                const normalizedColor = normalizeThemeColorInput(color) || '#06b6d4';
+                const normalizedCustom = normalizeThemeColorInput(customColor) || normalizedColor;
+                const builtinSelectors = document.querySelectorAll('.settings-swatch, .color-swatch[data-color]');
+                let matchedBuiltin = false;
+                builtinSelectors.forEach((s) => {
+                    const isMatch = s.dataset.color === normalizedColor;
+                    s.classList.toggle('active', isMatch);
+                    if (isMatch) matchedBuiltin = true;
+                });
+                const customButtons = [
+                    document.getElementById('stgCustomColorBtn'),
+                    document.getElementById('topCustomColorBtn'),
+                ].filter(Boolean);
+                customButtons.forEach((btn) => {
+                    btn.style.setProperty('--custom-swatch-color', normalizedCustom);
+                    btn.classList.toggle('active', !matchedBuiltin && normalizedColor === normalizedCustom);
+                });
+                const customColorInput = document.getElementById('stgCustomColorInput');
+                const customColorHex = document.getElementById('stgCustomColorHex');
+                const customColorPreview = document.getElementById('stgCustomColorPreview');
+                if (customColorInput) customColorInput.value = normalizedCustom;
+                if (customColorHex) customColorHex.value = normalizedCustom.toUpperCase();
+                if (customColorPreview) customColorPreview.style.background = normalizedCustom;
+            }
+
+            function applyThemeColor(color, options = {}) {
+                const normalizedColor = normalizeThemeColorInput(color);
+                if (!normalizedColor) return false;
+                const customColor = normalizeThemeColorInput(options.customColor || getSavedCustomThemeColor()) || normalizedColor;
+                document.documentElement.style.setProperty('--theme-color', normalizedColor);
+                localStorage.setItem('neko-theme-color', normalizedColor);
+                localStorage.setItem('neko-custom-theme-color', customColor);
+                syncThemeColorUI(normalizedColor, customColor);
+                if (profileAvatarImg) {
+                    profileAvatarImg.src = `https://ui-avatars.com/api/?name=User&background=${normalizedColor.replace('#', '')}&color=fff`;
+                }
+                if (window.nekoIPC) {
+                    window.nekoIPC.setConfig('seedColor', normalizedColor);
+                    if (options.persistCustom !== false) window.nekoIPC.setConfig('customSeedColor', customColor);
+                }
                 document.dispatchEvent(new CustomEvent('neko:themeChange'));
+                return true;
             }
 
             document.querySelectorAll('#stgColorSwatches .settings-swatch').forEach(swatch => {
@@ -1388,19 +1588,20 @@
             const customColorRow = document.getElementById('stgCustomColorRow');
             const customColorPreview = document.getElementById('stgCustomColorPreview');
             const customColorHex = document.getElementById('stgCustomColorHex');
+            const topCustomColorBtn = document.getElementById('topCustomColorBtn');
 
             if (customColorBtn && customColorInput) {
                 customColorBtn.addEventListener('click', () => {
                     if (customColorRow) customColorRow.style.display = customColorRow.style.display === 'none' ? '' : 'none';
-                    const cur = localStorage.getItem('neko-theme-color') || '#06b6d4';
+                    const cur = getSavedCustomThemeColor();
                     customColorInput.value = cur;
-                    if (customColorHex) customColorHex.value = cur;
+                    if (customColorHex) customColorHex.value = cur.toUpperCase();
                     if (customColorPreview) customColorPreview.style.background = cur;
                 });
                 customColorInput.addEventListener('input', () => {
                     const c = customColorInput.value;
                     if (customColorPreview) customColorPreview.style.background = c;
-                    if (customColorHex) customColorHex.value = c;
+                    if (customColorHex) customColorHex.value = c.toUpperCase();
                 });
                 // 点击预览色块打开系统取色器
                 if (customColorPreview) {
@@ -1409,18 +1610,28 @@
                 }
                 if (customColorHex) {
                     customColorHex.addEventListener('input', () => {
-                        const v = customColorHex.value;
-                        if (/^#[0-9a-f]{6}$/i.test(v)) {
-                            customColorInput.value = v;
-                            if (customColorPreview) customColorPreview.style.background = v;
+                        const normalized = normalizeThemeColorInput(customColorHex.value);
+                        if (normalized) {
+                            customColorInput.value = normalized;
+                            customColorHex.value = normalized.toUpperCase();
+                            if (customColorPreview) customColorPreview.style.background = normalized;
                         }
                     });
                 }
+                topCustomColorBtn?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const customColor = getSavedCustomThemeColor();
+                    applyThemeColor(customColor, { customColor });
+                    colorPalette.classList.remove('show');
+                });
                 document.getElementById('stgCustomColorApply')?.addEventListener('click', () => {
-                    const c = customColorInput.value;
-                    applyThemeColor(c);
-                    // 额外持久化自定义色（切换预设色时不会丢失）
-                    if (window.nekoIPC) window.nekoIPC.setConfig('customSeedColor', c);
+                    const c = normalizeThemeColorInput(customColorHex?.value || customColorInput.value);
+                    if (!c) {
+                        customColorHex?.focus();
+                        customColorHex?.select();
+                        return;
+                    }
+                    applyThemeColor(c, { customColor: c });
                     if (customColorRow) customColorRow.style.display = 'none';
                 });
             }
@@ -1617,8 +1828,14 @@
             }
 
             let streamPollTimer = null;
+            window.stopStreamStatusPolling = function stopStreamStatusPolling() {
+                if (streamPollTimer) {
+                    clearInterval(streamPollTimer);
+                    streamPollTimer = null;
+                }
+            };
             function startStreamStatusPolling() {
-                if (streamPollTimer) clearInterval(streamPollTimer);
+                window.stopStreamStatusPolling();
                 streamPollTimer = setInterval(() => {
                     if (!window.nekoIPC || !window.nekoIPC.getStreamLiveStatus) return;
                     window.nekoIPC.getStreamLiveStatus().then((status) => {
@@ -1796,6 +2013,7 @@
                     } else {
                         document.documentElement.style.removeProperty('--ui-font');
                     }
+                    applyUIFontProfile(font);
                     localStorage.setItem('neko-ui-font', font);
                     if (window.nekoIPC) window.nekoIPC.setConfig('uiFont', font);
                 }
@@ -1803,6 +2021,7 @@
                 // 页面加载时立即应用已保存字体
                 const savedFont = localStorage.getItem('neko-ui-font') || '';
                 if (savedFont) document.documentElement.style.setProperty('--ui-font', `"${savedFont}"`);
+                applyUIFontProfile(savedFont);
 
                 // 异步加载系统字体列表
                 (async () => {
