@@ -33,6 +33,7 @@
                 if (!navMenu || !navIndicator) return;
                 const item = target || document.querySelector('.nav-menu .nav-item.active');
                 if (!item || getComputedStyle(item).display === 'none') return;
+                if (item.classList.contains('console-nav') && !item.classList.contains('show')) return;
                 const menuRect = navMenu.getBoundingClientRect();
                 const itemRect = item.getBoundingClientRect();
                 navMenu.style.setProperty('--nav-indicator-y', `${itemRect.top - menuRect.top}px`);
@@ -47,8 +48,21 @@
                 item.addEventListener('click', function() {
                     const targetAreaId = this.getAttribute('data-target');
                     if (targetAreaId) {
+                        if (this.classList.contains('console-nav') && !this.classList.contains('show')) return;
                         // 保存最后访问的页面（供 restoreLastState 使用）
-                        if (window.nekoIPC) window.nekoIPC.setConfig('lastPage', targetAreaId);
+                        const restorablePages = new Set([
+                            'mainDashboardArea',
+                            'consoleArea',
+                            'page-device-status',
+                            'page-screenshot',
+                            'page-services',
+                            'page-stream',
+                            'page-update',
+                            'page-about'
+                        ]);
+                        if (window.nekoIPC && restorablePages.has(targetAreaId)) {
+                            window.nekoIPC.setConfig('lastPage', targetAreaId);
+                        }
 
                         // 更新导航激活状态
                         navItems.forEach(nav => nav.classList.remove('active'));
@@ -343,8 +357,17 @@
                 // 如果开启控制台，在左侧导航栏显示入口，反之隐藏
                 if (isOn) {
                     navConsole.classList.add('show');
+                    navConsole.setAttribute('aria-hidden', 'false');
+                    navConsole.removeAttribute('tabindex');
                 } else {
                     navConsole.classList.remove('show');
+                    navConsole.setAttribute('aria-hidden', 'true');
+                    navConsole.setAttribute('tabindex', '-1');
+                    if (navConsole.classList.contains('active')) {
+                        document.querySelector('.nav-menu .nav-item[data-target="mainDashboardArea"]')?.click();
+                    } else {
+                        syncNavIndicator();
+                    }
                 }
             });
 

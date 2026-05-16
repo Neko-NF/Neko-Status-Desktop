@@ -11,6 +11,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // nekoIPC 由 ipc-bridge.js 挂载到 window.nekoIPC
   const ipc = window.nekoIPC;
+  const consoleNavEntry = document.getElementById('navConsole');
   if (!ipc) {
     console.error('[app-ipc] 找不到 nekoIPC，请确认 ipc-bridge.js 已在本文件之前加载');
     return;
@@ -28,6 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
     el.parentNode.replaceChild(clone, el);
     clone.addEventListener('click', handler);
     return clone;
+  }
+
+  if (consoleNavEntry) {
+    consoleNavEntry.setAttribute('aria-hidden', consoleNavEntry.classList.contains('show') ? 'false' : 'true');
+    if (!consoleNavEntry.classList.contains('show')) consoleNavEntry.setAttribute('tabindex', '-1');
+    consoleNavEntry.style.removeProperty('display');
+    consoleNavEntry.style.removeProperty('color');
   }
 
   /** 获取当前时间字符串 HH:mm:ss */
@@ -689,11 +697,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 活动流 — 追加新条目
     if (data.success) {
       const displayApp = data.appName || data.packageName || '';
+      const eventTs = resolveEventTimestamp(data.timestamp || Date.now());
       if (displayApp) {
-        appendActivityItem('app', displayApp, data.packageName || '', nowStr());
+        appendActivityItem('app', displayApp, data.packageName || '', formatTimeOnly(eventTs));
       }
       // 追加上传活动记录
-      appendActivityItem('upload', '状态上报', data.packageName || '系统', nowStr());
+      appendActivityItem('upload', '状态上报', data.packageName || '系统', formatTimeOnly(eventTs));
     }
 
     // 自动截图同步到 UI 预览卡片
@@ -701,7 +710,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = `data:image/png;base64,${data.screenshotBase64}`;
       const isBlurred = !!data.screenshotBlurred;
       const sizeKB = ((data.screenshotSize || 0) / 1024).toFixed(0);
-      const captureTime = formatDateTime(data.timestamp || Date.now());
+      const captureTs = resolveEventTimestamp(data.timestamp || Date.now());
+      const captureTime = formatDateTime(captureTs);
       if (isBlurred) window._nekoActivityHelpers?.incrementBlurCount?.();
 
       // 截图&活动页大预览
@@ -733,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setScreenshotPreviewTime(captureTime);
 
       // 活动流追加截图记录
-      appendActivityItem('capture', isBlurred ? '自动截图（已模糊）' : '自动截图', `${sizeKB} KB · PNG`, nowStr());
+      appendActivityItem('capture', isBlurred ? '自动截图（已模糊）' : '自动截图', `${sizeKB} KB · PNG`, formatTimeOnly(captureTs));
     }
   }
 
@@ -775,6 +785,23 @@ document.addEventListener('DOMContentLoaded', () => {
   function setScreenshotPreviewTime(value) {
     const el = document.querySelector('.screenshot-preview-time');
     if (el) el.textContent = value;
+  }
+
+  function resolveEventTimestamp(value) {
+    const ts = value instanceof Date ? value.getTime() : new Date(value).getTime();
+    return Number.isFinite(ts) ? ts : Date.now();
+  }
+
+  function formatTimeOnly(value) {
+    const d = new Date(resolveEventTimestamp(value));
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function setButtonBusyState(button, busy, labelHtml) {
+    if (!button) return;
+    button.disabled = !!busy;
+    if (labelHtml != null) button.innerHTML = labelHtml;
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -1248,6 +1275,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   async function triggerScreenshot() {
     addLogLine('INFO', '正在截图...');
+    const captureTs = Date.now();
     const result = await ipc.captureScreen();
     if (!result) {
       addLogLine('ERROR', '截图失败或功能不可用');
@@ -1290,8 +1318,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     addLogLine('SUCCESS', `截图完成${isBlurred ? '（已模糊）' : ''}，大小 ${(bytes.length / 1024).toFixed(1)} KB`);
     showNekoIsland(isBlurred ? '截图完成（隐私模糊）' : '截图完成', 'success', 2000);
-    appendActivityItem('capture', isBlurred ? '截图完成（已模糊）' : '截图完成', `${(bytes.length / 1024).toFixed(0)} KB · PNG`, nowStr());
-    setScreenshotPreviewTime(formatDateTime(Date.now()));
+    appendActivityItem('capture', isBlurred ? '截图完成（已模糊）' : '截图完成', `${(bytes.length / 1024).toFixed(0)} KB · PNG`, formatTimeOnly(captureTs));
+    setScreenshotPreviewTime(formatDateTime(captureTs));
 
     // 更新截图预览
     const frame = document.querySelector('.screenshot-frame');
@@ -2596,7 +2624,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ── 恢复上次页面 ─────────────────────────────────────────────────
-    if (cfg.restoreLastState && cfg.lastPage) {
+    const restorablePages = new Set([
+      'mainDashboardArea',
+      'consoleArea',
+      'page-device-status',
+      'page-screenshot',
+      'page-services',
+      'page-stream',
+      'page-update',
+      'page-about',
+    ]);
+    if (cfg.restoreLastState && cfg.lastPage && restorablePages.has(cfg.lastPage)) {
       const navItem = document.querySelector(`.nav-item[data-target="${cfg.lastPage}"]`);
       if (navItem) navItem.click();
     }
@@ -3909,6 +3947,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('btnLogout');
     const logoutDiv = document.getElementById('logoutDivider');
     const settingsAvatar = document.getElementById('settingsAvatar');
+    const profileAvatar = document.getElementById('profileModalAvatar');
     const settingsName = document.querySelector('.settings-profile-name');
     const settingsSub = document.querySelector('.settings-profile-sub');
 
@@ -3926,6 +3965,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (logoutBtn) logoutBtn.style.display = '';
       if (logoutDiv) logoutDiv.style.display = '';
       if (settingsAvatar) settingsAvatar.src = avatarUrl;
+      if (profileAvatar) profileAvatar.src = avatarUrl;
       if (settingsName) settingsName.textContent = displayName;
       if (settingsSub) settingsSub.textContent = `已登录 · ${user.role === 'admin' ? '管理员' : '普通用户'}`;
     } else {
@@ -3936,6 +3976,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (profileBtn) profileBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'none';
       if (logoutDiv) logoutDiv.style.display = 'none';
+      if (profileAvatar) profileAvatar.src = 'https://ui-avatars.com/api/?name=User&background=06b6d4&color=fff';
       if (settingsName) settingsName.textContent = 'Neko User';
       if (settingsSub) settingsSub.textContent = '设备监控本地账户';
     }
@@ -4050,6 +4091,44 @@ document.addEventListener('DOMContentLoaded', () => {
       'C:\\Users\\Demo\\Desktop\\neko-obs-stream-config.json';
   }
   // ===== END MOCK =====
+
+  replaceHandler('testSrsConnectionBtn', async () => {
+    const resultEl = document.getElementById('srsTestResult');
+    const host = document.getElementById('srsHost')?.value?.trim();
+    const rtmpPort = Number(document.getElementById('srsRtmpPort')?.value || 0);
+    const appName = document.getElementById('srsApp')?.value?.trim() || 'live';
+    const apiPort = Number(document.getElementById('srsApiPort')?.value || 0);
+    if (resultEl) {
+      resultEl.textContent = '测试中...';
+      resultEl.className = 'test-result-label pending';
+    }
+
+    try {
+      const result = await ipc.testSrsConnection({
+        srsHost: host,
+        srsRtmpPort: rtmpPort,
+        srsApp: appName,
+        srsApiPort: apiPort,
+      });
+
+      if (!resultEl) return;
+      if (result?.ok) {
+        const versionText = result.srsVersion ? `SRS ${result.srsVersion}` : 'RTMP / API 均已可达';
+        resultEl.textContent = `✓ 连通成功 ${versionText}`;
+        resultEl.className = 'test-result-label success';
+      } else if (result && (result.rtmp_reachable || result.api_reachable)) {
+        resultEl.textContent = `⚠ ${result.reason || '部分端口可达，请继续检查配置'}`;
+        resultEl.className = 'test-result-label warn';
+      } else {
+        resultEl.textContent = `✕ ${result?.reason || '连接失败'}`;
+        resultEl.className = 'test-result-label error';
+      }
+    } catch (e) {
+      if (!resultEl) return;
+      resultEl.textContent = `✕ ${e.message || '连接失败'}`;
+      resultEl.className = 'test-result-label error';
+    }
+  });
 
   // 关闭按钮
   const closeAuthBtn = document.getElementById('closeAuthModal');
@@ -4223,11 +4302,419 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── 个人信息编辑（对接服务端同步）───────────────────────────
+  const avatarEditorState = {
+    sourceUrl: '',
+    image: null,
+    baseScale: 1,
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+    dragging: false,
+    interactionMode: '',
+    dragStartX: 0,
+    dragStartY: 0,
+    dragOriginX: 0,
+    dragOriginY: 0,
+    dragOriginScale: 1,
+    pendingAvatar: '',
+  };
+
+  function ensureAvatarEditorUI() {
+    if (document.getElementById('avatarEditorModal')) return;
+
+    document.body.insertAdjacentHTML('beforeend', `
+      <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+      <input type="file" id="avatarDropzoneInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+      <div class="modal-overlay" id="avatarEditorModal">
+        <div class="avatar-editor-modal-container">
+          <button class="close-profile-btn" id="closeAvatarEditorBtn"><i class="ph ph-x"></i></button>
+          <div class="profile-header">头像编辑器</div>
+          <div class="avatar-editor-body">
+            <div class="avatar-dropzone" id="avatarDropzone">
+              <div class="avatar-dropzone-empty" id="avatarDropzoneEmpty">
+                <i class="ph ph-image-square"></i>
+                <div class="avatar-dropzone-title">拖拽图片到这里，或点击选择文件</div>
+                <div class="avatar-dropzone-desc">支持 PNG / JPG / WEBP / GIF / BMP</div>
+              </div>
+              <div class="avatar-cropper-shell" id="avatarCropperShell">
+                <div class="avatar-cropper-stage" id="avatarCropperStage">
+                  <img id="avatarCropImage" alt="avatar crop source">
+                  <div class="avatar-crop-mask"></div>
+                </div>
+              </div>
+            </div>
+            <div class="avatar-editor-sidebar">
+              <div class="avatar-editor-preview-wrap">
+                <div class="avatar-editor-preview">
+                  <img id="avatarPreviewImage" alt="avatar preview">
+                </div>
+                <div class="avatar-editor-preview-label">1:1 圆形预览</div>
+              </div>
+              <div class="avatar-editor-controls">
+                <label class="avatar-editor-label" for="avatarZoomRange">缩放</label>
+                <input type="range" id="avatarZoomRange" min="1" max="3" step="0.01" value="1">
+                <div class="avatar-editor-actions">
+                  <button class="action-btn" id="avatarChooseAnotherBtn"><i class="ph ph-folder-open"></i> 重新选择</button>
+                  <button class="action-btn" id="avatarResetBtn"><i class="ph ph-arrow-counter-clockwise"></i> 重置</button>
+                </div>
+                <div class="avatar-editor-error" id="avatarEditorError" hidden></div>
+              </div>
+            </div>
+          </div>
+          <div class="profile-footer avatar-editor-footer">
+            <div class="profile-sync-hint">
+              <i class="ph ph-crop"></i> 裁剪后仅更新本地预览，保存个人资料时才会上传
+            </div>
+            <div class="avatar-editor-footer-actions">
+              <button class="action-btn avatar-editor-cancel" id="cancelAvatarEditorBtn">取消</button>
+              <button class="btn-theme-save" id="applyAvatarCropBtn"><i class="ph ph-check"></i> 应用头像</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const avatarEditorModal = document.getElementById('avatarEditorModal');
+    avatarEditorModal?.querySelector('.profile-header')?.replaceChildren(document.createTextNode('头像编辑器'));
+    avatarEditorModal?.querySelector('.avatar-dropzone-title')?.replaceChildren(document.createTextNode('拖拽图片到这里，或点击选择文件'));
+    avatarEditorModal?.querySelector('.avatar-dropzone-desc')?.replaceChildren(document.createTextNode('支持 PNG / JPG / WEBP / GIF / BMP'));
+    avatarEditorModal?.querySelector('.avatar-editor-preview-label')?.replaceChildren(document.createTextNode('1:1 圆形预览'));
+
+    const controls = avatarEditorModal?.querySelector('.avatar-editor-controls');
+    if (controls) {
+      controls.innerHTML = `
+        <div class="avatar-editor-label">操作方式</div>
+        <div class="avatar-editor-instructions">
+          <div class="avatar-editor-instruction"><i class="ph ph-cursor-click"></i><span>左键拖动图片，调整头像位置</span></div>
+          <div class="avatar-editor-instruction"><i class="ph ph-mouse-middle-click"></i><span>中键上下拖动，连续缩放图片</span></div>
+          <div class="avatar-editor-instruction"><i class="ph ph-upload-simple"></i><span>应用头像后，再点击保存更改同步到服务器</span></div>
+        </div>
+        <div class="avatar-editor-actions">
+          <button class="action-btn" id="avatarChooseAnotherBtn"><i class="ph ph-folder-open"></i> 重新选择</button>
+          <button class="action-btn" id="avatarResetBtn"><i class="ph ph-arrow-counter-clockwise"></i> 重置</button>
+        </div>
+        <div class="avatar-editor-error" id="avatarEditorError" hidden></div>
+      `;
+    }
+
+    const footer = avatarEditorModal?.querySelector('.avatar-editor-footer');
+    if (footer) {
+      footer.innerHTML = `
+        <div class="avatar-editor-footer-note">
+          <i class="ph ph-crop"></i>
+          <span>裁剪后的头像会先更新当前预览，点击“保存更改”后才会同步到服务器。</span>
+        </div>
+        <div class="avatar-editor-footer-actions">
+          <button class="action-btn avatar-editor-cancel" id="cancelAvatarEditorBtn">取消</button>
+          <button class="btn-theme-save" id="applyAvatarCropBtn"><i class="ph ph-check"></i> 应用头像</button>
+        </div>
+      `;
+    }
+  }
+
+  function getAvatarCropMetrics() {
+    const shell = document.getElementById('avatarCropperShell');
+    if (!shell) return { radius: 160, diameter: 320 };
+    const shellWidth = shell.clientWidth || 0;
+    const shellHeight = shell.clientHeight || 0;
+    const diameter = Math.max(260, Math.min(shellWidth, shellHeight) - 72);
+    const radius = diameter / 2;
+    shell.style.setProperty('--avatar-crop-diameter', `${diameter}px`);
+    shell.style.setProperty('--avatar-crop-radius', `${radius}px`);
+    return { radius, diameter };
+  }
+
+  function setAvatarEditorError(message = '') {
+    const errorEl = document.getElementById('avatarEditorError');
+    if (!errorEl) return;
+    errorEl.hidden = !message;
+    errorEl.textContent = message || '';
+  }
+
+  function getAvatarFitScale() {
+    if (!avatarEditorState.image) return 1;
+    const { radius } = getAvatarCropMetrics();
+    const cropDiameter = radius * 2;
+    return Math.max(cropDiameter / avatarEditorState.image.width, cropDiameter / avatarEditorState.image.height);
+  }
+
+  function clampAvatarOffsets() {
+    if (!avatarEditorState.image) return;
+    const { radius } = getAvatarCropMetrics();
+    const fitScale = getAvatarFitScale();
+    const renderedWidth = avatarEditorState.image.width * fitScale * avatarEditorState.scale;
+    const renderedHeight = avatarEditorState.image.height * fitScale * avatarEditorState.scale;
+    const maxOffsetX = Math.max(0, renderedWidth / 2 - radius);
+    const maxOffsetY = Math.max(0, renderedHeight / 2 - radius);
+    avatarEditorState.offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, avatarEditorState.offsetX));
+    avatarEditorState.offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, avatarEditorState.offsetY));
+  }
+
+  function clampAvatarScale(nextScale) {
+    return Math.max(1, Math.min(3.2, nextScale));
+  }
+
+  function buildCroppedAvatarDataUrl() {
+    if (!avatarEditorState.image) return '';
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    const { radius } = getAvatarCropMetrics();
+    const cropDiameter = radius * 2;
+    const transformScale = getAvatarFitScale() * avatarEditorState.scale;
+    const sx = (avatarEditorState.image.width / 2) - ((radius + avatarEditorState.offsetX) / transformScale);
+    const sy = (avatarEditorState.image.height / 2) - ((radius + avatarEditorState.offsetY) / transformScale);
+    const sSize = cropDiameter / transformScale;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(avatarEditorState.image, sx, sy, sSize, sSize, 0, 0, 256, 256);
+    ctx.restore();
+
+    return canvas.toDataURL('image/png');
+  }
+
+  function updateAvatarPreview() {
+    const preview = document.getElementById('avatarPreviewImage');
+    if (!preview) return;
+    preview.src = buildCroppedAvatarDataUrl();
+  }
+
+  function renderAvatarCropper() {
+    const dropzone = document.getElementById('avatarDropzone');
+    const shell = document.getElementById('avatarCropperShell');
+    const empty = document.getElementById('avatarDropzoneEmpty');
+    const imageEl = document.getElementById('avatarCropImage');
+    if (!dropzone || !shell || !empty || !imageEl) return;
+
+    if (!avatarEditorState.image || !avatarEditorState.sourceUrl) {
+      dropzone.classList.remove('has-image');
+      shell.classList.remove('is-ready');
+      empty.hidden = false;
+      imageEl.removeAttribute('src');
+      return;
+    }
+
+    clampAvatarOffsets();
+    dropzone.classList.add('has-image');
+    shell.classList.add('is-ready');
+    empty.hidden = true;
+    const fitScale = getAvatarFitScale();
+    imageEl.src = avatarEditorState.sourceUrl;
+    imageEl.style.width = `${avatarEditorState.image.width * fitScale * avatarEditorState.scale}px`;
+    imageEl.style.height = `${avatarEditorState.image.height * fitScale * avatarEditorState.scale}px`;
+    imageEl.style.transform = `translate(calc(-50% + ${avatarEditorState.offsetX}px), calc(-50% + ${avatarEditorState.offsetY}px))`;
+    updateAvatarPreview();
+  }
+
+  async function loadAvatarSource(file) {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) {
+      setAvatarEditorError('只能上传图片文件');
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      if (avatarEditorState.sourceUrl && avatarEditorState.sourceUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarEditorState.sourceUrl);
+      }
+      avatarEditorState.sourceUrl = objectUrl;
+      avatarEditorState.image = image;
+      avatarEditorState.baseScale = 1;
+      avatarEditorState.scale = 1;
+      avatarEditorState.offsetX = 0;
+      avatarEditorState.offsetY = 0;
+      setAvatarEditorError('');
+      renderAvatarCropper();
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      setAvatarEditorError('图片加载失败，请换一张试试');
+    };
+    image.src = objectUrl;
+  }
+
+  function openAvatarEditor() {
+    ensureAvatarEditorUI();
+    document.getElementById('avatarEditorModal')?.classList.add('show');
+    document.getElementById('avatarDropzone')?.classList.remove('is-dragover');
+    setAvatarEditorError('');
+    renderAvatarCropper();
+  }
+
+  function closeAvatarEditor() {
+    document.getElementById('avatarEditorModal')?.classList.remove('show');
+  }
+
+  function wireAvatarEditor() {
+    ensureAvatarEditorUI();
+    const profileAvatarTrigger = document.querySelector('.profile-avatar-sec');
+    const profileAvatarImage = document.getElementById('profileModalAvatar');
+    const pickerInput = document.getElementById('avatarFileInput');
+    const dropzoneInput = document.getElementById('avatarDropzoneInput');
+    const dropzone = document.getElementById('avatarDropzone');
+    const cropperShell = document.getElementById('avatarCropperShell');
+
+    profileAvatarTrigger?.setAttribute('tabindex', '0');
+    profileAvatarTrigger?.addEventListener('click', openAvatarEditor);
+    profileAvatarTrigger?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openAvatarEditor();
+      }
+    });
+
+    document.getElementById('closeAvatarEditorBtn')?.addEventListener('click', closeAvatarEditor);
+    document.getElementById('cancelAvatarEditorBtn')?.addEventListener('click', closeAvatarEditor);
+    document.getElementById('avatarChooseAnotherBtn')?.addEventListener('click', () => dropzoneInput?.click());
+    dropzone?.addEventListener('click', (e) => {
+      if (e.target === dropzone || e.target.closest('#avatarDropzoneEmpty')) dropzoneInput?.click();
+    });
+
+    [pickerInput, dropzoneInput].forEach((input) => {
+      input?.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        loadAvatarSource(file);
+        e.target.value = '';
+      });
+    });
+
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      dropzone?.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        if ([...(e.dataTransfer?.items || [])].some((item) => item.kind === 'file' && item.type.startsWith('image/'))) {
+          dropzone.classList.add('is-dragover');
+        }
+      });
+    });
+
+    ['dragleave', 'drop'].forEach((eventName) => {
+      dropzone?.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        if (eventName === 'drop') {
+          const file = [...(e.dataTransfer?.files || [])][0];
+          if (file) loadAvatarSource(file);
+        }
+        dropzone.classList.remove('is-dragover');
+      });
+    });
+
+    document.getElementById('avatarResetBtn')?.addEventListener('click', () => {
+      if (!avatarEditorState.image) return;
+      avatarEditorState.scale = 1;
+      avatarEditorState.offsetX = 0;
+      avatarEditorState.offsetY = 0;
+      renderAvatarCropper();
+    });
+
+    function startAvatarInteraction(e) {
+      if (!avatarEditorState.image) return;
+      if (e.button !== 0 && e.button !== 1) return;
+      e.preventDefault();
+      avatarEditorState.dragging = true;
+      avatarEditorState.interactionMode = e.button === 1 ? 'zoom' : 'move';
+      avatarEditorState.dragStartX = e.clientX;
+      avatarEditorState.dragStartY = e.clientY;
+      avatarEditorState.dragOriginX = avatarEditorState.offsetX;
+      avatarEditorState.dragOriginY = avatarEditorState.offsetY;
+      avatarEditorState.dragOriginScale = avatarEditorState.scale;
+      cropperShell?.classList.toggle('zooming', avatarEditorState.interactionMode === 'zoom');
+      cropperShell?.classList.add('dragging');
+      if ('pointerId' in e && cropperShell?.setPointerCapture) {
+        try { cropperShell.setPointerCapture(e.pointerId); } catch {}
+      }
+    }
+
+    function updateAvatarInteraction(e) {
+      if (!avatarEditorState.dragging) return;
+      e.preventDefault();
+      if (avatarEditorState.interactionMode === 'zoom') {
+        const delta = (avatarEditorState.dragStartY - e.clientY) / 160;
+        avatarEditorState.scale = clampAvatarScale(avatarEditorState.dragOriginScale + delta);
+      } else {
+        avatarEditorState.offsetX = avatarEditorState.dragOriginX + (e.clientX - avatarEditorState.dragStartX);
+        avatarEditorState.offsetY = avatarEditorState.dragOriginY + (e.clientY - avatarEditorState.dragStartY);
+      }
+      renderAvatarCropper();
+    }
+
+    function stopAvatarDrag(e) {
+      if (!avatarEditorState.dragging) return;
+      avatarEditorState.dragging = false;
+      avatarEditorState.interactionMode = '';
+      cropperShell?.classList.remove('dragging');
+      cropperShell?.classList.remove('zooming');
+      if (cropperShell && e?.pointerId != null && cropperShell.releasePointerCapture) {
+        try {
+          if (cropperShell.hasPointerCapture?.(e.pointerId)) cropperShell.releasePointerCapture(e.pointerId);
+        } catch {}
+      }
+    }
+
+    cropperShell?.addEventListener('pointerdown', startAvatarInteraction);
+    cropperShell?.addEventListener('pointermove', updateAvatarInteraction);
+    cropperShell?.addEventListener('pointerup', stopAvatarDrag);
+    cropperShell?.addEventListener('pointercancel', stopAvatarDrag);
+    cropperShell?.addEventListener('mousedown', startAvatarInteraction);
+    cropperShell?.addEventListener('auxclick', (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
+    cropperShell?.addEventListener('contextmenu', (e) => {
+      if (avatarEditorState.dragging || e.button === 1) e.preventDefault();
+    });
+    cropperShell?.addEventListener('wheel', (e) => {
+      if (!avatarEditorState.image) return;
+      e.preventDefault();
+      avatarEditorState.scale = clampAvatarScale(avatarEditorState.scale - (e.deltaY * 0.0015));
+      renderAvatarCropper();
+    }, { passive: false });
+    window.addEventListener('mousemove', updateAvatarInteraction);
+    window.addEventListener('mouseup', stopAvatarDrag);
+    window.addEventListener('blur', stopAvatarDrag);
+
+    document.getElementById('applyAvatarCropBtn')?.addEventListener('click', () => {
+      if (!avatarEditorState.image) {
+        setAvatarEditorError('请先选择一张头像图片');
+        return;
+      }
+      const cropped = buildCroppedAvatarDataUrl();
+      if (!cropped) {
+        setAvatarEditorError('头像裁剪失败，请重试');
+        return;
+      }
+      avatarEditorState.pendingAvatar = cropped;
+      if (profileAvatarImage) profileAvatarImage.src = cropped;
+      closeAvatarEditor();
+    });
+
+    document.getElementById('avatarEditorModal')?.addEventListener('paste', (e) => {
+      const file = [...(e.clipboardData?.files || [])][0];
+      if (file) loadAvatarSource(file);
+    });
+
+    window.addEventListener('resize', () => {
+      if (document.getElementById('avatarEditorModal')?.classList.contains('show')) {
+        renderAvatarCropper();
+      }
+    });
+  }
+
   const profileModal = document.getElementById('profileModal');
   const openProfileBtns = [
     document.getElementById('btnProfileSettings'),
     document.getElementById('openProfileBtnSettings'),
   ].filter(Boolean);
+
+  wireAvatarEditor();
 
   openProfileBtns.forEach(btn => {
     const clone = btn.cloneNode(true);
@@ -4249,6 +4736,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const pAvatar = document.getElementById('profileModalAvatar');
         if (pUsername) pUsername.value = u.username || '';
         if (pEmail) pEmail.value = u.email || '';
+        avatarEditorState.pendingAvatar = u.avatar || '';
         if (pAvatar && u.avatar) pAvatar.src = u.avatar;
         else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username)}&background=06b6d4&color=fff`;
       }
@@ -4271,12 +4759,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = {};
       if (username) data.username = username;
       if (email !== undefined) data.email = email;
+      if (avatarEditorState.pendingAvatar) data.avatar = avatarEditorState.pendingAvatar;
       if (currentPassword && newPassword) {
         data.currentPassword = currentPassword;
         data.newPassword = newPassword;
       }
 
-      clone.disabled = true;
+      setButtonBusyState(clone, true, clone.innerHTML);
       clone.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
 
       const result = await ipc.authUpdateProfile(data);
@@ -4284,6 +4773,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (result.success) {
         showAuthNotice('个人信息已更新并同步到服务器', 'info');
         if (result.user) updateAuthUI(true, result.user);
+        avatarEditorState.pendingAvatar = '';
         if (profileModal) profileModal.classList.remove('show');
         // 清空密码字段
         const cp = document.getElementById('profileCurrentPassword');
@@ -4294,7 +4784,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showAuthNotice(result.message || '保存失败', 'error');
       }
 
-      clone.disabled = false;
+      setButtonBusyState(clone, false, clone.innerHTML);
       clone.innerHTML = '<i class="ph ph-check-circle"></i> 保存更改';
     });
   }
