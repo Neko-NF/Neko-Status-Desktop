@@ -208,15 +208,28 @@
                 const item = target || document.querySelector('.nav-menu .nav-item.active');
                 if (!item || getComputedStyle(item).display === 'none') return;
                 if (item.classList.contains('console-nav') && !item.classList.contains('show')) return;
-                const menuRect = navMenu.getBoundingClientRect();
-                const itemRect = item.getBoundingClientRect();
-                navMenu.style.setProperty('--nav-indicator-y', `${itemRect.top - menuRect.top}px`);
-                navMenu.style.setProperty('--nav-indicator-h', `${itemRect.height}px`);
+                navMenu.style.setProperty('--nav-indicator-y', `${item.offsetTop}px`);
+                navMenu.style.setProperty('--nav-indicator-h', `${item.offsetHeight}px`);
                 navIndicator.classList.add('is-ready');
             }
 
             requestAnimationFrame(() => syncNavIndicator());
             window.addEventListener('resize', () => syncNavIndicator());
+            navMenu?.addEventListener('transitionend', () => syncNavIndicator());
+            if (window.ResizeObserver && navMenu) {
+                const navResizeObserver = new ResizeObserver(() => syncNavIndicator());
+                navResizeObserver.observe(navMenu);
+                navItems.forEach(item => navResizeObserver.observe(item));
+            }
+            if (window.MutationObserver && navMenu) {
+                const navMutationObserver = new MutationObserver(() => requestAnimationFrame(() => syncNavIndicator()));
+                navMutationObserver.observe(navMenu, {
+                    subtree: true,
+                    childList: true,
+                    attributes: true,
+                    attributeFilter: ['class', 'style'],
+                });
+            }
 
             navItems.forEach(item => {
                 item.addEventListener('click', function() {
@@ -843,6 +856,7 @@
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
                 } catch (e) { console.error('加载布局失败', e); }
             }
+            window.loadLayoutConfig = loadLayoutConfig;
             // 自动加载上次保存的配置
             loadLayoutConfig();
 

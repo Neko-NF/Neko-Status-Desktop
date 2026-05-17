@@ -59,7 +59,7 @@
                 </div>
                 <div class="dock-pill device-badge">
                     <div class="status-dot" id="deviceStatusDot"></div>
-                    Device-Win-1094
+                    加载中...
                 </div>
             </div>
             <div class="topbar-actions">
@@ -303,7 +303,7 @@
                                 <input type="checkbox" class="neko-checkbox" id="consoleAutoScroll" checked> 自动滚动
                             </label>
                             <div style="width: 1px; height: 16px; background: color-mix(in srgb, var(--text-main) 10%, transparent);"></div>
-                            <button class="icon-btn" title="导出日志" style="width: 32px; height: 32px; padding: 0; min-width: unset;"><i class="ph ph-download-simple"></i></button>
+                            <button class="icon-btn" id="consoleExportBtn" title="导出日志" style="width: 32px; height: 32px; padding: 0; min-width: unset;"><i class="ph ph-download-simple"></i></button>
                             <button class="icon-btn" id="consoleClearBtn" title="清空发终端" style="width: 32px; height: 32px; padding: 0; min-width: unset; color: var(--error-coral);"><i class="ph ph-trash"></i></button>
                         </div>
                     </div>
@@ -342,12 +342,7 @@
                     </div>
 
                     <div id="consoleOutput" style="flex: 1; padding: 16px 20px; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: var(--text-main); background: color-mix(in srgb, var(--text-main) 3%, transparent);">
-                        <div class="log-line"><span class="log-time">[10:42:01]</span> <span class="log-level info" style="color: var(--theme-color);">[INFO]</span> <span class="log-msg">Neko Status Daemon initialized successfully.</span></div>
-                        <div class="log-line"><span class="log-time">[10:42:03]</span> <span class="log-level info" style="color: var(--theme-color);">[INFO]</span> <span class="log-msg">Connected to WebSocket server: wss://api.koirin.com/neko/ws</span></div>
-                        <div class="log-line"><span class="log-time">[10:42:15]</span> <span class="log-level warn" style="color: var(--warning-amber);">[WARN]</span> <span class="log-msg">Performance jitter detected. CPU usage spiked to 89%.</span></div>
-                        <div class="log-line"><span class="log-time">[10:45:22]</span> <span class="log-level error" style="color: var(--error-coral);">[ERROR]</span> <span class="log-msg">Failed to capture screen: Access Denied (0x00000005)</span></div>
-                        <div class="log-line"><span class="log-time">[10:45:25]</span> <span class="log-level info" style="color: var(--theme-color);">[INFO]</span> <span class="log-msg">Retrying screen capture using fallback method...</span></div>
-                        <div class="log-line"><span class="log-time">[10:45:26]</span> <span class="log-level success" style="color: var(--success-mint);">[SUCCESS]</span> <span class="log-msg">Screen capture secondary method succeeded.</span></div>
+                        <div class="log-line"><span class="log-time">[--:--:--]</span> <span class="log-level info" style="color: var(--theme-color);">[INFO]</span> <span class="log-msg">控制台已就绪，等待主进程推送日志...</span></div>
                     </div>
                     <!-- 终端输入区 -->
                     <div style="padding: 12px 20px; border-top: var(--glass-border); display: flex; gap: 12px; background: color-mix(in srgb, var(--text-main) 2%, transparent); align-items: center;">
@@ -369,34 +364,34 @@
                         <div class="glass-card kpi-card">
                             <div class="kpi-header">
                                 <span><i class="ph ph-cpu"></i> CPU 负载</span>
-                                <span class="kpi-badge info">正常</span>
+                                <span class="kpi-badge" id="cpuStatusBadge">检测中</span>
                             </div>
                             <div class="kpi-value-row">
-                                <div class="kpi-value">12.4<small>%</small></div>
+                                <div class="kpi-value" id="cpuValue">--<small>%</small></div>
                                 <div class="kpi-chart"><canvas id="sparkCpu"></canvas></div>
                             </div>
-                            <div class="kpi-footer">温度: 45°C / 频率: 3.2GHz</div>
+                            <div class="kpi-footer" id="cpuFooter">等待数据...</div>
                         </div>
 
                         <div class="glass-card kpi-card">
                             <div class="kpi-header">
                                 <span><i class="ph ph-memory"></i> 内存使用</span>
-                                <span class="kpi-badge warn">警告</span>
+                                <span class="kpi-badge" id="memStatusBadge">检测中</span>
                             </div>
                             <div class="kpi-value-row">
-                                <div class="kpi-value">85.2<small>%</small></div>
+                                <div class="kpi-value" id="memValue">--<small>%</small></div>
                                 <div class="kpi-chart"><canvas id="sparkMem"></canvas></div>
                             </div>
-                            <div class="kpi-footer">27.3 GB / 32.0 GB</div>
+                            <div class="kpi-footer" id="memFooter">等待数据...</div>
                         </div>
 
                         <div class="glass-card kpi-card">
                             <div class="kpi-header">
                                 <span><i class="ph ph-wifi-high"></i> 网络状态</span>
-                                <span class="kpi-badge info">极佳</span>
+                                <span class="kpi-badge" id="netStatusBadge">检测中</span>
                             </div>
                             <div class="kpi-value-row">
-                                <div class="kpi-value kpi-value-sm">12 <span class="kpi-value-unit">ms 延迟</span></div>
+                                <div class="kpi-value kpi-value-sm" id="netLatencyValue"><span class="kpi-value-unit">检测中...</span></div>
                                 <div class="kpi-chart"><canvas id="sparkNet"></canvas></div>
                             </div>
                             <div class="kpi-footer" id="netSpeedFooter"><i class="ph ph-arrow-down"></i> — &nbsp;&nbsp; <i class="ph ph-arrow-up"></i> —</div>
@@ -405,13 +400,13 @@
                         <div class="glass-card kpi-card">
                             <div class="kpi-header">
                                 <span><i class="ph ph-battery-charging"></i> 供电状态</span>
-                                <span class="kpi-badge info">充电中</span>
+                                <span class="kpi-badge" id="batteryStatusBadge">检测中</span>
                             </div>
                             <div class="kpi-value-row">
-                                <div class="kpi-value">85<small>%</small></div>
+                                <div class="kpi-value" id="batteryKpiValue">--<small>%</small></div>
                                 <div class="kpi-chart kpi-chart-gauge"><canvas id="sparkBattery"></canvas></div>
                             </div>
-                            <div class="kpi-footer">预计充满: 25分钟 / 电池健康度: 92%</div>
+                            <div class="kpi-footer" id="batteryKpiFooter">等待数据...</div>
                         </div>
                     </div>
 
@@ -498,33 +493,11 @@
                                 </tr>
                             </thead>
                             <tbody id="historyTableBody">
-                                <tr data-status="error">
-                                    <td>2026-03-08 10:45</td>
-                                    <td>屏幕捕获</td>
-                                    <td><span class="status-badge error">错误</span></td>
-                                    <td class="hover-tooltip" title="系统 API 返回：Access Denied (0x00000005)，截屏调用被拒绝。">Capture API 调用异常，权限被拒绝</td>
-                                    <td class="col-action"><button class="action-btn x-small primary-border">一键修复</button></td>
-                                </tr>
-                                <tr data-status="warn">
-                                    <td>2026-03-08 10:42</td>
-                                    <td>内存监控</td>
-                                    <td><span class="status-badge warn">警告</span></td>
-                                    <td class="hover-tooltip" title="内存用量连续 3 分钟超过 85% 阈值。">系统内存占用超阈值 (85.2%)</td>
-                                    <td class="col-action"><button class="action-btn x-small">忽略</button></td>
-                                </tr>
-                                <tr data-status="success">
-                                    <td>2026-03-08 09:30</td>
-                                    <td>网络隧道</td>
-                                    <td><span class="status-badge success">正常</span></td>
-                                    <td>Websocket 自动重连握手成功，延迟 12ms</td>
-                                    <td class="col-action">—</td>
-                                </tr>
-                                <tr data-status="success">
-                                    <td>2026-03-08 09:00</td>
-                                    <td>守护进程</td>
-                                    <td><span class="status-badge success">正常</span></td>
-                                    <td>NekoDaemon 服务开机自启动完成 (PID 10243)</td>
-                                    <td class="col-action">—</td>
+                                <tr class="history-empty-row">
+                                    <td colspan="5" style="text-align:center;padding:32px;color:var(--text-secondary);">
+                                        <i class="ph ph-clock-counter-clockwise" style="font-size:24px;opacity:0.5;"></i>
+                                        <div style="margin-top:8px;">暂无历史记录，启动服务后将自动记录状态事件</div>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -551,7 +524,7 @@
                                     <span class="screenshot-upload-label">截图上传</span>
                                     <div class="toggle-switch on" id="uploadSwitch"></div>
                                 </div>
-                                <span class="screenshot-preview-time">2026-03-08 10:45:22</span>
+                                <span class="screenshot-preview-time" id="screenshotPreviewTime">暂无截图</span>
                             </div>
 
                             <!-- 内嵌控制条（左/右分组，避免溢出） -->
@@ -620,7 +593,7 @@
                                             <span class="screenshot-tag">桌面环境</span>
                                             <span class="screenshot-tag">生产模式</span>
                                         </div>
-                                        <div class="screenshot-meta">1920 × 1080 · 854 KB · PNG</div>
+                                        <div class="screenshot-meta" id="screenshotMetaInline">—</div>
                                     </div>
                                     <div class="screenshot-overlay-actions">
                                         <button class="icon-btn" title="在外部查看"><i class="ph ph-arrow-square-out"></i></button>

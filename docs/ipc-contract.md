@@ -111,6 +111,9 @@ Renderer 访问方式统一通过：
 - `IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED`
 - `IPC_EVENTS.UPDATE_AUTO_DOWNLOADED`
 - `IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED`
+- `IPC_EVENTS.STARTUP_UPDATE_STATUS`
+
+`STARTUP_UPDATE_STATUS` 仅用于启动前更新窗口展示阶段状态；下载进度仍复用 `UPDATE_PROGRESS`，避免为同一进度语义新增第二套事件。
 
 ## 6. 新增 IPC 的步骤
 
@@ -128,3 +131,15 @@ Renderer 访问方式统一通过：
 3. 删除 preload 暴露。
 4. 删除主进程 handler。
 5. 更新测试与文档。
+
+## 8. 前后端桥接防错
+
+详见 [前后端桥接故障复盘与防错清单](./frontend-backend-integration-guardrails.md)。
+
+新增或修改 IPC 时，必须额外确认：
+
+- 主窗口 preload 没有进入降级 stub，启动日志不得出现 `preload bridge missing`。
+- renderer 只通过 `window.nekoIPC` 调用能力，不直接使用 `ipcRenderer`。
+- renderer 不直接使用 `process`、`require` 或 Node/Electron 全局对象；需要运行时信息时由 preload 暴露只读对象。
+- main handler 默认返回 `createIpcSuccess(data)` / `createIpcError(...)`，preload 负责解包兼容，renderer 不直接解析 main 层包装。
+- 页面字段和后端字段必须逐项对齐，尤其是 `ok`、`success`、`data`、`isRunning` 等易混字段。

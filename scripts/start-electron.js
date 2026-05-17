@@ -3,8 +3,25 @@ const path = require('path');
 
 const electronBinary = require('electron');
 const projectRoot = path.resolve(__dirname, '..');
-const extraArgs = process.argv.slice(2);
 const childEnv = { ...process.env };
+const extraArgs = [];
+
+for (const arg of process.argv.slice(2)) {
+  const startupUpdatePrefix = '--dev-startup-update=';
+  const updateScenarioPrefix = '--dev-update-scenario=';
+
+  if (arg.startsWith(startupUpdatePrefix)) {
+    childEnv.NEKO_DEV_STARTUP_UPDATE_SCENARIO = arg.slice(startupUpdatePrefix.length);
+    continue;
+  }
+
+  if (arg.startsWith(updateScenarioPrefix)) {
+    childEnv.NEKO_DEV_STARTUP_UPDATE_SCENARIO = arg.slice(updateScenarioPrefix.length);
+    continue;
+  }
+
+  extraArgs.push(arg);
+}
 
 // Some Windows environments leave ELECTRON_RUN_AS_NODE=1 globally set,
 // which makes `electron .` boot as plain Node and breaks Electron APIs.

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neko Status - 启动更新</title>
+    <link rel="stylesheet" href="./css/startup-update.css">
+</head>
+<body>
+    <main class="startup-shell">
+        <section class="startup-panel" aria-live="polite">
+            <div class="brand-mark">N</div>
+            <div class="startup-copy">
+                <h1 id="startupTitle">正在准备 Neko Status</h1>
+                <p id="startupDesc">启动前检查更新，失败时会自动继续打开软件。</p>
+            </div>
+            <div class="progress-track" id="progressTrack">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="startup-meta" id="startupMeta">检查更新中...</div>
+        </section>
+    </main>
+    <script src="./js/startup-update.js"></script>
+</body>
+</html>

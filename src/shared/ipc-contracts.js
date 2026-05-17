@@ -81,6 +81,7 @@ const IPC_CHANNELS = Object.freeze({
 
   NOTIFICATION_SHOW: 'notification:show',
   DIALOG_SELECT_FILE: 'dialog:selectFile',
+  DIALOG_SAVE_TEXT_FILE: 'dialog:saveTextFile',
 
   CACHE_CLEAR: 'cache:clear',
   CACHE_GET_SIZE: 'cache:getSize',
@@ -99,6 +100,7 @@ const IPC_EVENTS = Object.freeze({
   UPDATE_FORCE_INSTALL_STARTED: 'update:forceInstallStarted',
   UPDATE_AUTO_DOWNLOADED: 'update:autoDownloaded',
   UPDATE_AUTO_DOWNLOAD_FAILED: 'update:autoDownloadFailed',
+  STARTUP_UPDATE_STATUS: 'startup-update:status',
   SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
 });
 

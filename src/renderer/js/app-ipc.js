@@ -11,6 +11,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // nekoIPC 由 ipc-bridge.js 挂载到 window.nekoIPC
   const ipc = window.nekoIPC;
+  const runtimeVersions = window.nekoRuntime?.versions || {};
   const IPC_EVENTS = window.__NEKO_IPC_CONTRACTS__?.IPC_EVENTS || {
     APP_INIT: 'app:init',
     LOG_ENTRY: 'log:entry',
@@ -589,6 +590,24 @@ document.addEventListener('DOMContentLoaded', () => {
   replaceHandler('consoleClearBtn', () => {
     if (consoleOutput) consoleOutput.innerHTML = '';
   });
+  replaceHandler('consoleExportBtn', async () => {
+    if (!consoleOutput) return;
+    const lines = Array.from(consoleOutput.querySelectorAll('.log-line'))
+      .map((line) => line.textContent.trim())
+      .filter(Boolean);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    try {
+      const result = await ipc.saveTextFile({
+        title: '导出控制台日志',
+        defaultPath: `neko-console-${stamp}.log`,
+        content: lines.join('\n') + '\n',
+      });
+      if (result?.success) addLogLine('SUCCESS', `日志已导出: ${result.path}`);
+      else addLogLine('INFO', '已取消导出日志');
+    } catch (e) {
+      addLogLine('ERROR', `导出日志失败: ${e.message}`);
+    }
+  });
 
   // 控制台输入执行
   const consoleInput = document.getElementById('consoleInput');
@@ -618,9 +637,15 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (cmd === 'config') {
       ipc.getAllConfig().then((cfg) => addLogLine('INFO', JSON.stringify(cfg)));
     } else if (cmd === 'start') {
-      ipc.startService().then(() => addLogLine('SUCCESS', 'reporter started'));
+      ipc.startService().then((result) => {
+        applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : true);
+        addLogLine('SUCCESS', 'reporter started');
+      }).catch(e => addLogLine('ERROR', `start failed: ${e.message}`));
     } else if (cmd === 'stop') {
-      ipc.stopService().then(() => addLogLine('INFO', 'reporter stopped'));
+      ipc.stopService().then((result) => {
+        applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : false);
+        addLogLine('INFO', 'reporter stopped');
+      }).catch(e => addLogLine('ERROR', `stop failed: ${e.message}`));
     } else if (cmd === 'clear') {
       if (consoleOutput) consoleOutput.innerHTML = '';
     } else if (cmd === 'capture') {
@@ -716,17 +741,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  仪表盘卡片实时数据
   // ══════════════════════════════════════════════════════════════
-  function updateDashboardCards(data) {
+  function updateDashboardCards(data, options = {}) {
     if (!data) return;
+    const recordHealth = options.recordHealth !== false;
 
     // 最后上报应用卡
     if (data.appName !== undefined) {
       const appValue = document.querySelector('#card-app .metric-value');
-      if (appValue) appValue.textContent = data.appName || '—';
+      if (appValue) {
+        const appName = data.appName || '—';
+        appValue.textContent = appName;
+        appValue.title = appName;
+      }
 
       const appProcess = document.querySelector('#card-app .metric-trend');
-      if (appProcess && data.packageName) {
-        appProcess.innerHTML = `<i class="ph ph-cpu"></i> 进程: ${escapeHtml(data.packageName)}`;
+      if (appProcess && data.packageName !== undefined) {
+        appProcess.innerHTML = `<i class="ph ph-cpu"></i> 进程: ${escapeHtml(data.packageName || '—')}`;
       }
     }
 
@@ -752,8 +782,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 上传健康度 — 滚动成功率计算（忽略密钥未配置的 tick）
-    if (data.reason !== 'no_key') {
+    // 上传健康度 — 只统计真实上报 tick，忽略初始化电量/截图等局部刷新。
+    const hasReportResult = data.success !== undefined || data.reason !== undefined;
+    if (recordHealth && hasReportResult && data.reason !== 'no_key') {
       _healthStats.total++;
       if (data.success) _healthStats.success++;
     }
@@ -906,9 +937,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       if (running) {
-        await ipc.stopService();
+        const result = await ipc.stopService();
         addLogLine('INFO', '已手动停止上报服务');
         showNekoIsland('上报服务已停止', 'info', 2000);
+        applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : false);
       } else {
         const cfg = await ipc.getAllConfig();
         if (!cfg.deviceKey) {
@@ -917,11 +949,11 @@ document.addEventListener('DOMContentLoaded', () => {
           applyServiceState(false);
           return;
         }
-        await ipc.startService();
+        const result = await ipc.startService();
         addLogLine('INFO', '已手动启动上报服务');
         showNekoIsland('上报服务已启动', 'success', 2000);
+        applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : true);
       }
-      applyServiceState(!running);
     } catch (e) {
       addLogLine('ERROR', `服务切换失败: ${e.message}`);
       showNekoIsland('服务切换失败', 'error', 3000);
@@ -2465,6 +2497,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     applyServiceState(data.isRunning);
 
+    try {
+      const lastResult = await ipc.getLastResult();
+      if (lastResult) {
+        _lastTickSnapshot = lastResult;
+        updateDashboardCards(lastResult, { recordHealth: false });
+        updateConsoleTickStatus(lastResult);
+      }
+    } catch {}
+
     // 检查是否有已下载（等待安装）的更新
     try {
       const pending = await ipc.getPendingInstall();
@@ -2750,8 +2791,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── 仪表盘布局从 configStore 恢复（比 localStorage 更可靠）────────
     if (cfg.dashboardLayout && Array.isArray(cfg.dashboardLayout) && cfg.dashboardLayout.length) {
-      if (typeof loadLayoutConfig === 'function') {
-        loadLayoutConfig(cfg.dashboardLayout);
+      if (typeof window.loadLayoutConfig === 'function') {
+        window.loadLayoutConfig(cfg.dashboardLayout);
       }
     }
 
@@ -2873,7 +2914,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const lastCheckStr = lastCheck
         ? `上次检查：${new Date(lastCheck).toLocaleDateString()}`
         : '尚未检查更新';
-      updateVerDesc.textContent = `运行在 Electron ${process.versions?.electron || 'N/A'} · Node ${process.versions?.node || 'N/A'}。${lastCheckStr}。`;
+      updateVerDesc.textContent = `运行在 Electron ${runtimeVersions.electron || 'N/A'} · Node ${runtimeVersions.node || 'N/A'}。${lastCheckStr}。`;
     }
 
     // P2-10: 关于页面动态化 — 运行环境信息
@@ -2883,8 +2924,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const valueEl = card.querySelector('.about-info-value');
       const subEl = card.querySelector('.about-info-sub');
       if (label.includes('运行环境') && valueEl) {
-        valueEl.textContent = `Electron ${process.versions?.electron || ''}`;
-        if (subEl) subEl.textContent = `Node.js ${process.versions?.node || ''} · Chromium ${process.versions?.chrome || ''}`;
+        valueEl.textContent = `Electron ${runtimeVersions.electron || ''}`;
+        if (subEl) subEl.textContent = `Node.js ${runtimeVersions.node || ''} · Chromium ${runtimeVersions.chrome || ''}`;
       }
     });
 
@@ -4199,7 +4240,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 检查服务器配置状态，更新警告/标识显示
     (async () => {
-      const state = await ipc.authGetState();
+      const state = await ipc.authGetState() || {};
       const warningEl = document.getElementById('authServerWarning');
       const localBadge = document.getElementById('authLocalBadge');
       const loginBtn = document.getElementById('authLoginBtn');
@@ -4928,7 +4969,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.parentNode.replaceChild(clone, btn);
     clone.addEventListener('click', async () => {
       // 先从服务端刷新用户信息
-      const state = await ipc.authGetState();
+      const state = await ipc.authGetState() || {};
       if (!state.isLoggedIn) {
         showAuthNotice('请先登录后再编辑个人信息', 'info');
         openAuthModal('login');
@@ -4998,7 +5039,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 首次使用引导提示 ──────────────────────────────────────────
   async function checkFirstTimeAuthPrompt() {
-    const state = await ipc.authGetState();
+    const state = await ipc.authGetState() || {};
     if (state.isLoggedIn) {
       // 已登录 — 更新 UI，验证 token 有效性
       updateAuthUI(true, state.user);

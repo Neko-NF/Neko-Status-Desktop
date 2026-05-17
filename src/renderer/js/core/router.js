@@ -42,10 +42,8 @@
     const item = target || _navMenu.querySelector('.nav-item.active');
     if (!item || getComputedStyle(item).display === 'none') return;
     if (item.classList.contains('console-nav') && !item.classList.contains('show')) return;
-    const menuRect = _navMenu.getBoundingClientRect();
-    const itemRect = item.getBoundingClientRect();
-    _navMenu.style.setProperty('--nav-indicator-y', `${itemRect.top - menuRect.top}px`);
-    _navMenu.style.setProperty('--nav-indicator-h', `${itemRect.height}px`);
+    _navMenu.style.setProperty('--nav-indicator-y', `${item.offsetTop}px`);
+    _navMenu.style.setProperty('--nav-indicator-h', `${item.offsetHeight}px`);
     _navIndicator.classList.add('is-ready');
   }
 
@@ -102,6 +100,21 @@
 
     requestAnimationFrame(() => syncNavIndicator());
     window.addEventListener('resize', () => syncNavIndicator());
+    _navMenu.addEventListener('transitionend', () => syncNavIndicator());
+    if (window.ResizeObserver) {
+      const resizeObserver = new ResizeObserver(() => syncNavIndicator());
+      resizeObserver.observe(_navMenu);
+      navItems.forEach(item => resizeObserver.observe(item));
+    }
+    if (window.MutationObserver) {
+      const mutationObserver = new MutationObserver(() => requestAnimationFrame(() => syncNavIndicator()));
+      mutationObserver.observe(_navMenu, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+      });
+    }
 
     navItems.forEach(item => {
       item.addEventListener('click', function () {

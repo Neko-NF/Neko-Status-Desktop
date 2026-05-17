@@ -8,6 +8,12 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { IPC_CHANNELS, IPC_EVENTS } = require('../shared/ipc-contracts');
 
+if (process.env.NEKO_DISABLE_HW_ACCEL === '1') {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
+
 
 
 // ─── 热重载（仅开发环境）────────────────────────────────────────────
@@ -41,6 +47,10 @@ const {
   registerServiceIpc,
   registerUpdateIpc,
 } = require('./ipc');
+const {
+  runStartupUpdateGate,
+  runBackgroundUpdateCheck,
+} = require('./startup-update-gate');
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
 const APP_NAME    = 'Neko Status';
@@ -69,6 +79,8 @@ let mainWindow = null;
 let tray       = null;
 let isQuitting = false;
 let privacyPickerWindow = null;
+let startupUpdateWindow = null;
+let pendingStartupStatus = null;
 
 const CACHE_DIR_NAMES = [
   'Cache',
@@ -272,6 +284,65 @@ const {
   getTrayIconPath,
   pickPrivacyWindow,
 } = appShell;
+
+function createStartupUpdateWindow() {
+  if (startupUpdateWindow && !startupUpdateWindow.isDestroyed()) return startupUpdateWindow;
+  const iconPath = getTrayIconPath();
+  startupUpdateWindow = new BrowserWindow({
+    width: 460,
+    height: 330,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    frame: false,
+    show: false,
+    title: `${APP_NAME} Update`,
+    icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  startupUpdateWindow.setMenuBarVisibility(false);
+  startupUpdateWindow.loadFile(path.join(__dirname, '../renderer/startup-update.html'));
+  startupUpdateWindow.once('ready-to-show', () => {
+    if (startupUpdateWindow && !startupUpdateWindow.isDestroyed()) {
+      startupUpdateWindow.show();
+      if (pendingStartupStatus) {
+        startupUpdateWindow.webContents.send(IPC_EVENTS.STARTUP_UPDATE_STATUS, pendingStartupStatus);
+      }
+    }
+  });
+  startupUpdateWindow.on('closed', () => {
+    startupUpdateWindow = null;
+  });
+  return startupUpdateWindow;
+}
+
+function sendStartupUpdateStatus(payload) {
+  pendingStartupStatus = payload;
+  if (startupUpdateWindow && !startupUpdateWindow.isDestroyed() && startupUpdateWindow.webContents) {
+    startupUpdateWindow.webContents.send(IPC_EVENTS.STARTUP_UPDATE_STATUS, payload);
+  }
+}
+
+function sendStartupUpdateProgress(payload) {
+  if (startupUpdateWindow && !startupUpdateWindow.isDestroyed() && startupUpdateWindow.webContents) {
+    startupUpdateWindow.webContents.send(IPC_EVENTS.UPDATE_PROGRESS, payload);
+  }
+  sendToRenderer(IPC_EVENTS.UPDATE_PROGRESS, payload);
+}
+
+function closeStartupUpdateWindow() {
+  if (startupUpdateWindow && !startupUpdateWindow.isDestroyed()) {
+    startupUpdateWindow.close();
+  }
+  startupUpdateWindow = null;
+  pendingStartupStatus = null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  单 实 例 运 行
@@ -725,43 +796,24 @@ async function waitForNetwork(timeoutMs = 30000) {
 app.whenReady().then(async () => {
   ensureWindowsNotificationShortcut();
   setupIPC();
+  createStartupUpdateWindow();
+
+  const startupUpdate = await runStartupUpdateGate({
+    configStore,
+    checkForUpdates,
+    launchInstaller,
+    sendToRenderer: sendStartupUpdateProgress,
+    onStatus: sendStartupUpdateStatus,
+    setIsQuitting: (value) => { isQuitting = value; },
+    quitApp: () => app.quit(),
+    showNotification,
+    isPackaged: app.isPackaged,
+  });
+  if (startupUpdate.action === 'installing') return;
+  closeStartupUpdateWindow();
+
   createWindow();
   createTray();
-
-  // ── 启动时自动安装已下载的待安装更新 ────────────────────────────────────
-  // 修复死循环 Bug：持久化记录跨进程存活，检测到后直接自动安装并退出，
-  // 从根本上避免"每次启动重新检查→重新下载"的循环。
-  setTimeout(async () => {
-    try {
-      const pending = configStore.get('pendingInstall');
-      if (!pending || !pending.filePath) return;
-      const resolvedPath = path.resolve(pending.filePath);
-      if (!fs.existsSync(resolvedPath)) {
-        configStore.set('pendingInstall', null);
-        console.log('[AutoInstall] 待安装文件已不存在，已清除过期记录');
-        return;
-      }
-      if (pending.sha256) {
-        const data = fs.readFileSync(resolvedPath);
-        const actual = crypto.createHash('sha256').update(data).digest('hex').toLowerCase();
-        if (actual !== pending.sha256.toLowerCase()) {
-          configStore.set('pendingInstall', null);
-          console.warn('[AutoInstall] SHA256 校验失败，已清除损坏记录');
-          return;
-        }
-      }
-      // 先清除记录再安装，防止安装失败后下次启动重试死循环
-      configStore.set('pendingInstall', null);
-      _autoDownloadState = null;
-      console.log(`[AutoInstall] 检测到待安装更新 v${pending.version}，正在启动安装程序...`);
-      showNotification('正在自动更新', `Neko Status v${pending.version} 正在安装，完成后程序将自动重启`);
-      const installError = await launchInstaller(resolvedPath, { silent: true });
-      if (installError) console.error('[AutoInstall] installer launch failed:', installError);
-      setTimeout(() => { isQuitting = true; app.quit(); }, 2000);
-    } catch (err) {
-      console.error('[AutoInstall] 自动安装启动失败:', err.message);
-    }
-  }, 3000);
 
   // StatusService 日志/Tick/状态变更 → 推送到渲染进程
   statusService.setLogCallback((level, msg, time) => {
@@ -816,63 +868,26 @@ app.whenReady().then(async () => {
     }, 30000);
   }
 
-  // 启动时始终检查更新（不受「自动下载」开关影响）— 延迟 15s 避免影响首屏加载
+  // 首屏完成后再补一次后台检查：启动门禁失败或开发模式跳过安装时，仍可提示用户。
   setTimeout(async () => {
-    try {
-      const result = await checkForUpdates();
-      if (result.hasUpdate) {
-        const skipped = configStore.get('skippedVersion');
-        if (!result.forceUpdate && skipped === result.latestVersion) {
-          console.log(`[Main] 版本 v${result.latestVersion} 已被用户跳过`);
-          return;
-        }
-
-        // 判断是否需要自动下载
-        const shouldAutoDownload = result.forceUpdate || configStore.get('autoDownload') === true;
-        if (shouldAutoDownload) {
-          // 防止重复下载：若该版本已下载且文件仍存在，跳过
-          const pending = configStore.get('pendingInstall');
-          const alreadyDownloaded = pending && pending.version === result.latestVersion
-            && pending.filePath && fs.existsSync(pending.filePath);
-          if (!alreadyDownloaded) {
-            // 后台自动下载（强制更新下载完立刻安装，普通更新等待下次启动自动安装）
-            autoDownloadUpdate(result);
-          } else {
-            console.log(`[Main] 版本 v${result.latestVersion} 已下载，跳过重复下载`);
-          }
-        } else {
-          // 不自动下载，只通知渲染进程弹窗提示
-          sendToRenderer(IPC_EVENTS.UPDATE_AVAILABLE, result);
-        }
-        console.log(`[Main] 发现新版本 v${result.latestVersion}${shouldAutoDownload ? '，已启动后台下载' : '，通知用户'}`);
-      }
-    } catch { /* 更新检查失败静默处理 */ }
+    await runBackgroundUpdateCheck({
+      configStore,
+      checkForUpdates,
+      autoDownloadUpdate,
+      sendToRenderer,
+      label: 'post-startup',
+    });
   }, 15000);
 
   // 长期运行时每 30 分钟轮询一次更新
   setInterval(async () => {
-    try {
-      const result = await checkForUpdates();
-      if (result.hasUpdate) {
-        const skipped = configStore.get('skippedVersion');
-        if (!result.forceUpdate && skipped === result.latestVersion) return;
-
-        const shouldAutoDownload = result.forceUpdate || configStore.get('autoDownload') === true;
-        if (shouldAutoDownload) {
-          const pending = configStore.get('pendingInstall');
-          const alreadyDownloaded = pending && pending.version === result.latestVersion
-            && pending.filePath && fs.existsSync(pending.filePath);
-          if (!alreadyDownloaded) {
-            autoDownloadUpdate(result);
-          } else {
-            console.log(`[Main] 定期检查 - 版本 v${result.latestVersion} 已下载，跳过重复下载`);
-          }
-        } else {
-          sendToRenderer(IPC_EVENTS.UPDATE_AVAILABLE, result);
-        }
-        console.log(`[Main] 定期检查 - 发现新版本 v${result.latestVersion}`);
-      }
-    } catch { /* 定期更新检查失败静默处理 */ }
+    await runBackgroundUpdateCheck({
+      configStore,
+      checkForUpdates,
+      autoDownloadUpdate,
+      sendToRenderer,
+      label: 'interval',
+    });
   }, 30 * 60 * 1000);
 
   // 应用启动后同步设备元数据（兜底机制，防止渲染进程未能正常触发 syncMeta）

@@ -233,6 +233,7 @@ class StatusService {
         const elapsed = (now - this._lastScreenshotTime) / 1000;
         if (elapsed >= (ssInterval || 60)) {
           screenshotBuffer = await captureScreen().catch(() => null);
+          if (!screenshotBuffer) this._lastScreenshotTime = now;
           // 截图压缩：如果 PNG 超过 3MB，转为 JPEG 降质
           if (screenshotBuffer && screenshotBuffer.length > 3 * 1024 * 1024) {
             this._log('INFO', `截图 ${(screenshotBuffer.length / 1024 / 1024).toFixed(1)}MB 超限，已跳过压缩（需 sharp 库）`);

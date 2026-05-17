@@ -13,7 +13,7 @@ function registerStreamIpc({ ipcMain, streamService }) {
   ipcMain.handle(IPC_CHANNELS.STREAM_SAVE_CONFIG, async (_, config) => {
     try {
       const result = await streamService.saveStreamConfig(config);
-      if (result.ok) return createIpcSuccess(result.config);
+      if (result.ok) return createIpcSuccess({ ok: true, success: true, ...result.config });
       return createIpcError('SAVE_CONFIG_ERROR', result.error || '保存配置失败');
     } catch (err) {
       return createIpcError('SAVE_CONFIG_EXCEPTION', err.message);
@@ -23,7 +23,10 @@ function registerStreamIpc({ ipcMain, streamService }) {
   ipcMain.handle(IPC_CHANNELS.STREAM_GET_KEY, async () => {
     try {
       const keyInfo = await streamService.getOrInitStreamKey();
-      return createIpcSuccess(keyInfo);
+      return createIpcSuccess({
+        ...keyInfo,
+        streamKey: keyInfo.streamKey || keyInfo.stream_key || '',
+      });
     } catch (err) {
       return createIpcError('GET_KEY_ERROR', err.message);
     }
@@ -32,7 +35,10 @@ function registerStreamIpc({ ipcMain, streamService }) {
   ipcMain.handle(IPC_CHANNELS.STREAM_RESET_KEY, async () => {
     try {
       const keyInfo = await streamService.resetStreamKey();
-      return createIpcSuccess(keyInfo);
+      return createIpcSuccess({
+        ...keyInfo,
+        streamKey: keyInfo.streamKey || keyInfo.stream_key || '',
+      });
     } catch (err) {
       return createIpcError('RESET_KEY_ERROR', err.message);
     }
@@ -70,7 +76,7 @@ function registerStreamIpc({ ipcMain, streamService }) {
   ipcMain.handle(IPC_CHANNELS.STREAM_APPLY_TO_OBS, async (_, config) => {
     try {
       const result = await streamService.applyStreamConfigToObs(config);
-      if (result.ok) return createIpcSuccess();
+      if (result.ok) return createIpcSuccess({ ok: true, success: true });
       return createIpcError('APPLY_OBS_FAILED', result.error || '应用至 OBS 失败');
     } catch (err) {
       return createIpcError('APPLY_OBS_EXCEPTION', err.message);
@@ -80,7 +86,7 @@ function registerStreamIpc({ ipcMain, streamService }) {
   ipcMain.handle(IPC_CHANNELS.STREAM_EXPORT_CONFIG, async () => {
     try {
       const savedPath = await streamService.exportObsServiceConfig();
-      return createIpcSuccess({ path: savedPath });
+      return createIpcSuccess({ ok: true, success: true, path: savedPath });
     } catch (err) {
       return createIpcError('EXPORT_CONFIG_ERROR', err.message);
     }

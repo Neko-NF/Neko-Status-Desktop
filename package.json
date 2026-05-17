@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -8,6 +8,11 @@
   "type": "commonjs",
   "scripts": {
     "dev": "node scripts/start-electron.js",
+    "dev:startup-update:checking": "node scripts/start-electron.js --dev-startup-update=checking",
+    "dev:startup-update:available": "node scripts/start-electron.js --dev-startup-update=available",
+    "dev:startup-update:download": "node scripts/start-electron.js --dev-startup-update=download",
+    "dev:startup-update:failed": "node scripts/start-electron.js --dev-startup-update=failed",
+    "dev:startup-update:offline": "node scripts/start-electron.js --dev-startup-update=offline",
     "start": "node scripts/start-electron.js",
     "build": "electron-builder --win --x64",
     "build:nsis": "electron-builder --win nsis --x64",

@@ -1,25 +1,30 @@
-const { IPC_CHANNELS, createIpcSuccess, createIpcError } = require('../../shared/ipc-contracts');
+const { IPC_CHANNELS } = require('../../shared/ipc-contracts');
 
 function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService }) {
+  // Renderer expects { success, ... } format (not { ok, data }).
+  // Return API responses directly — they already carry .success.
+  function authOk(data) { return { success: true, ...data }; }
+  function authFail(message) { return { success: false, error: message }; }
+
   function localLogin(username, password) {
     const accounts = configStore.get('localTestAccounts') || [];
     const found = accounts.find(a => a.username === username && a.password === password);
-    if (!found) return createIpcError('LOCAL_AUTH_FAILED', '用户名或密码错误（本地测试模式）');
+    if (!found) return authFail('用户名或密码错误（本地测试模式）');
     const user = { id: `local-${username}`, username, email: '', avatar: '', role: 'user' };
     configStore.setMany({ authToken: 'local-test-token', authUser: user });
-    return createIpcSuccess({ token: 'local-test-token', user, isLocal: true });
+    return authOk({ token: 'local-test-token', user, isLocal: true });
   }
 
   function localRegister(username, password) {
     const accounts = configStore.get('localTestAccounts') || [];
     if (accounts.some(a => a.username === username)) {
-      return createIpcError('LOCAL_USER_EXISTS', '用户名已存在（本地测试模式）');
+      return authFail('用户名已存在（本地测试模式）');
     }
     accounts.push({ username, password, createdAt: new Date().toISOString() });
     configStore.set('localTestAccounts', accounts);
     const user = { id: `local-${username}`, username, email: '', avatar: '', role: 'user' };
     configStore.setMany({ authToken: 'local-test-token', authUser: user });
-    return createIpcSuccess({ token: 'local-test-token', user, isLocal: true });
+    return authOk({ token: 'local-test-token', user, isLocal: true });
   }
 
   function getFriendlyNetworkMessage(err, fallback) {
@@ -39,15 +44,15 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService }
       const result = await apiService.authLogin(username, password);
       if (result.success && result.token) {
         configStore.setMany({ authToken: result.token, authUser: result.user });
-        return createIpcSuccess(result);
+        return result;
       }
-      return createIpcError('AUTH_LOGIN_FAILED', result.message || '登录失败');
+      return authFail(result.message || '登录失败');
     } catch (err) {
       console.error('[Auth] 登录请求失败:', err.message);
       if (serverMode === 'local') {
         return localLogin(username, password);
       }
-      return createIpcError('AUTH_LOGIN_EXCEPTION', getFriendlyNetworkMessage(err, '登录失败'));
+      return authFail(getFriendlyNetworkMessage(err, '登录失败'));
     }
   });
 
@@ -61,62 +66,62 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService }
       const result = await apiService.authRegister(username, password);
       if (result.success && result.token) {
         configStore.setMany({ authToken: result.token, authUser: result.user });
-        return createIpcSuccess(result);
+        return result;
       }
-      return createIpcError('AUTH_REGISTER_FAILED', result.message || '注册失败');
+      return authFail(result.message || '注册失败');
     } catch (err) {
       console.error('[Auth] 注册请求失败:', err.message);
       if (serverMode === 'local') {
         return localRegister(username, password);
       }
-      return createIpcError('AUTH_REGISTER_EXCEPTION', getFriendlyNetworkMessage(err, '注册失败'));
+      return authFail(getFriendlyNetworkMessage(err, '注册失败'));
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_ME, async () => {
     const token = configStore.get('authToken');
-    if (!token) return createIpcError('NOT_LOGGED_IN', '未登录');
+    if (!token) return authFail('未登录');
     try {
       const result = await apiService.authGetMe(token);
       if (result.success && result.user) {
         configStore.set('authUser', result.user);
-        return createIpcSuccess(result);
+        return result;
       }
-      return createIpcError('AUTH_ME_FAILED', result.message || '获取用户信息失败');
+      return authFail(result.message || '获取用户信息失败');
     } catch (err) {
       if (err.status === 401) {
         configStore.setMany({ authToken: '', authUser: null });
       }
-      return createIpcError('AUTH_ME_EXCEPTION', err.message);
+      return authFail(err.message);
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_UPDATE_PROFILE, async (_, data) => {
     const token = configStore.get('authToken');
-    if (!token) return createIpcError('NOT_LOGGED_IN', '未登录');
+    if (!token) return authFail('未登录');
     try {
       const result = await apiService.authUpdateProfile(token, data);
       if (result.success && result.user) {
         configStore.set('authUser', result.user);
-        return createIpcSuccess(result);
+        return result;
       }
-      return createIpcError('AUTH_UPDATE_FAILED', result.message || '更新用户信息失败');
+      return authFail(result.message || '更新用户信息失败');
     } catch (err) {
       if (err.status === 401) {
         configStore.setMany({ authToken: '', authUser: null });
       }
-      return createIpcError('AUTH_UPDATE_EXCEPTION', err.message);
+      return authFail(err.message);
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, () => {
     configStore.setMany({ authToken: '', authUser: null });
-    return createIpcSuccess();
+    return { success: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_GENERATE_DEVICE_KEY, async () => {
     const token = configStore.get('authToken');
-    if (!token) return createIpcError('NOT_LOGGED_IN', '未登录');
+    if (!token) return authFail('未登录');
     try {
       const fingerprint = statusService.getDeviceFingerprint
         ? statusService.getDeviceFingerprint()
@@ -128,30 +133,29 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService }
       });
       if (result.success && result.deviceKey) {
         configStore.setMany({ deviceKey: result.deviceKey, deviceId: result.deviceId });
-        return createIpcSuccess(result);
+        return result;
       }
-      return createIpcError('GENERATE_KEY_FAILED', result.message || '生成设备密钥失败');
+      return authFail(result.message || '生成设备密钥失败');
     } catch (err) {
       if (err.status === 401) {
         configStore.setMany({ authToken: '', authUser: null });
       }
-      return createIpcError('GENERATE_KEY_EXCEPTION', err.message);
+      return authFail(err.message);
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, () => {
-    return createIpcSuccess({
-      isLoggedIn: !!configStore.get('authToken'),
-      user: configStore.get('authUser'),
-      promptDismissed: configStore.get('authPromptDismissed'),
-      serverConfigured: configStore.get('serverConfigured'),
-      serverMode: configStore.get('serverMode'),
-    });
-  });
+  // Renderer expects the raw state object (not wrapped in { ok, data }).
+  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, () => ({
+    isLoggedIn: !!configStore.get('authToken'),
+    user: configStore.get('authUser'),
+    promptDismissed: configStore.get('authPromptDismissed'),
+    serverConfigured: configStore.get('serverConfigured'),
+    serverMode: configStore.get('serverMode'),
+  }));
 
   ipcMain.handle(IPC_CHANNELS.AUTH_DISMISS_PROMPT, () => {
     configStore.set('authPromptDismissed', true);
-    return createIpcSuccess(true);
+    return true;
   });
 }
 

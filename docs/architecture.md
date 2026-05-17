@@ -15,6 +15,9 @@
 
 - `src/main/main.js`
   负责应用启动、生命周期、自动更新编排（启动时检查/轮询/后台下载），以及版本比较与通道过滤工具函数
+- `src/main/startup-update-gate.js`
+  负责启动窗口前的自动更新门禁：先处理已下载待安装包，再执行有限时长的更新检查；有可安装更新时启动安装器并由安装器完成后重开应用，检查失败、无网络、无安装包或开发模式自动安装被禁用时必须放行打开主窗口
+  开发版支持 `NEKO_DEV_STARTUP_UPDATE_SCENARIO` / `--dev-startup-update=` 场景注入，用于复现启动更新检查、发现更新、下载进度、安装交接和失败放行 UI；该入口只能在未打包环境生效
 - `src/main/app-shell.js`
   承担窗口创建、托盘菜单、初始状态下发、隐私窗口选择器等 UI 壳层职责
 - `src/main/config-store.js`
@@ -57,6 +60,8 @@
 
 - `src/renderer/index.html`
   页面入口
+- `src/renderer/startup-update.html`
+  启动前自动更新的轻量状态窗口入口，只展示检查、下载、安装和失败放行状态；通过 preload 暴露的事件监听 `IPC_EVENTS.STARTUP_UPDATE_STATUS` / `IPC_EVENTS.UPDATE_PROGRESS`，不直接访问 Electron API
 - `src/renderer/js/app.js`
   视图层与基础交互
 - `src/renderer/js/app-ipc.js`
@@ -108,3 +113,17 @@
 - **主进程 IPC 拆分完成**：`main.js` 中不再保留任何内联 IPC handler，所有 IPC 均通过 `src/main/ipc/*.ipc.js` 模块注册
 - **Renderer 第一阶段拆分**：`src/renderer/js/components/ui-helpers.js` 已承接可复用 UI helper；`app.js` 仍保留旧实现作为兜底，但运行时优先使用组件目录中的 helper
 - **下一步重点**：把 renderer 从 `app.js / app-ipc.js` 逐步拆成更清晰的 `pages / services / state / components` 结构
+
+## 前后端桥接边界补充
+
+详见 [前后端桥接故障复盘与防错清单](./frontend-backend-integration-guardrails.md)。
+
+本次修复确认了一个关键边界：窗口能显示不代表前后端链路可用。主窗口必须保证 preload 正常加载，`window.nekoIPC` 才是 renderer 与 main 通信的唯一可信入口。
+
+架构约束：
+
+- `BrowserWindow.webPreferences` 必须保持 `contextIsolation: true`。
+- 主 preload 依赖 Node 能力时，必须显式设置 `sandbox: false`，否则 Electron 新版本会让 preload 进入沙盒并导致桥接失败。
+- renderer 不得直接访问 `process`、`require`、`ipcRenderer`、`fs` 等 Node/Electron 能力。
+- 运行时版本、系统能力、文件保存、截图等能力必须通过 preload 暴露的最小 API 转发。
+- `ipc-bridge.js` 的 fallback 只用于防崩溃，不可作为功能验收依据。

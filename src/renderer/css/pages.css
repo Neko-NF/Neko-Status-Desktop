@@ -436,9 +436,12 @@
 }
 
 /* 底部隐私防护横幅（单行 flex-direction: row，覆盖 glass-card 的 column） */
-.privacy-bar-card {
+.glass-card.privacy-bar-card {
+    display: flex;
     flex-direction: row;
     align-items: center;
+    flex-wrap: wrap;
+    width: 100%;
     padding: 14px 20px;
     gap: 14px;
     margin-bottom: 20px;
@@ -449,7 +452,10 @@
     color: var(--success-mint);
     flex-shrink: 0;
 }
-.privacy-bar-content { flex: 1; min-width: 0; }
+.privacy-bar-content {
+    flex: 1 1 280px;
+    min-width: 0;
+}
 .privacy-bar-title {
     font-size: 14px;
     font-weight: 600;
@@ -459,18 +465,77 @@
     font-size: 12px;
     color: var(--text-secondary);
     margin-top: 2px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+#openPrivacyRulesBtn {
+    flex: 0 0 auto;
+    justify-content: center;
+    white-space: nowrap;
 }
 
 .privacy-bar-stats {
     display: flex;
-    gap: 20px;
-    padding-left: 20px;
+    align-items: stretch;
+    gap: 12px;
+    padding-left: 16px;
     border-left: 1px solid color-mix(in srgb, var(--text-main) 10%, transparent);
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
 }
-.privacy-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.privacy-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-start;
+    min-width: 76px;
+}
 .privacy-stat-label { font-size: 11px; color: var(--text-secondary); }
-.privacy-stat-value { font-size: 12px; color: var(--text-main); font-weight: 500; }
+.privacy-stat-value {
+    font-size: 12px;
+    color: var(--text-main);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+    .glass-card.privacy-bar-card {
+        align-items: stretch;
+    }
+
+    .privacy-bar-stats {
+        order: 4;
+        flex-basis: 100%;
+        padding-left: 0;
+        padding-top: 12px;
+        border-left: 0;
+        border-top: 1px solid color-mix(in srgb, var(--text-main) 10%, transparent);
+        justify-content: space-between;
+    }
+}
+
+@media (max-width: 720px) {
+    .glass-card.privacy-bar-card {
+        align-items: flex-start;
+    }
+
+    #openPrivacyRulesBtn {
+        width: 100%;
+    }
+
+    .privacy-bar-stats {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .privacy-stat {
+        width: 100%;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
 
 /* 隐私防护 - 禁用态 */
 .privacy-bar-card.disabled .privacy-bar-icon { color: var(--text-secondary); }

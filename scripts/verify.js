@@ -301,6 +301,7 @@ function checkConfigDefaults() {
 function checkUpdateSystem() {
   section('更新系统完整性检查');
   const main = readFile('src/main/main.js');
+  const startupUpdate = readFile('src/main/startup-update-gate.js') || '';
   const ipc = readFile('src/renderer/js/app-ipc.js');
   if (!main || !ipc) { fail('主进程或渲染进程文件不可读'); return; }
 
@@ -309,7 +310,11 @@ function checkUpdateSystem() {
   else fail('checkForUpdates 缺少 downloadSize 字段');
 
   // 主进程 skippedVersion 过滤
-  if (main.includes("skippedVersion") && main.includes('configStore.get(\'skippedVersion\')')) {
+  const updateOrchestration = `${main}\n${startupUpdate}`;
+  if (
+    updateOrchestration.includes("skippedVersion") &&
+    updateOrchestration.includes('configStore.get(\'skippedVersion\')')
+  ) {
     pass('启动/轮询中包含 skippedVersion 过滤');
   } else {
     fail('启动/轮询中缺少 skippedVersion 过滤');

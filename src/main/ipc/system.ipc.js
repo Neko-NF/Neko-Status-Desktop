@@ -1,4 +1,5 @@
 const { promisify } = require('util');
+const fs = require('fs/promises');
 const { execFile, execSync } = require('child_process');
 const { IPC_CHANNELS, createIpcSuccess, createIpcError } = require('../../shared/ipc-contracts');
 
@@ -104,9 +105,9 @@ function registerSystemIpc(deps) {
           if (m2) dndEnabled = parseInt(m2[1], 16) === 0;
         } catch { /* key missing means DND is off */ }
       }
-      return createIpcSuccess({ enabled: dndEnabled });
+      return createIpcSuccess({ ok: true, enabled: dndEnabled });
     } catch {
-      return createIpcSuccess({ enabled: false });
+      return createIpcSuccess({ ok: true, enabled: false });
     }
   });
 
@@ -130,7 +131,7 @@ function registerSystemIpc(deps) {
         );
       } catch { /* ignore */ }
       console.log(`[FocusAssist] ${enabled ? '已开启' : '已关闭'}`);
-      return createIpcSuccess();
+      return createIpcSuccess({ ok: true, enabled });
     } catch (err) {
       console.warn('[FocusAssist] 设置失败:', err.message);
       return createIpcError('SET_FOCUS_ASSIST_FAILED', err.message);
@@ -147,6 +148,21 @@ function registerSystemIpc(deps) {
     });
     if (result.canceled || !result.filePaths.length) return createIpcSuccess(null);
     return createIpcSuccess(result.filePaths[0]);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DIALOG_SAVE_TEXT_FILE, async (_, payload = {}) => {
+    const mainWindow = getMainWindow();
+    const content = String(payload.content || '');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: payload.title || '保存日志',
+      defaultPath: payload.defaultPath || 'neko-console.log',
+      filters: payload.filters || [{ name: '日志文件', extensions: ['log', 'txt'] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return createIpcSuccess({ success: false, canceled: true });
+    }
+    await fs.writeFile(result.filePath, content, 'utf8');
+    return createIpcSuccess({ success: true, canceled: false, path: result.filePath });
   });
 
   ipcMain.handle(IPC_CHANNELS.CACHE_CLEAR, async () => {
@@ -166,6 +182,7 @@ function registerSystemIpc(deps) {
         return createIpcError('CACHE_CLEAR_PARTIAL', failed.map(item => item.error).join('; '));
       }
       return createIpcSuccess({
+        success: true,
         beforeBytes,
         afterBytes,
         clearedBytes: Math.max(0, beforeBytes - afterBytes),

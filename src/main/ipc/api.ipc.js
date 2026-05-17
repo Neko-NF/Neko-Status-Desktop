@@ -17,8 +17,15 @@ function registerApiIpc({ ipcMain, os, configStore, statusService, apiService })
   ipcMain.handle(IPC_CHANNELS.API_TEST_CONNECTION, async (_, serverUrl) => {
     try {
       const result = await apiService.testConnection(serverUrl);
-      if (result.success) {
-        return createIpcSuccess({ latency: result.latency, version: result.version });
+      if (result.success || result.ok) {
+        const latencyMs = result.latencyMs ?? result.latency;
+        return createIpcSuccess({
+          ok: true,
+          success: true,
+          latencyMs,
+          latency: latencyMs,
+          version: result.version,
+        });
       }
       return createIpcError('TEST_CONNECTION_FAILED', result.error || '连接测试失败');
     } catch (err) {

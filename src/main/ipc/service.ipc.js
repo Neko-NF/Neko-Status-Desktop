@@ -5,7 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { IPC_CHANNELS, createIpcSuccess, createIpcError } = require('../../shared/ipc-contracts');
+const { IPC_CHANNELS, createIpcSuccess } = require('../../shared/ipc-contracts');
 
 /**
  * @param {Object} deps
@@ -38,7 +38,10 @@ function registerServiceIpc({
     return createIpcSuccess({ isRunning: statusService.isRunning });
   });
   ipcMain.handle(IPC_CHANNELS.SERVICE_IS_RUNNING, () => createIpcSuccess(statusService.isRunning));
-  ipcMain.handle(IPC_CHANNELS.SERVICE_RESTART, () => { statusService.restart(); return createIpcSuccess(true); });
+  ipcMain.handle(IPC_CHANNELS.SERVICE_RESTART, () => {
+    statusService.restart();
+    return createIpcSuccess(true);
+  });
   ipcMain.handle(IPC_CHANNELS.SERVICE_LAST_RESULT, () => createIpcSuccess(statusService.lastResult));
 
   // ── 开机自启 ──────────────────────────────────────────────────────────

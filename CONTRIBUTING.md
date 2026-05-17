@@ -48,3 +48,15 @@ chore: ...
 - 是否补了最小测试
 - 是否同步更新了对应文档
 - 是否出现疑似 UTF-8/GBK 乱码或终端编码误判
+
+## Electron 前后端联调要求
+
+相关复盘见 [docs/frontend-backend-integration-guardrails.md](docs/frontend-backend-integration-guardrails.md)。
+
+涉及 UI 功能、IPC、preload 或主进程 handler 的 PR，必须说明：
+
+- 对应页面控件如何连到 `window.nekoIPC`。
+- preload 方法对应哪个 `IPC_CHANNELS`。
+- main handler 返回结构是什么，renderer 读取哪些字段。
+- dev 版启动日志是否确认没有 `preload bridge missing` / `process is not defined`。
+- 是否补了最小单元测试或说明无法测试的原因。
