@@ -1,6 +1,7 @@
 # Neko Status Desktop — 构建打包上传实战指南（踩坑记录）
 
 > **文档性质**：实战操作记录 + 踩坑避坑指南  
+> **当前定位（2026-05-17）**：本文保留为历史实战与排障参考。当前正式发布主流程以 `docs/RELEASE_WORKFLOW.md` 和 `.github/workflows/release.yml` 为准，不建议继续按本文手动上传 Release 作为默认流程。
 > **首次编写**：2026-03-09（基于 v1.0.0-beta.1 首次构建全流程）  
 > **配套文档**：[RELEASE_GUIDE.md](RELEASE_GUIDE.md)（标准流程）、[VERSION_CONVENTION.md](VERSION_CONVENTION.md)（版本号规范）
 

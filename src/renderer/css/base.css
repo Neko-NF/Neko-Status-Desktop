@@ -1,0 +1,79 @@
+/*
+ * base.css
+ * 重置、排版、全局基础样式
+ * 从 main.css 提取
+ */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--ui-font, 'Segoe UI'), system-ui, -apple-system, sans-serif;
+    background: var(--bg-gradient);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+    transition: background 0.5s ease, color 0.5s ease;
+}
+
+/* 页面背景氛围光 */
+body::before {
+    content: '';
+    position: absolute;
+    top: -20%;
+    left: -10%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(circle, var(--theme-color) 0%, transparent 60%);
+    opacity: 0.15;
+    z-index: 0;
+    pointer-events: none;
+    transition: background 0.5s ease;
+}
+
+/* 统一组件过渡规则 */
+.glass-card,
+.action-btn,
+.glass-input,
+.glass-select,
+.toggle-switch,
+.status-badge,
+.neko-stepper,
+.dropdown-item,
+.svc-pill,
+.health-result-item {
+    transition:
+        border-radius var(--motion-mid) var(--motion-smooth),
+        background-color var(--motion-mid) ease,
+        border-color var(--motion-mid) ease,
+        box-shadow var(--motion-mid) var(--motion-smooth),
+        transform var(--motion-fast) var(--motion-smooth),
+        color var(--motion-fast) ease;
+}
+
+/* 主题色工具类 */
+.text-theme { color: var(--theme-color) !important; }
+.text-error { color: var(--error-coral) !important; }
+.bg-theme { background-color: var(--theme-color) !important; }
+.bg-theme-soft { background-color: color-mix(in srgb, var(--theme-color) 15%, transparent) !important; }
+.border-theme { border-color: var(--theme-color) !important; }
+.fill-theme { fill: var(--theme-color) !important; }
+.shadow-theme { box-shadow: 0 0 12px color-mix(in srgb, var(--theme-color) 40%, transparent) !important; }
+
+/* 按钮反馈 */
+.btn-feedback-error { background: color-mix(in srgb, var(--error-coral) 15%, transparent); border-color: color-mix(in srgb, var(--error-coral) 30%, transparent); color: var(--error-coral); }
+.btn-feedback-success { background: color-mix(in srgb, var(--theme-color) 15%, transparent); border-color: color-mix(in srgb, var(--theme-color) 40%, transparent); color: var(--theme-color); }
+
+/* 加载旋转 */
+.ph-spin {
+    animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}

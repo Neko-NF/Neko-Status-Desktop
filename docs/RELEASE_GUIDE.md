@@ -281,7 +281,7 @@ git push origin HEAD --tags   # 触发 beta pre-release
 适合：开发者/测试人员；最新构建，仅供测试。
 
 ```powershell
-# 手动触发（通常由 CI 自动每日执行）
+# 手动触发（当前未启用 Nightly 定时任务）
 $date = Get-Date -Format "yyyyMMdd"
 $tag = "v1.2.0-nightly.$date"
 git tag $tag

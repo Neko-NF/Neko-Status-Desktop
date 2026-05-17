@@ -1,0 +1,33 @@
+name: Build Check
+
+on:
+  pull_request:
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Build ZIP package
+        run: npm run build:zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-status-build-check
+          path: dist/*.zip

@@ -1,0 +1,121 @@
+/*
+ * tokens.css
+ * Design Tokens — CSS 变量定义
+ * 从 main.css 提取的 :root 和 [data-theme="light"] 变量块
+ */
+
+/* ── 暗色模式（默认） ──────────────────────────────────────────── */
+:root {
+    --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    /* 玻璃质感 */
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-bg-hover: rgba(255, 255, 255, 0.08);
+    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    --glass-blur: blur(20px);
+    /* Dock 专属液态玻璃 */
+    --dock-bg: rgba(15, 23, 42, 0.5);
+    --dock-bg-hover: rgba(15, 23, 42, 0.7);
+    --dock-border: 1px solid rgba(255, 255, 255, 0.1);
+    --dock-blur: blur(20px) saturate(180%);
+    --dropdown-bg: rgba(15, 23, 42, 0.95);
+    /* 主题色 */
+    --theme-color: #06b6d4;
+    --accent-cyan: var(--theme-color);
+    /* 语义色 */
+    --success-mint: #10b981;
+    --warning-amber: #f59e0b;
+    --error-coral: #ef4444;
+    /* 文本 */
+    --text-main: rgba(255, 255, 255, 0.95);
+    --text-secondary: rgba(255, 255, 255, 0.6);
+    /* 阴影 */
+    --shadow-sm: 0 4px 12px color-mix(in srgb, var(--theme-color) 10%, rgba(0,0,0,0.15));
+    --shadow-md: 0 12px 24px color-mix(in srgb, var(--theme-color) 12%, rgba(0,0,0,0.25));
+    --shadow-lg: 0 12px 40px color-mix(in srgb, var(--theme-color) 15%, rgba(0,0,0,0.4));
+    --shadow-xl: 0 24px 48px color-mix(in srgb, var(--theme-color) 20%, rgba(0,0,0,0.55));
+    /* 圆角 */
+    --radius-compact: 12px;
+    --radius-chip: 16px;
+    --radius-btn: 18px;
+    --radius-input: 18px;
+    --radius-card: 24px;
+    --radius-panel: 32px;
+    --radius-pill: 999px;
+    /* 动效 */
+    --motion-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+    --motion-fast: 180ms;
+    --motion-mid: 280ms;
+    /* 间距 */
+    --spacing-base: 16px;
+    --sidebar-border: rgba(255, 255, 255, 0.1);
+    /* 字体权重 */
+    --fw-regular: 400;
+    --fw-medium:  500;
+    --fw-semibold: 600;
+    --fw-bold:   700;
+    /* 排版尺寸 */
+    --type-page-title-size: clamp(20px, 1vw + 16px, 24px);
+    --type-page-subtitle-size: 13px;
+    --type-section-title-size: 18px;
+    --type-section-subtitle-size: 13px;
+    --type-section-label-size: 18px;
+    --type-row-title-size: 14px;
+    --type-row-desc-size: 12px;
+    --type-body-size: 12px;
+    --type-metric-size: 15px;
+    --type-value-strong-size: 20px;
+    --type-kpi-size: 28px;
+    --type-kpi-compact-size: 26px;
+    --type-kpi-unit-size: 14px;
+    --type-label-caps-size: 11px;
+    /* 图标尺寸 */
+    --icon-nav-size: 20px;
+    --icon-page-size: 18px;
+    --icon-section-size: 16px;
+    --icon-row-size: 16px;
+    --icon-action-size: 16px;
+    --icon-status-size: 13px;
+    /* 字间距 */
+    --tracking-section-label: 0.01em;
+    --tracking-label-caps: 0.07em;
+    /* 字体层级权重映射 */
+    --fw-page-title: var(--fw-semibold);
+    --fw-page-subtitle: var(--fw-regular);
+    --fw-section-title: var(--fw-semibold);
+    --fw-section-subtitle: var(--fw-regular);
+    --fw-section-label: var(--fw-semibold);
+    --fw-row-title: var(--fw-medium);
+    --fw-row-desc: var(--fw-regular);
+    --fw-body-strong: var(--fw-semibold);
+    --fw-value-strong: var(--fw-bold);
+    /* SRS 推流 */
+    --stream-online-color: #10b981;
+    --stream-idle-color: var(--text-secondary);
+    --stream-error-color: #ef4444;
+    --stream-card-gap: 16px;
+    --obs-ws-connected: #10b981;
+    --obs-ws-disconnected: #6b7280;
+    --stream-url-bg: rgba(0, 0, 0, 0.15);
+    --stream-live-bg: color-mix(in srgb, #10b981 6%, transparent);
+}
+
+/* ── 浅色模式 ──────────────────────────────────────────────────── */
+html[data-theme="light"] body {
+    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    --glass-bg: rgba(255, 255, 255, 0.5);
+    --glass-bg-hover: rgba(255, 255, 255, 0.7);
+    --glass-border: 1px solid rgba(255, 255, 255, 0.6);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+    --dock-bg: rgba(255, 255, 255, 0.6);
+    --dock-bg-hover: rgba(255, 255, 255, 0.9);
+    --dock-border: 1px solid rgba(255, 255, 255, 0.8);
+    --dropdown-bg: rgba(255, 255, 255, 0.95);
+    --shadow-sm: 0 4px 12px color-mix(in srgb, var(--theme-color) 8%, rgba(0,0,0,0.04));
+    --shadow-md: 0 12px 24px color-mix(in srgb, var(--theme-color) 12%, rgba(0,0,0,0.06));
+    --shadow-lg: 0 12px 40px color-mix(in srgb, var(--theme-color) 15%, rgba(0,0,0,0.1));
+    --shadow-xl: 0 24px 48px color-mix(in srgb, var(--theme-color) 20%, rgba(0,0,0,0.14));
+    --text-main: rgba(15, 23, 42, 0.95);
+    --text-secondary: rgba(15, 23, 42, 0.6);
+    --sidebar-border: rgba(0, 0, 0, 0.05);
+}

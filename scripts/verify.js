@@ -4,7 +4,6 @@
  *
  * 用法:
  *   node scripts/verify.js          # 运行全部检查
- *   node scripts/verify.js --fix    # 自动修复可修复的问题
  *
  * 检查项:
  *   1. 源文件语法验证（JSON / JS 基本语法）
@@ -13,6 +12,7 @@
  *   4. 配置完整性（config-store 默认值 vs 实际使用）
  *   5. 版本号一致性（package.json 与代码中引用）
  *   6. 更新弹窗 DOM 完整性检查
+ *   7. 文本文件编码污染扫描
  */
 
 const fs = require('fs');
@@ -53,6 +53,27 @@ function fileExists(relPath) {
   return fs.existsSync(path.join(ROOT, relPath));
 }
 
+function walkTextFiles(dir, files = []) {
+  const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'releases', '_archive_electron_v1']);
+  const textExts = new Set([
+    '.cjs', '.css', '.html', '.js', '.json', '.md', '.mjs', '.ts', '.txt', '.yml', '.yaml',
+  ]);
+
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (ignoredDirs.has(entry.name)) continue;
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkTextFiles(abs, files);
+      continue;
+    }
+    if (entry.isFile() && textExts.has(path.extname(entry.name).toLowerCase())) {
+      files.push(abs);
+    }
+  }
+
+  return files;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  1. 基础文件存在性 & JSON 语法
 // ═══════════════════════════════════════════════════════════════
@@ -66,11 +87,35 @@ function checkFileStructure() {
     'src/main/status-service.js',
     'src/main/system-utils.js',
     'src/main/api-service.js',
+    'src/main/ipc/api.ipc.js',
+    'src/main/ipc/auth.ipc.js',
+    'src/main/ipc/config.ipc.js',
+    'src/main/ipc/stream.ipc.js',
+    'src/main/ipc/system.ipc.js',
+    'src/main/ipc/service.ipc.js',
+    'src/main/ipc/update.ipc.js',
     'src/renderer/index.html',
     'src/renderer/css/main.css',
     'src/renderer/js/app.js',
     'src/renderer/js/app-ipc.js',
     'src/renderer/js/ipc-bridge.js',
+    'src/renderer/js/components/ui-helpers.js',
+    'src/renderer/js/core/event-bus.js',
+    'src/renderer/js/core/theme.js',
+    'src/renderer/js/core/router.js',
+    'src/renderer/js/components/neko-island.js',
+    'src/renderer/js/components/expandable-section.js',
+    'src/renderer/js/components/modal.js',
+    'src/renderer/js/state/app-state.js',
+    'src/renderer/js/pages/settings.page.js',
+    'src/renderer/js/pages/stream.page.js',
+    'src/renderer/js/pages/dashboard.page.js',
+    'src/renderer/css/tokens.css',
+    'src/renderer/css/base.css',
+    'src/renderer/css/layout.css',
+    'src/renderer/css/components.css',
+    'src/renderer/css/pages.css',
+    'src/renderer/css/legacy.css',
   ];
 
   for (const f of required) {
@@ -137,8 +182,22 @@ function checkHtmlIds() {
 // ═══════════════════════════════════════════════════════════════
 function checkCssConsistency() {
   section('CSS 关键类名验证');
-  const css = readFile('src/renderer/css/main.css');
-  if (!css) { fail('main.css 不可读'); return; }
+  const cssFiles = [
+    'src/renderer/css/tokens.css',
+    'src/renderer/css/base.css',
+    'src/renderer/css/layout.css',
+    'src/renderer/css/components.css',
+    'src/renderer/css/pages.css',
+    'src/renderer/css/legacy.css',
+    'src/renderer/css/main.css'
+  ];
+  let css = '';
+  for (const f of cssFiles) {
+    const content = readFile(f);
+    if (content) css += content + '\n';
+  }
+
+  if (!css) { fail('CSS 文件全不可读'); return; }
 
   const criticalClasses = [
     'modal-overlay',
@@ -186,12 +245,43 @@ function checkEncodingSafety() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  4b. 文本文件编码污染扫描
+// ═══════════════════════════════════════════════════════════════
+function checkTextEncodingPollution() {
+  section('文本文件编码污染扫描');
+
+  const suspiciousPattern = /�|锟|Ã|Â|â€|鈥|鉁|鐩|鍙|涓€|寮€|鏂囨|浠诲|绌|攢/;
+  const hits = [];
+
+  for (const abs of walkTextFiles(ROOT)) {
+    const rel = path.relative(ROOT, abs).replace(/\\/g, '/');
+    if (rel === 'scripts/verify.js' || rel === 'original_app.js') continue;
+    const text = fs.readFileSync(abs, 'utf8');
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (suspiciousPattern.test(line)) {
+        hits.push(`${rel}:${index + 1}`);
+      }
+    });
+  }
+
+  if (hits.length === 0) {
+    pass('未发现常见 UTF-8/GBK 乱码特征');
+    return;
+  }
+
+  fail(`发现疑似编码污染: ${hits.slice(0, 12).join(', ')}${hits.length > 12 ? ' ...' : ''}`);
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  5. 配置默认值完整性检查
 // ═══════════════════════════════════════════════════════════════
 function checkConfigDefaults() {
   section('配置默认值检查');
   const config = readFile('src/main/config-store.js');
-  if (!config) { fail('config-store.js 不可读'); return; }
+  const configHelper = readFile('src/main/config-store.helpers.js');
+  const configSource = `${config || ''}\n${configHelper || ''}`;
+  if (!configSource.trim()) { fail('config-store.js 不可读'); return; }
 
   const requiredKeys = [
     'deviceKey', 'reportInterval', 'enableScreenshot',
@@ -200,7 +290,7 @@ function checkConfigDefaults() {
   ];
 
   for (const key of requiredKeys) {
-    if (config.includes(`${key}:`)) pass(`默认配置包含 ${key}`);
+    if (configSource.includes(`${key}:`)) pass(`默认配置包含 ${key}`);
     else fail(`默认配置缺少 ${key}`);
   }
 }
@@ -277,18 +367,29 @@ function checkIpcChannels() {
   const main = readFile('src/main/main.js');
   const bridge = readFile('src/renderer/js/ipc-bridge.js');
   if (!main || !bridge) { fail('文件不可读'); return; }
+  const mainLayerSource = walkTextFiles(SRC_MAIN)
+    .map((abs) => fs.readFileSync(abs, 'utf8'))
+    .join('\n');
 
   // 关键 IPC handle
   const criticalHandles = [
-    'update:check',
-    'config:get',
-    'config:set',
-    'update:download',
+    ['update:check', 'IPC_CHANNELS.UPDATE_CHECK'],
+    ['config:get', 'IPC_CHANNELS.CONFIG_GET'],
+    ['config:set', 'IPC_CHANNELS.CONFIG_SET'],
+    ['update:download', 'IPC_CHANNELS.UPDATE_DOWNLOAD'],
   ];
 
-  for (const ch of criticalHandles) {
-    if (main.includes(`'${ch}'`)) pass(`主进程注册 ${ch}`);
-    else warn(`主进程可能缺少 ${ch} 注册`);
+  for (const [channel, constantName] of criticalHandles) {
+    if (mainLayerSource.includes(`ipcMain.handle(${constantName}`)) pass(`主进程注册 ${channel}`);
+    else warn(`主进程可能缺少 ${channel} 注册`);
+  }
+
+  const rendererIpc = readFile('src/renderer/js/app-ipc.js') || '';
+  const hardcodedRendererEvents = rendererIpc.match(/ipc\.on\(['"][^'"]+['"]/g) || [];
+  if (hardcodedRendererEvents.length === 0) {
+    pass('renderer IPC 事件监听使用 IPC_EVENTS 常量或兼容封装');
+  } else {
+    fail(`renderer 存在硬编码 IPC 事件监听: ${hardcodedRendererEvents.slice(0, 5).join(', ')}`);
   }
 }
 
@@ -304,6 +405,7 @@ checkFileStructure();
 checkHtmlIds();
 checkCssConsistency();
 checkEncodingSafety();
+checkTextEncodingPollution();
 checkConfigDefaults();
 checkUpdateSystem();
 checkActivityFeed();

@@ -76,7 +76,7 @@ git push origin v1.0.0
 git tag v1.1.0-beta.1
 git push origin v1.1.0-beta.1
 
-# Nightly 版（通常由 CI 定时自动创建）
+# Nightly 版（当前未启用 CI 定时任务，可按需手动创建）
 git tag v1.2.0-nightly.20260310
 git push origin v1.2.0-nightly.20260310
 ```

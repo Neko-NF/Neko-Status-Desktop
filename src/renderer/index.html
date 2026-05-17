@@ -8,6 +8,10 @@
     
     <!-- 引入 Phosphor Icons（本地加载，确保离线/弱网下图标正常显示） -->
     <link rel="stylesheet" href="../../node_modules/@phosphor-icons/web/src/regular/style.css">
+    <!-- 模块化 CSS（tokens → base → layout → main） -->
+    <link rel="stylesheet" href="./css/tokens.css">
+    <link rel="stylesheet" href="./css/base.css">
+    <link rel="stylesheet" href="./css/layout.css">
     <link rel="stylesheet" href="./css/main.css">
 </head>
 <body>
@@ -2221,9 +2225,8 @@
         (() => {
             const reportRendererError = (payload) => {
                 try {
-                    if (window?.require) {
-                        const { ipcRenderer } = window.require('electron');
-                        ipcRenderer.send('dev:rendererError', payload);
+                    if (window?.nekoIPC?.emitRendererError) {
+                        window.nekoIPC.emitRendererError(payload);
                     }
                 } catch {}
             };
@@ -2290,6 +2293,19 @@
     <script src="../../node_modules/chart.js/dist/chart.umd.min.js"></script>
     <!-- 1. IPC 桥接层（必须在 app.js 之前加载，挂载 window.nekoIPC） -->
     <script src="./js/ipc-bridge.js"></script>
+    <script src="./js/components/ui-helpers.js"></script>
+    <!-- 1.5 模块化基础设施（core → components → state，在 app.js 之前加载） -->
+    <script src="./js/core/event-bus.js"></script>
+    <script src="./js/core/theme.js"></script>
+    <script src="./js/core/router.js"></script>
+    <script src="./js/components/neko-island.js"></script>
+    <script src="./js/components/expandable-section.js"></script>
+    <script src="./js/components/modal.js"></script>
+    <script src="./js/state/app-state.js"></script>
+    <!-- 1.8 页面组装（在 app.js 前加载，供后续全面替换） -->
+    <script src="./js/pages/settings.page.js"></script>
+    <script src="./js/pages/stream.page.js"></script>
+    <script src="./js/pages/dashboard.page.js"></script>
     <!-- 2. 原有 UI 交互逻辑 -->
     <script src="./js/app.js"></script>
     <!-- 3. 后端功能接入层（覆盖模拟逻辑，绑定真实 IPC） -->

@@ -6,6 +6,9 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
+const { IPC_CHANNELS, IPC_EVENTS } = require('../shared/ipc-contracts');
+
+
 
 // ─── 热重载（仅开发环境）────────────────────────────────────────────
 // 监听整个 src/ 目录（含 renderer）；传入 electron 可执行文件路径使主进程变更时硬重启
@@ -28,6 +31,16 @@ const statusService = require('./status-service');
 const systemUtils   = require('./system-utils');
 const apiService    = require('./api-service');
 const streamService = require('./stream-service');
+const { createAppShell } = require('./app-shell');
+const {
+  registerConfigIpc,
+  registerStreamIpc,
+  registerSystemIpc,
+  registerApiIpc,
+  registerAuthIpc,
+  registerServiceIpc,
+  registerUpdateIpc,
+} = require('./ipc');
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
 const APP_NAME    = 'Neko Status';
@@ -219,6 +232,47 @@ let _autoDownloadState = null;
 const MAX_METRICS_HISTORY = 8640; // 24h @ 10s 采样间隔
 const metricsHistory = [];
 
+const appShell = createAppShell({
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  nativeImage,
+  dialog,
+  screen,
+  desktopCapturer,
+  ipcMain,
+  path,
+  fs,
+  os,
+  configStore,
+  statusService,
+  systemUtils,
+  APP_NAME,
+  APP_VERSION,
+  isAutoStart,
+  isRunAsAdmin,
+  getMainWindow: () => mainWindow,
+  setMainWindow: (value) => { mainWindow = value; },
+  getTray: () => tray,
+  setTray: (value) => { tray = value; },
+  getIsQuitting: () => isQuitting,
+  setIsQuitting: (value) => { isQuitting = value; },
+  getPrivacyPickerWindow: () => privacyPickerWindow,
+  setPrivacyPickerWindow: (value) => { privacyPickerWindow = value; },
+});
+
+const {
+  createWindow,
+  showWindow,
+  createTray,
+  refreshTrayMenu,
+  sendToRenderer,
+  pushInitialState,
+  getTrayIconPath,
+  pickPrivacyWindow,
+} = appShell;
+
 // ═══════════════════════════════════════════════════════════════════════
 //  单 实 例 运 行
 // ═══════════════════════════════════════════════════════════════════════
@@ -232,109 +286,11 @@ if (!gotTheLock) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  窗 口 管 理
+//  窗 口 / 托 盘 / UI 壳 层
 // ═══════════════════════════════════════════════════════════════════════
-function createWindow() {
-  // 从配置读取缩放，以正确初始化 zoomFactor
-  const savedScale = configStore.get('uiScale') || 100;
-  const zoomFactor = Math.max(0.5, Math.min(3.0, savedScale / 100));
-
-  const _winIconPath = getTrayIconPath();
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 840,
-    minWidth: 1180,
-    minHeight: 700,
-    show: false,  // 先隐藏，ready-to-show 后再显示（防白屏闪烁）
-    icon: _winIconPath ? nativeImage.createFromPath(_winIconPath) : undefined,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      zoomFactor,              // 启动时直接应用已保存缩放，避免内容闪跳
-    },
-  });
-
-  mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-
-  const revealIfNeeded = () => {
-    if (isAutoStart || !mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  };
-
-  mainWindow.once('ready-to-show', () => {
-    revealIfNeeded();
-  });
-
-  mainWindow.webContents.on('did-finish-load', () => {
-    pushInitialState();
-  });
-
-  if (!app.isPackaged) {
-    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-      console.log(`[Renderer:${level}] ${message} (${sourceId}:${line})`);
-    });
-  }
-
-  // Dev and tray-heavy flows occasionally miss `ready-to-show`.
-  // Keep a visible-window fallback so launches don't look like silent exits.
-  setTimeout(() => {
-    revealIfNeeded();
-  }, 1800);
-
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[MainWindow] renderer process gone:', details?.reason || 'unknown');
-  });
-
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-    console.error('[MainWindow] failed to load renderer:', errorCode, errorDescription);
-  });
-
-  // 处理关闭事件
-  mainWindow.on('close', (e) => {
-    if (isQuitting) return;
-
-    const action = configStore.get('closeAction');
-    if (action === 'exit') {
-      isQuitting = true;
-      return; // 允许关闭→window-all-closed 会调用 app.quit()
-    }
-
-    e.preventDefault();
-
-    if (action === 'minimize') {
-      mainWindow.hide();
-      return;
-    }
-
-    // 'ask' — 弹窗询问
-    const iconPath = getTrayIconPath();
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      buttons: ['最小化到托盘', '退出程序'],
-      defaultId: 0,
-      cancelId: 0,
-      title: APP_NAME,
-      message: '选择关闭行为',
-      detail: '最小化到系统托盘继续后台运行，还是完全退出？',
-      ...(iconPath ? { icon: iconPath } : {}),
-    });
-
-    if (choice === 0) {
-      mainWindow.hide();
-    } else {
-      isQuitting = true;
-      app.quit();
-    }
-  });
-
-  mainWindow.on('closed', () => { mainWindow = null; });
-}
 
 // ═══════════════════════════════════════════════════════════════════════
-//  系 统 托 盘
+//  系 统 通 知（受 enableNotification + doNotDisturb 控制）
 // ═══════════════════════════════════════════════════════════════════════
 function getAssetPath(...relativePaths) {
   const roots = [
@@ -349,9 +305,9 @@ function getAssetPath(...relativePaths) {
       candidates.push(path.join(root, rel));
     }
   }
-  return candidates.find((p) => {
+  return candidates.find((candidate) => {
     try {
-      fs.accessSync(p);
+      fs.accessSync(candidate);
       return true;
     } catch {
       return false;
@@ -359,288 +315,6 @@ function getAssetPath(...relativePaths) {
   }) || null;
 }
 
-function getTrayIconPath() {
-  return getAssetPath('app_icon.ico', 'app_icon.png', 'assets/app_icon.ico', 'assets/app_icon.png');
-}
-
-function createTray() {
-  const iconPath = getTrayIconPath();
-  let icon = iconPath
-    ? nativeImage.createFromPath(iconPath)
-    : nativeImage.createEmpty();
-
-  tray = new Tray(icon);
-  tray.setToolTip(APP_NAME);
-  refreshTrayMenu();
-
-  tray.on('click', () => showWindow());
-}
-
-function showWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow();
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    }, 250);
-    return;
-  }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
-}
-
-function getVirtualScreenBounds() {
-  const displays = screen.getAllDisplays();
-  const left = Math.min(...displays.map(d => d.bounds.x));
-  const top = Math.min(...displays.map(d => d.bounds.y));
-  const right = Math.max(...displays.map(d => d.bounds.x + d.bounds.width));
-  const bottom = Math.max(...displays.map(d => d.bounds.y + d.bounds.height));
-  return { x: left, y: top, width: right - left, height: bottom - top };
-}
-
-function normalizePickerWindows(windows) {
-  const seen = new Set();
-  return windows
-    .filter((win) => win && win.processName && win.bounds && win.bounds.width > 40 && win.bounds.height > 40)
-    .map((win) => ({
-      title: String(win.title || win.processName),
-      processName: String(win.processName),
-      pid: Number(win.pid) || 0,
-      path: String(win.path || ''),
-      bounds: {
-        x: Math.round(Number(win.bounds.x) || 0),
-        y: Math.round(Number(win.bounds.y) || 0),
-        width: Math.round(Number(win.bounds.width) || 0),
-        height: Math.round(Number(win.bounds.height) || 0),
-      },
-    }))
-    .filter((win) => {
-      const key = `${win.processName.toLowerCase()}|${win.title.toLowerCase()}|${win.bounds.x},${win.bounds.y},${win.bounds.width},${win.bounds.height}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function getPickerThemeColor() {
-  const color = String(configStore.get('seedColor') || '#06b6d4').trim();
-  return /^#[0-9a-f]{6}$/i.test(color) || /^rgb/i.test(color) ? color : '#06b6d4';
-}
-
-function pickerColorToRgb(color) {
-  if (/^#[0-9a-f]{6}$/i.test(color)) {
-    return {
-      r: parseInt(color.slice(1, 3), 16),
-      g: parseInt(color.slice(3, 5), 16),
-      b: parseInt(color.slice(5, 7), 16),
-    };
-  }
-  const nums = color.match(/\d+(\.\d+)?/g) || [];
-  const [r, g, b] = nums.map(Number);
-  return {
-    r: Number.isFinite(r) ? r : 6,
-    g: Number.isFinite(g) ? g : 182,
-    b: Number.isFinite(b) ? b : 212,
-  };
-}
-
-async function getPrivacyPickerWindows() {
-  let windows = [];
-  try {
-    const sources = await desktopCapturer.getSources({
-      types: ['window'],
-      thumbnailSize: { width: 1, height: 1 },
-      fetchWindowIcons: false,
-    });
-    const handles = sources
-      .map(source => {
-        const match = String(source.id || '').match(/^window:(\d+):/);
-        return match ? Number(match[1]) : 0;
-      })
-      .filter(Boolean);
-    const byHandle = await systemUtils.getWindowsByHandles(handles);
-    const sourceNameByHandle = new Map();
-    sources.forEach((source) => {
-      const match = String(source.id || '').match(/^window:(\d+):/);
-      if (match) sourceNameByHandle.set(Number(match[1]), source.name || '');
-    });
-    windows = byHandle.map((win) => ({
-      ...win,
-      title: win.title || sourceNameByHandle.get(win.handle) || win.processName,
-    }));
-  } catch { /* fallback below */ }
-
-  if (windows.length === 0) {
-    windows = await systemUtils.listVisibleWindows();
-  }
-  return normalizePickerWindows(windows);
-}
-
-function createPrivacyPickerHtml({ windows, bounds, token, themeColor }) {
-  const rgb = pickerColorToRgb(themeColor);
-  const payload = JSON.stringify({ windows, bounds, token, themeColor, rgb }).replace(/</g, '\\u003c');
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: rgba(0,0,0,0.10); cursor: crosshair; font-family: "Segoe UI", system-ui, sans-serif; user-select: none; }
-    #frame { position: absolute; display: none; box-sizing: border-box; border: 3px solid ${themeColor}; background: rgba(${rgb.r},${rgb.g},${rgb.b},0.10); box-shadow: 0 0 0 9999px rgba(0,0,0,0.16), 0 0 24px rgba(${rgb.r},${rgb.g},${rgb.b},0.55); pointer-events: none; }
-    #label { position: absolute; left: 0; top: -34px; max-width: min(520px, 100vw - 24px); padding: 7px 10px; border-radius: 7px; background: rgba(15,23,42,0.92); color: #fff; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #hint { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); padding: 9px 14px; border-radius: 8px; background: rgba(15,23,42,0.92); color: #fff; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,0.28); }
-    #empty { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 18px; border-radius: 8px; background: rgba(15,23,42,0.92); color: #fff; font-size: 13px; }
-  </style>
-</head>
-<body>
-  <div id="hint">移动鼠标点选要加入隐私规则的窗口，单击确认，Esc 取消</div>
-  <div id="empty">未找到可框选窗口</div>
-  <div id="frame"><div id="label"></div></div>
-  <script>
-    const { ipcRenderer } = require('electron');
-    const payload = ${payload};
-    const windows = payload.windows
-      .slice()
-      .sort((a, b) => (a.bounds.width * a.bounds.height) - (b.bounds.width * b.bounds.height));
-    const origin = payload.bounds;
-    const frame = document.getElementById('frame');
-    const label = document.getElementById('label');
-    const empty = document.getElementById('empty');
-    let selected = null;
-    if (!windows.length) empty.style.display = 'block';
-    function contains(win, x, y) {
-      const b = win.bounds;
-      return x >= b.x && y >= b.y && x <= b.x + b.width && y <= b.y + b.height;
-    }
-    function setSelected(win) {
-      selected = win || null;
-      if (!selected) {
-        frame.style.display = 'none';
-        return;
-      }
-      const b = selected.bounds;
-      frame.style.display = 'block';
-      frame.style.left = (b.x - origin.x) + 'px';
-      frame.style.top = (b.y - origin.y) + 'px';
-      frame.style.width = b.width + 'px';
-      frame.style.height = b.height + 'px';
-      label.textContent = selected.title + ' · ' + selected.processName;
-    }
-    window.addEventListener('mousemove', (event) => {
-      const hit = windows.find(win => contains(win, event.screenX, event.screenY));
-      if (hit !== selected) setSelected(hit);
-    });
-    window.addEventListener('click', () => {
-      if (selected) ipcRenderer.send('privacy-picker-result-' + payload.token, selected);
-    });
-    window.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') ipcRenderer.send('privacy-picker-result-' + payload.token, null);
-      if (event.key === 'Enter' && selected) ipcRenderer.send('privacy-picker-result-' + payload.token, selected);
-    });
-  </script>
-</body>
-</html>`;
-}
-
-async function pickPrivacyWindow() {
-  if (privacyPickerWindow && !privacyPickerWindow.isDestroyed()) return null;
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
-  await new Promise(resolve => setTimeout(resolve, 60));
-
-  const windows = await getPrivacyPickerWindows();
-  const bounds = getVirtualScreenBounds();
-  const themeColor = getPickerThemeColor();
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const cleanup = (value) => {
-      if (settled) return;
-      settled = true;
-      ipcMain.removeAllListeners(`privacy-picker-result-${token}`);
-      if (privacyPickerWindow && !privacyPickerWindow.isDestroyed()) privacyPickerWindow.destroy();
-      privacyPickerWindow = null;
-      showWindow();
-      resolve(value || null);
-    };
-
-    privacyPickerWindow = new BrowserWindow({
-      ...bounds,
-      frame: false,
-      transparent: true,
-      show: false,
-      resizable: false,
-      movable: false,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      fullscreenable: false,
-      hasShadow: false,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
-      },
-    });
-    privacyPickerWindow.setAlwaysOnTop(true, 'screen-saver');
-    privacyPickerWindow.setMenuBarVisibility(false);
-    privacyPickerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createPrivacyPickerHtml({ windows, bounds, token, themeColor }))}`);
-    privacyPickerWindow.once('ready-to-show', () => {
-      privacyPickerWindow.show();
-      privacyPickerWindow.focus();
-    });
-    privacyPickerWindow.on('closed', () => cleanup(null));
-    ipcMain.once(`privacy-picker-result-${token}`, (_, value) => cleanup(value));
-  });
-}
-
-function refreshTrayMenu() {
-  if (!tray) return;
-  const running = statusService.isRunning;
-  const menu = Menu.buildFromTemplate([
-    {
-      label: running ? '⏹  停止上报服务' : '▶  启动上报服务',
-      click: () => {
-        if (running) statusService.stop();
-        else statusService.start();
-        refreshTrayMenu();
-      },
-    },
-    { type: 'separator' },
-    { label: '🖥  显示窗口', click: () => showWindow() },
-    { type: 'separator' },
-    { label: '❌  退出', click: () => { isQuitting = true; app.quit(); } },
-  ]);
-  tray.setContextMenu(menu);
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  渲 染 进 程 通 信
-// ═══════════════════════════════════════════════════════════════════════
-function sendToRenderer(channel, data) {
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-    mainWindow.webContents.send(channel, data);
-  }
-}
-
-function pushInitialState() {
-  sendToRenderer('app:init', {
-    config: configStore.getAll(),
-    isRunning: statusService.isRunning,
-    version: APP_VERSION,
-    deviceName: os.hostname(),
-    platform: os.platform(),
-    isAutoStart,
-    processName: path.basename(process.execPath),
-    pid: process.pid,
-    isAdmin: isRunAsAdmin(),
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  系 统 通 知（受 enableNotification + doNotDisturb 控制）
-// ═══════════════════════════════════════════════════════════════════════
 function getAppIconPath() {
   return getAssetPath('app_icon.ico', 'assets/app_icon.ico', 'app_icon.png', 'assets/app_icon.png');
 }
@@ -728,873 +402,59 @@ function showNotification(title, body) {
 // ═══════════════════════════════════════════════════════════════════════
 function setupIPC() {
   // ── 配置存取 ──────────────────────────────────────────────────────────
-  ipcMain.handle('config:get',     (_, key)  => configStore.get(key));
-  ipcMain.handle('config:set',     (_, k, v) => { configStore.set(k, v); return true; });
-  ipcMain.handle('config:setMany', (_, obj)  => { configStore.setMany(obj); return true; });
-  ipcMain.handle('config:getAll',  ()        => configStore.getAll());
+  registerConfigIpc({ ipcMain, configStore });
 
-  // ── 上报服务控制 ────────────────────────────────────────────────────────
-  ipcMain.handle('service:start', () => {
-    statusService.start();
-    refreshTrayMenu();
-    return { isRunning: statusService.isRunning };
-  });
-  ipcMain.handle('service:stop', () => {
-    statusService.stop();
-    refreshTrayMenu();
-    return { isRunning: statusService.isRunning };
-  });
-  ipcMain.handle('service:isRunning',  () => statusService.isRunning);
-  ipcMain.handle('service:restart', () => { statusService.restart(); return true; });
-  ipcMain.handle('service:lastResult', () => statusService.lastResult);
-
-  // ── 开机自启 ──────────────────────────────────────────────────────────
-  ipcMain.handle('autostart:enable', () => {
-    app.setLoginItemSettings({ openAtLogin: true, args: ['--autostart'] });
-    configStore.set('enableAutoStart', true);
-    return true;
-  });
-  ipcMain.handle('autostart:disable', () => {
-    app.setLoginItemSettings({ openAtLogin: false });
-    configStore.set('enableAutoStart', false);
-    return true;
-  });
-  ipcMain.handle('autostart:isEnabled', () => {
-    const loginSettings = app.getLoginItemSettings();
-    // 开发模式下 openAtLogin 可能不准确，回退到配置存储
-    return loginSettings.openAtLogin || configStore.get('enableAutoStart') === true;
+  // ── 上报服务、开机自启、进程信息、权限检测与体检 ──────────────────────
+  registerServiceIpc({
+    ipcMain,
+    app,
+    configStore,
+    statusService,
+    apiService,
+    isRunAsAdmin,
+    refreshTrayMenu,
   });
 
-  // ── 服务页：进程信息 ──────────────────────────────────────────────────
-  ipcMain.handle('service:getProcessInfo', () => ({
-    processName: path.basename(process.execPath),
-    pid: process.pid,
-    memoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
-    uptimeSec: Math.round(process.uptime()),
-    isAdmin: isRunAsAdmin(),
-    recoveryStats: statusService.getRecoveryStats(),
-  }));
-
-  // ── 服务页：权限检测 ──────────────────────────────────────────────────
-  ipcMain.handle('service:checkPermissions', async () => {
-    const perms = {};
-    // 屏幕捕获 — Windows 上 desktopCapturer 通常无需额外授权
-    try {
-      const { desktopCapturer } = require('electron');
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'], thumbnailSize: { width: 1, height: 1 },
-      });
-      perms.screenCapture = sources.length > 0 ? 'granted' : 'denied';
-    } catch {
-      perms.screenCapture = 'denied';
-    }
-    // WMI 进程遍历
-    try {
-      const { execFileSync } = require('child_process');
-      execFileSync('powershell', [
-        '-NoProfile', '-NonInteractive', '-Command',
-        'Get-Process -Id $PID | Out-Null',
-      ], { timeout: 5000, windowsHide: true, stdio: 'ignore' });
-      perms.processEnum = 'granted';
-    } catch {
-      perms.processEnum = 'denied';
-    }
-    // 系统电源 — Electron powerMonitor 始终可用
-    perms.powerControl = 'granted';
-    // 网络 — Electron 不受限
-    perms.network = 'granted';
-    // 文件 IO — 测试 userData 目录可写性
-    try {
-      const testFile = path.join(app.getPath('userData'), '.perm-test');
-      fs.writeFileSync(testFile, 'ok');
-      fs.unlinkSync(testFile);
-      perms.fileIO = 'granted';
-    } catch {
-      perms.fileIO = 'denied';
-    }
-    return perms;
+  // ── 系统、应用与窗口能力 ───────────────────────────────────────────────
+  registerSystemIpc({
+    ipcMain,
+    app,
+    dialog,
+    shell,
+    os,
+    systemUtils,
+    statusService,
+    metricsHistory,
+    getMainWindow: () => mainWindow,
+    showWindow,
+    setIsQuitting: (value) => { isQuitting = value; },
+    pickPrivacyWindow,
+    showNotification,
+    getCacheDiskSize,
+    removeCacheTargets,
   });
 
-  // ── 服务页：一键体检 ──────────────────────────────────────────────────
-  ipcMain.handle('service:healthCheck', async () => {
-    const results = [];
-    const cfg = configStore.getAll();
-    const serverUrl = cfg.serverMode === 'local' ? cfg.serverUrlLocal : cfg.serverUrlProd;
-    const owner = cfg.githubOwner || '';
-    const repo = cfg.githubRepo || '';
-
-    // 1. 主进程
-    results.push({
-      name: '主进程状态',
-      ok: true,
-      text: `${path.basename(process.execPath)} 运行正常，PID ${process.pid}`,
-    });
-    // 2. 上报服务
-    results.push({
-      name: '上报服务状态',
-      ok: statusService.isRunning,
-      text: statusService.isRunning ? '上报服务运行中' : '上报服务未启动',
-    });
-    // 3. 设备密钥
-    results.push({
-      name: '设备密钥配置',
-      ok: !!cfg.deviceKey,
-      text: cfg.deviceKey ? `已配置（末尾 ...${String(cfg.deviceKey).slice(-6)}）` : '未配置设备密钥',
-    });
-    // 4. 更新源
-    results.push({
-      name: '更新源配置',
-      ok: !!(owner && repo),
-      text: owner && repo ? `github.com/${owner}/${repo}` : '未配置 GitHub 更新源',
-    });
-    // 5. 服务器连通性 / 网络延迟
-    try {
-      const connResult = await apiService.testConnection(serverUrl);
-      const latencyText = connResult.ok
-        ? `服务器在线，延迟 ${connResult.latencyMs}ms`
-        : `连接失败: ${connResult.error}`;
-      results.push({
-        name: '服务器连通性',
-        ok: connResult.ok,
-        text: latencyText,
-      });
-      results.push({
-        name: '网络延迟基线',
-        ok: connResult.ok ? (connResult.latencyMs > 200 ? 'warn' : true) : false,
-        text: connResult.ok
-          ? `设备状态页同源采样，当前 ${connResult.latencyMs}ms`
-          : '无法生成延迟基线',
-      });
-    } catch (e) {
-      results.push({ name: '服务器连通性', ok: false, text: `连接异常: ${e.message}` });
-      results.push({ name: '网络延迟基线', ok: false, text: '连接异常，无法生成延迟基线' });
-    }
-    // 6. 屏幕捕获
-    try {
-      const sources = await require('electron').desktopCapturer.getSources({
-        types: ['screen'], thumbnailSize: { width: 1, height: 1 },
-      });
-      results.push({
-        name: '屏幕捕获权限',
-        ok: sources.length > 0,
-        text: sources.length > 0 ? '屏幕捕获 API 可用' : '无法获取屏幕源',
-      });
-    } catch (e) {
-      results.push({ name: '屏幕捕获权限', ok: false, text: `异常: ${e.message}` });
-    }
-    // 7. WMI
-    try {
-      require('child_process').execFileSync('powershell', [
-        '-NoProfile', '-NonInteractive', '-Command',
-        'Get-Process -Id $PID | Out-Null',
-      ], { timeout: 5000, windowsHide: true, stdio: 'ignore' });
-      results.push({ name: '进程遍历 (WMI)', ok: true, text: 'PowerShell 进程查询正常' });
-    } catch (e) {
-      results.push({ name: '进程遍历 (WMI)', ok: false, text: `查询失败: ${e.message}` });
-    }
-    // 8. 开机自启
-    const autoStartOn = app.getLoginItemSettings().openAtLogin;
-    results.push({
-      name: '开机自启配置',
-      ok: autoStartOn ? true : 'warn',
-      text: autoStartOn ? '注册表启动项已配置' : '开机自启未启用',
-    });
-    // 9. 本地存储
-    try {
-      const udp = app.getPath('userData');
-      const testFile = path.join(udp, '.health-test');
-      fs.writeFileSync(testFile, 'ok');
-      fs.unlinkSync(testFile);
-      results.push({ name: '本地存储空间', ok: true, text: `数据目录可写 (${udp})` });
-    } catch (e) {
-      results.push({ name: '本地存储空间', ok: false, text: `写入失败: ${e.message}` });
-    }
-    // 10. 截图上报配置
-    results.push({
-      name: '截图上报配置',
-      ok: cfg.enableScreenshot ? true : 'warn',
-      text: cfg.enableScreenshot ? '截图采集已启用' : '截图采集未启用',
-    });
-    // 11. 故障恢复
-    const recoveryOn = cfg.enableAutoRestart !== false;
-    results.push({
-      name: '故障恢复策略',
-      ok: recoveryOn ? true : 'warn',
-      text: recoveryOn
-        ? `已启用，最大重启 ${cfg.maxRestarts || 3} 次`
-        : '未启用自动重启',
-    });
-    return results;
-  });
-
-  // ── 截图 ──────────────────────────────────────────────────────────────
-  ipcMain.handle('screenshot:capture', async () => {
-    const buf = await systemUtils.captureScreen();
-    if (!buf) return null;
-    return { data: Array.from(buf), type: 'image/png' };
-  });
-
-  // ── 前台窗口 ────────────────────────────────────────────────────────
-  ipcMain.handle('system:activeWindow', () => systemUtils.getActiveWindow());
-  ipcMain.handle('system:listWindows', () => systemUtils.listVisibleWindows());
-  ipcMain.handle('privacy:pickWindow', () => pickPrivacyWindow());
-
-  // ── 系统信息 ──────────────────────────────────────────────────────────
-  ipcMain.handle('system:info', async () => {
-    const battery = await systemUtils.getBatteryInfo().catch(() => ({}));
-    return {
-      hostname: os.hostname(),
-      platform: os.platform(),
-      arch: os.arch(),
-      osType: os.type(),
-      totalMem: os.totalmem(),
-      freeMem: os.freemem(),
-      battery,
-    };
-  });
-  ipcMain.handle('system:battery', () => systemUtils.getBatteryInfo());
-  ipcMain.handle('system:metrics', () => systemUtils.getSystemMetrics());
-  ipcMain.handle('system:metricsHistory', () => [...metricsHistory]);
-
-  // ── 设备指纹 ──────────────────────────────────────────────────────────
-  ipcMain.handle('system:fingerprint', () => statusService.getDeviceFingerprint());
-
-  // ── 设备配对 ──────────────────────────────────────────────────────────
-  ipcMain.handle('pairing:handshake', async (_, { token, model }) => {
-    const result = await apiService.performHandshake({ token, model: model || os.hostname() });
-    if (result.success && result.key) {
-      configStore.setMany({ deviceKey: result.key, deviceId: result.deviceId });
-    }
-    return result;
-  });
-
-  // ── 连接测试 ──────────────────────────────────────────────────────────
-  ipcMain.handle('api:testConnection', (_, serverUrl) => apiService.testConnection(serverUrl));
+  // ── API、设备配对与设备元数据 ──────────────────────────────────────────
+  registerApiIpc({ ipcMain, os, configStore, statusService, apiService });
 
   // ── 直播推流 ──────────────────────────────────────────────────────────
-  ipcMain.handle('stream:getConfig', () => streamService.getStreamConfig());
-  ipcMain.handle('stream:saveConfig', (_, config) => streamService.saveStreamConfig(config));
-  ipcMain.handle('stream:getKey', () => streamService.getOrInitStreamKey());
-  ipcMain.handle('stream:resetKey', () => streamService.resetStreamKey());
-  ipcMain.handle('stream:getLiveStatus', () => streamService.getStreamLiveStatus());
-  ipcMain.handle('stream:testSrs', (_, config) => streamService.testSrsConnection(config));
-  ipcMain.handle('stream:testObsWs', (_, config) => streamService.testObsWebSocket(config));
-  ipcMain.handle('stream:applyToObs', (_, config) => streamService.applyStreamConfigToObs(config));
-  ipcMain.handle('stream:exportConfig', () => streamService.exportObsServiceConfig());
-
-  // ── 设备密钥验证 ──────────────────────────────────────────────────────
-  ipcMain.handle('api:validateKey', async () => {
-    const deviceKey = configStore.get('deviceKey');
-    if (!deviceKey) return { valid: false, error: '未配置设备密钥' };
-    try {
-      const fingerprint = Buffer.from(
-        `${os.hostname()}-${os.platform()}-${os.arch()}`
-      ).toString('base64');
-      return await apiService.validateDeviceKey(deviceKey, fingerprint);
-    } catch (err) {
-      return { valid: false, errorCode: err.code, error: err.message };
-    }
-  });
-
-  // ── 密钥预检（不发送指纹，用于保存前检测接管风险）─────────────────────
-  ipcMain.handle('api:preValidateKey', async (_, key, serverUrl) => {
-    if (!key) return { valid: false, error: '密钥为空' };
-    try {
-      const url = serverUrl || configStore.getServerUrl();
-      return await apiService.validateDeviceKeyAt(key, url);
-    } catch (err) {
-      return { valid: false, errorCode: err.code, error: err.message };
-    }
-  });
-
-  // ── 更新检查与通道管理 ────────────────────────────────────────────────
-  ipcMain.handle('update:check',      () => checkForUpdates());
+  registerStreamIpc({ ipcMain, streamService });
 
   // ── 用户认证 ──────────────────────────────────────────────────────────
+  registerAuthIpc({ ipcMain, os, configStore, statusService, apiService });
 
-  // 本地测试认证辅助函数
-  function _localLogin(username, password) {
-    const accounts = configStore.get('localTestAccounts') || [];
-    const found = accounts.find(a => a.username === username && a.password === password);
-    if (!found) return { success: false, message: '用户名或密码错误（本地测试模式）' };
-    const user = { id: 'local-' + username, username, email: '', avatar: '', role: 'user' };
-    configStore.setMany({ authToken: 'local-test-token', authUser: user });
-    return { success: true, token: 'local-test-token', user, isLocal: true };
-  }
-  function _localRegister(username, password) {
-    const accounts = configStore.get('localTestAccounts') || [];
-    if (accounts.some(a => a.username === username)) {
-      return { success: false, message: '用户名已存在（本地测试模式）' };
-    }
-    accounts.push({ username, password, createdAt: new Date().toISOString() });
-    configStore.set('localTestAccounts', accounts);
-    const user = { id: 'local-' + username, username, email: '', avatar: '', role: 'user' };
-    configStore.setMany({ authToken: 'local-test-token', authUser: user });
-    return { success: true, token: 'local-test-token', user, isLocal: true };
-  }
-
-  ipcMain.handle('auth:login', async (_, { username, password }) => {
-    const serverMode = configStore.get('serverMode');
-    const serverConfigured = configStore.get('serverConfigured');
-    // 本地测试模式：服务器未配置时使用本地账户
-    if (serverMode === 'local' && !serverConfigured) {
-      return _localLogin(username, password);
-    }
-    try {
-      const result = await apiService.authLogin(username, password);
-      if (result.success && result.token) {
-        configStore.setMany({ authToken: result.token, authUser: result.user });
-      }
-      return result;
-    } catch (err) {
-      console.error('[Auth] 登录请求失败:', err.message);
-      // 本地模式下服务器不可用时回退到本地认证
-      if (serverMode === 'local') {
-        return _localLogin(username, password);
-      }
-      // 网络错误给出友好提示
-      const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|abort/i.test(err.message);
-      const friendlyMsg = isNetworkError
-        ? `无法连接到服务器 (${configStore.getServerUrl()})，请检查网络或服务器地址配置`
-        : (err.message || '登录失败');
-      return { success: false, message: friendlyMsg };
-    }
-  });
-
-  ipcMain.handle('auth:register', async (_, { username, password }) => {
-    const serverMode = configStore.get('serverMode');
-    const serverConfigured = configStore.get('serverConfigured');
-    if (serverMode === 'local' && !serverConfigured) {
-      return _localRegister(username, password);
-    }
-    try {
-      const result = await apiService.authRegister(username, password);
-      if (result.success && result.token) {
-        configStore.setMany({ authToken: result.token, authUser: result.user });
-      }
-      return result;
-    } catch (err) {
-      console.error('[Auth] 注册请求失败:', err.message);
-      if (serverMode === 'local') {
-        return _localRegister(username, password);
-      }
-      const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|abort/i.test(err.message);
-      const friendlyMsg = isNetworkError
-        ? `无法连接到服务器 (${configStore.getServerUrl()})，请检查网络或服务器地址配置`
-        : (err.message || '注册失败');
-      return { success: false, message: friendlyMsg };
-    }
-  });
-
-  ipcMain.handle('auth:me', async () => {
-    const token = configStore.get('authToken');
-    if (!token) return { success: false, message: '未登录' };
-    try {
-      const result = await apiService.authGetMe(token);
-      if (result.success && result.user) {
-        configStore.set('authUser', result.user);
-      }
-      return result;
-    } catch (err) {
-      // token 过期则清除本地认证状态
-      if (err.status === 401) {
-        configStore.setMany({ authToken: '', authUser: null });
-      }
-      return { success: false, message: err.message };
-    }
-  });
-
-  ipcMain.handle('auth:updateProfile', async (_, data) => {
-    const token = configStore.get('authToken');
-    if (!token) return { success: false, message: '未登录' };
-    try {
-      const result = await apiService.authUpdateProfile(token, data);
-      if (result.success && result.user) {
-        configStore.set('authUser', result.user);
-      }
-      return result;
-    } catch (err) {
-      if (err.status === 401) {
-        configStore.setMany({ authToken: '', authUser: null });
-      }
-      return { success: false, message: err.message };
-    }
-  });
-
-  ipcMain.handle('auth:logout', () => {
-    configStore.setMany({ authToken: '', authUser: null });
-    return { success: true };
-  });
-
-  ipcMain.handle('auth:generateDeviceKey', async () => {
-    const token = configStore.get('authToken');
-    if (!token) return { success: false, message: '未登录' };
-    try {
-      const fingerprint = statusService.getDeviceFingerprint
-        ? statusService.getDeviceFingerprint()
-        : Buffer.from(`${os.hostname()}-${os.platform()}-${os.arch()}`).toString('base64');
-      const result = await apiService.authGenerateDeviceKey(token, {
-        deviceName: os.hostname(),
-        platform: 'Windows',
-        deviceFingerprint: fingerprint,
-      });
-      if (result.success && result.deviceKey) {
-        configStore.setMany({ deviceKey: result.deviceKey, deviceId: result.deviceId });
-      }
-      return result;
-    } catch (err) {
-      if (err.status === 401) {
-        configStore.setMany({ authToken: '', authUser: null });
-      }
-      return { success: false, message: err.message };
-    }
-  });
-
-  ipcMain.handle('auth:getState', () => {
-    return {
-      isLoggedIn: !!configStore.get('authToken'),
-      user: configStore.get('authUser'),
-      promptDismissed: configStore.get('authPromptDismissed'),
-      serverConfigured: configStore.get('serverConfigured'),
-      serverMode: configStore.get('serverMode'),
-    };
-  });
-
-  ipcMain.handle('auth:dismissPrompt', () => {
-    configStore.set('authPromptDismissed', true);
-    return true;
-  });
-  ipcMain.handle('update:getChannel', () => configStore.get('updateChannel') || 'stable');
-  ipcMain.handle('update:setChannel', (_, channel) => {
-    if (!['stable', 'beta', 'nightly'].includes(channel)) return false;
-    configStore.set('updateChannel', channel);
-    return true;
-  });
-
-  // ── 获取待安装的已下载更新 ──────────────────────────────────────────
-  ipcMain.handle('update:getPendingInstall', () => {
-    if (_autoDownloadState && _autoDownloadState.stage === 'ready') {
-      return { hasPending: true, version: _autoDownloadState.version, filePath: _autoDownloadState.filePath, sha256: _autoDownloadState.sha256 };
-    }
-    // 回退：检查跨会话持久化的待安装记录（重启后内存状态已清空时使用）
-    const persisted = configStore.get('pendingInstall');
-    if (persisted && persisted.filePath && fs.existsSync(persisted.filePath)) {
-      return { hasPending: true, version: persisted.version, filePath: persisted.filePath, sha256: persisted.sha256 };
-    }
-    return { hasPending: false };
-  });
-
-  // ── 安装已下载的待安装更新 ────────────────────────────────────────────
-  ipcMain.handle('update:installPending', async () => {
-    // 优先使用内存状态，回退到持久化记录
-    const state = (_autoDownloadState && _autoDownloadState.stage === 'ready')
-      ? _autoDownloadState
-      : configStore.get('pendingInstall');
-    if (!state || !state.filePath) {
-      return { success: false, error: '没有待安装的更新' };
-    }
-    const { filePath, sha256 } = state;
-    const resolvedPath = path.resolve(filePath);
-    if (!fs.existsSync(resolvedPath)) {
-      _autoDownloadState = null;
-      configStore.set('pendingInstall', null);
-      return { success: false, error: '安装文件已不存在，请重新下载' };
-    }
-    if (sha256) {
-      const data = fs.readFileSync(resolvedPath);
-      const actual = crypto.createHash('sha256').update(data).digest('hex').toLowerCase();
-      if (actual !== sha256.toLowerCase()) {
-        _autoDownloadState = null;
-        configStore.set('pendingInstall', null);
-        return { success: false, error: 'SHA256 校验失败，文件可能已损坏' };
-      }
-    }
-    configStore.set('pendingInstall', null);
-    _autoDownloadState = null;
-    launchInstaller(resolvedPath, { silent: true }).then((error) => {
-      if (error) console.error('[Update] installer launch failed:', error);
-      setTimeout(() => { isQuitting = true; app.quit(); }, 1000);
-    });
-    return { success: true };
-  });
-
-  // ── 设备元数据心跳（上报开关状态，独立于上报服务）───────────────────
-  ipcMain.handle('device:syncMeta', async () => {
-    const deviceKey = configStore.get('deviceKey');
-    if (!deviceKey) return { success: false, error: '设备密钥未配置' };
-    const serverUrl = configStore.getServerUrl();
-    const reportEnabled = statusService.isRunning;
-    const captureEnabled = configStore.get('enableScreenshot') === true;
-    try {
-      const res = await fetch(`${serverUrl}/api/device/meta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceKey, reportEnabled, captureEnabled }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) {
-        console.warn(`[Meta] 元数据同步失败: HTTP ${res.status}`);
-        return { success: false, error: `HTTP ${res.status}` };
-      }
-      console.log(`[Meta] 元数据已同步: reportEnabled=${reportEnabled}, captureEnabled=${captureEnabled}`);
-      return { success: true };
-    } catch (err) {
-      console.warn('[Meta] 元数据同步异常:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  // ── 更新下载（流式，推送进度至渲染进程）──────────────────────────────
-  ipcMain.handle('update:download', async (_, { url }) => {
-    if (!url || !/^https?:\/\//i.test(url)) {
-      return { success: false, error: '无效下载链接' };
-    }
-    // 防重入检查：若后台自动下载或用户已触发下载，拒绝重复请求
-    if (_autoDownloadState && _autoDownloadState.stage === 'downloading') {
-      return { success: false, error: '已有下载任务进行中，请稍候' };
-    }
-    try {
-      const tmpDir = path.join(os.tmpdir(), 'neko-update');
-      fs.mkdirSync(tmpDir, { recursive: true });
-
-      // 私有仓库支持：GitHub API asset URL 需要 auth + Accept: application/octet-stream
-      const headers = {};
-      const isGhApi = url.includes('api.github.com');
-      if (isGhApi) {
-        const token = configStore.get('githubToken') || '';
-        if (token) headers['Authorization'] = `token ${token}`;
-        headers['Accept'] = 'application/octet-stream';
-      }
-
-      // 从 API URL 中无法直接提取文件名，需要从重定向响应中获取
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(300000), redirect: 'follow' });
-      if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`);
-
-      // 从 Content-Disposition 或 URL 提取文件名
-      let fileName;
-      const cd = res.headers.get('content-disposition') || '';
-      const cdMatch = cd.match(/filename[*]?=['"]?([^'"\s;]+)/i);
-      if (cdMatch) {
-        fileName = cdMatch[1];
-      } else {
-        // 回退：从最终 URL 提取
-        fileName = (res.url || url).split('/').pop().split('?')[0] || 'NekoStatus-update.exe';
-      }
-      const filePath = path.join(tmpDir, fileName);
-
-      const total = parseInt(res.headers.get('content-length') || '0', 10);
-      let received = 0;
-      const chunks = [];
-      const reader = res.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(Buffer.from(value));
-        received += value.length;
-        sendToRenderer('update:progress', {
-          received, total,
-          pct: total > 0 ? Math.round(received / total * 100) : -1,
-        });
-      }
-
-      const buffer = Buffer.concat(chunks);
-      fs.writeFileSync(filePath, buffer);
-      const sha256 = crypto.createHash('sha256').update(buffer).digest('hex').toLowerCase();
-      return { success: true, filePath, sha256 };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  // ── 更新安装（SHA256 校验 → 启动安装包 → 退出）────────────────────────
-  ipcMain.handle('update:install', async (_, { filePath, expectedSha256 }) => {
-    const resolvedPath = path.resolve(filePath);
-    const tmpDir = path.resolve(os.tmpdir());
-    // 安全校验：安装包必须在系统临时目录下
-    if (!resolvedPath.startsWith(tmpDir)) {
-      return { success: false, error: '非法文件路径，拒绝执行' };
-    }
-    if (!fs.existsSync(resolvedPath)) {
-      return { success: false, error: '安装文件不存在' };
-    }
-    // SHA256 可选校验
-    if (expectedSha256) {
-      const data = fs.readFileSync(resolvedPath);
-      const actual = crypto.createHash('sha256').update(data).digest('hex').toLowerCase();
-      if (actual !== expectedSha256.toLowerCase()) {
-        return { success: false, error: `SHA256 校验失败（期望 ${expectedSha256}，实际 ${actual}）` };
-      }
-    }
-    // 启动安装程序，1s 后退出当前应用
-    launchInstaller(resolvedPath, { silent: true }).then((error) => {
-      if (error) console.error('[Update] installer launch failed:', error);
-      setTimeout(() => { isQuitting = true; app.quit(); }, 1000);
-    });
-    return { success: true };
-  });
-
-  // ── 应用控制 ──────────────────────────────────────────────────────────
-  ipcMain.handle('app:getVersion',    () => APP_VERSION);
-  ipcMain.handle('app:getDeviceName', () => os.hostname());
-  ipcMain.handle('app:quit',  () => { isQuitting = true; app.quit(); });
-  ipcMain.handle('app:hide',  () => { if (mainWindow) mainWindow.hide(); });
-  ipcMain.handle('app:show',  () => showWindow());
-  ipcMain.handle('app:minimize', () => { if (mainWindow) mainWindow.minimize(); });
-  ipcMain.handle('app:openExternal', (_, url) => {
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
-  });
-
-  // ── 系统通知 ─────────────────────────────────────────────────────────
-  ipcMain.handle('notification:show', (_, { title, body }) => {
-    return showNotification(title, body);
-  });
-
-  // ── Windows 免打扰 (Focus Assist) ───────────────────────────────────
-  const FA_REG_PATH = 'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings';
-
-  ipcMain.handle('system:getFocusAssist', async () => {
-    if (process.platform !== 'win32') return { ok: false, enabled: false, reason: 'not-windows' };
-    try {
-      const { execSync } = require('child_process');
-      // Windows 11 使用 NOC_GLOBAL_SETTING_TOASTS_ENABLED (0=DND开, 1=DND关)
-      // Windows 10 使用 NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK
-      let dndEnabled = false;
-      try {
-        const out1 = execSync(
-          `reg query "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_TOASTS_ENABLED`,
-          { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-        );
-        const m1 = out1.match(/0x([0-9a-fA-F]+)/);
-        if (m1) dndEnabled = parseInt(m1[1], 16) === 0;
-      } catch {
-        // fallback: Windows 10 key
-        try {
-          const out2 = execSync(
-            `reg query "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK`,
-            { windowsHide: true, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-          );
-          const m2 = out2.match(/0x([0-9a-fA-F]+)/);
-          if (m2) dndEnabled = parseInt(m2[1], 16) === 0;
-        } catch { /* 键不存在 = DND 关闭 */ }
-      }
-      return { ok: true, enabled: dndEnabled };
-    } catch {
-      return { ok: true, enabled: false };
-    }
-  });
-
-  ipcMain.handle('system:setFocusAssist', async (_, enabled) => {
-    if (process.platform !== 'win32') return { ok: false, reason: 'not-windows' };
-    try {
-      const { execSync } = require('child_process');
-      // 写入 Windows 11 + Windows 10 两个键以最大兼容
-      try {
-        execSync(
-          `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_TOASTS_ENABLED /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
-          { windowsHide: true }
-        );
-      } catch { /* Win10 可能无此键 */ }
-      try {
-        execSync(
-          `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
-          { windowsHide: true }
-        );
-        execSync(
-          `reg add "${FA_REG_PATH}" /v NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK /t REG_DWORD /d ${enabled ? 0 : 1} /f`,
-          { windowsHide: true }
-        );
-      } catch { /* ignore */ }
-      console.log(`[FocusAssist] ${enabled ? '已开启' : '已关闭'}`);
-      return { ok: true };
-    } catch (err) {
-      console.warn('[FocusAssist] 设置失败:', err.message);
-      return { ok: false, reason: err.message };
-    }
-  });
-
-  // ── 文件选择对话框 ────────────────────────────────────────────────────
-  ipcMain.handle('dialog:selectFile', async (_, options) => {
-    const filters = options?.filters || [{ name: '安装包', extensions: ['exe', 'zip', '7z'] }];
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: options?.title || '选择文件',
-      filters,
-      properties: ['openFile'],
-    });
-    if (result.canceled || !result.filePaths.length) return null;
-    return result.filePaths[0];
-  });
-
-  // Cache cleanup
-  ipcMain.handle('cache:clear', async () => {
-    try {
-      const ses = mainWindow?.webContents?.session;
-      if (!ses) return { success: false, error: 'Unable to access session' };
-      const beforeBytes = await getCacheDiskSize(ses);
-      await ses.clearCache();
-      await ses.clearStorageData({
-        storages: ['cachestorage', 'shadercache', 'serviceworkers'],
-        quotas: ['temporary', 'syncable'],
-      });
-      const { removed, failed } = await removeCacheTargets(ses);
-      const afterBytes = await getCacheDiskSize(ses);
-      return {
-        success: failed.length === 0,
-        beforeBytes,
-        afterBytes,
-        clearedBytes: Math.max(0, beforeBytes - afterBytes),
-        removedCount: removed.length,
-        failed,
-        error: failed.length ? failed.map(item => item.error).join('; ') : undefined,
-      };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  });
-
-  // Cache size query
-  ipcMain.handle('cache:getSize', async () => {
-    try {
-      const ses = mainWindow?.webContents?.session;
-      if (!ses) return 0;
-      return await getCacheDiskSize(ses);
-    } catch {
-      return 0;
-    }
-  });
-
-  // ── 界面缩放 ──────────────────────────────────────────────────────────
-  ipcMain.handle('app:setZoom', (_, factor) => {
-    if (mainWindow?.webContents) {
-      // setZoomFactor 适用于全部可见内容（含 HiDPI）
-      mainWindow.webContents.setZoomFactor(Math.max(0.5, Math.min(3.0, factor)));
-    }
-    return true;
-  });
-
-  ipcMain.on('dev:rendererError', (_event, payload) => {
-    if (app.isPackaged) return;
-    const kind = payload?.kind || 'error';
-    const message = payload?.message || 'unknown renderer error';
-    const source = payload?.source || 'renderer';
-    const line = payload?.line ?? '-';
-    const column = payload?.column ?? '-';
-    console.error(`[Renderer:${kind}] ${message} (${source}:${line}:${column})`);
-    if (payload?.stack) {
-      console.error(payload.stack);
-    }
-  });
-
-  // ── 系统安装字体枚举 ──────────────────────────────────────────────────
-  ipcMain.handle('system:fonts', async () => {
-    try {
-      const { execFile } = require('child_process');
-      const { promisify } = require('util');
-      const execFileAsync = promisify(execFile);
-      // PowerShell: 强制 UTF-8 输出，防止中文字体名乱码
-      const { stdout } = await execFileAsync('powershell', [
-        '-NonInteractive', '-NoProfile', '-Command',
-        '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);' +
-        '[System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null;' +
-        '[System.Drawing.FontFamily]::Families | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress'
-      ], { timeout: 8000, windowsHide: true, encoding: 'buffer' });
-      const text = stdout.toString('utf8').trim();
-      const list = JSON.parse(text);
-      return Array.isArray(list) ? list : [list];
-    } catch {
-      return [];
-    }
-  });
-
-  // ── 多版本更新日志（在线获取，回落本地缓存）────────────────────────────
-  ipcMain.handle('update:getChangelog', async () => {
-    const owner = configStore.get('githubOwner') || 'Neko-NF';
-    const repo  = configStore.get('githubRepo') || 'Neko-Status-Desktop';
-    if (!owner || !repo) return configStore.get('changelogCache') || [];
-    const token   = configStore.get('githubToken') || '';
-    const headers = { Accept: 'application/vnd.github.v3+json' };
-    if (token) headers['Authorization'] = `token ${token}`;
-    try {
-      const res = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/releases?per_page=15`,
-        { headers, signal: AbortSignal.timeout(10000) }
-      );
-      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-      const releases = await res.json();
-      const currentVersion = String(APP_VERSION || '').replace(/^v/, '');
-      const currentRelease = releases.find((r) => String(r.tag_name || '').replace(/^v/, '') === currentVersion);
-      const result = currentRelease ? [{
-        version: currentVersion,
-        date: (currentRelease.published_at || '').slice(0, 10),
-        notes: currentRelease.body || '',
-        isPreRelease: !!currentRelease.prerelease,
-        isCurrent: true,
-      }] : [];
-      configStore.set('changelogCache', result);
-      return result;
-    } catch {
-      // 网络不可用 → 返回本地缓存（仅当前版本）
-      return configStore.get('changelogCache') || [];
-    }
-  });
-
-  // ── 完整性检查 ───────────────────────────────────────────────────────
-  ipcMain.handle('update:integrity', async () => {
-    const results = [];
-    // 配置文件
-    try {
-      const cfg = configStore.getAll();
-      results.push({ name: '配置文件',   ok: true,  text: `完好，共 ${Object.keys(cfg).length} 项` });
-    } catch (e) {
-      results.push({ name: '配置文件',   ok: false, text: `损坏: ${e.message}` });
-    }
-    // 临时目录可写
-    try {
-      const tmpDir = path.join(os.tmpdir(), 'neko-update');
-      fs.mkdirSync(tmpDir, { recursive: true });
-      results.push({ name: '临时目录',   ok: true,  text: `可写 (${tmpDir})` });
-    } catch (e) {
-      results.push({ name: '临时目录',   ok: false, text: `不可写: ${e.message}` });
-    }
-    // 主进程
-    results.push({ name: '主进程',       ok: true,  text: `运行正常，PID ${process.pid}` });
-    // 更新源配置
-    const owner = configStore.get('githubOwner');
-    const repo  = configStore.get('githubRepo');
-    results.push({ name: '更新源配置',   ok: !!(owner && repo), text: owner && repo ? `github.com/${owner}/${repo}` : '未配置（请先设置更新源）' });
-    return results;
-  });
-
-  // ── 版本回滚（获取 GitHub 上一个稳定版信息）─────────────────────────
-  ipcMain.handle('update:rollback', async () => {
-    const owner = configStore.get('githubOwner');
-    const repo  = configStore.get('githubRepo');
-    if (!owner || !repo) return { success: false, error: '未配置更新源，无法查询历史版本' };
-    const token   = configStore.get('githubToken') || '';
-    const headers = { Accept: 'application/vnd.github.v3+json' };
-    if (token) headers['Authorization'] = `token ${token}`;
-    try {
-      const res = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/releases?per_page=10`,
-        { headers, signal: AbortSignal.timeout(10000) }
-      );
-      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-      const releases = await res.json();
-      const stable = releases.filter((r) => !r.prerelease);
-      if (stable.length < 2) return { success: false, error: '没有可回滚的历史稳定版本' };
-      const prev = stable[1];
-      const prevVersion = (prev.tag_name || '').replace(/^v/, '');
-      const exeAsset = (prev.assets || []).find((a) => a.name.endsWith('.exe'));
-      const zipAsset = (prev.assets || []).find((a) => a.name.endsWith('.zip') && a.name.toLowerCase().includes('win'));
-      // 私有仓库使用 asset API URL
-      const pickUrl = (a) => a ? (token ? a.url : a.browser_download_url) : null;
-      const exeDownloadUrl = pickUrl(exeAsset);
-      const zipDownloadUrl = pickUrl(zipAsset);
-      const downloadUrl = exeDownloadUrl || zipDownloadUrl;
-      if (!downloadUrl) return { success: false, error: `找不到 v${prevVersion} 的安装包` };
-      return { success: true, version: prevVersion, downloadUrl, exeDownloadUrl, zipDownloadUrl };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+  // ── 更新检查、通道、下载、安装、Changelog、回滚 ──────────────────────
+  registerUpdateIpc({
+    ipcMain,
+    app,
+    shell,
+    configStore,
+    sendToRenderer,
+    checkForUpdates,
+    launchInstaller,
+    getAutoDownloadState: () => _autoDownloadState,
+    setAutoDownloadState: (v) => { _autoDownloadState = v; },
+    setIsQuitting: (v) => { isQuitting = v; },
   });
 }
 
@@ -1656,7 +516,7 @@ async function autoDownloadUpdate(result) {
       chunks.push(Buffer.from(value));
       received += value.length;
       // 后台下载也推送进度（渲染进程可选择展示）
-      sendToRenderer('update:progress', {
+      sendToRenderer(IPC_EVENTS.UPDATE_PROGRESS, {
         received, total,
         pct: total > 0 ? Math.round(received / total * 100) : -1,
       });
@@ -1672,7 +532,7 @@ async function autoDownloadUpdate(result) {
       // 强制更新：立即安装
       console.log('[AutoDL] 强制更新，立即启动安装程序...');
       _autoDownloadState = null;
-      sendToRenderer('update:forceInstallStarted', { version: result.latestVersion });
+      sendToRenderer(IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED, { version: result.latestVersion });
       const installError = await launchInstaller(filePath, { silent: true });
       if (installError) console.error('[AutoDL] installer launch failed:', installError);
       setTimeout(() => { isQuitting = true; app.quit(); }, 1500);
@@ -1682,12 +542,12 @@ async function autoDownloadUpdate(result) {
       configStore.set('pendingInstall', { version: result.latestVersion, filePath, sha256 });
       _autoDownloadState = { stage: 'ready', version: result.latestVersion, filePath, sha256 };
       console.log(`[AutoDL] 普通更新 v${result.latestVersion} 已下载并持久化，下次启动将自动安装`);
-      sendToRenderer('update:autoDownloaded', { version: result.latestVersion, filePath, sha256 });
+      sendToRenderer(IPC_EVENTS.UPDATE_AUTO_DOWNLOADED, { version: result.latestVersion, filePath, sha256 });
     }
   } catch (err) {
     console.error('[AutoDL] 后台下载失败:', err.message);
     _autoDownloadState = null;
-    sendToRenderer('update:autoDownloadFailed', { version: result.latestVersion, error: err.message });
+    sendToRenderer(IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED, { version: result.latestVersion, error: err.message });
   }
 }
 
@@ -1905,19 +765,19 @@ app.whenReady().then(async () => {
 
   // StatusService 日志/Tick/状态变更 → 推送到渲染进程
   statusService.setLogCallback((level, msg, time) => {
-    sendToRenderer('log:entry', { level, msg, time });
+    sendToRenderer(IPC_EVENTS.LOG_ENTRY, { level, msg, time });
   });
   statusService.setTickCallback((data) => {
-    sendToRenderer('service:tick', data);
+    sendToRenderer(IPC_EVENTS.SERVICE_TICK, data);
     refreshTrayMenu();
   });
   statusService.setStatusChangeCallback((isRunning) => {
-    sendToRenderer('service:statusChanged', { isRunning });
+    sendToRenderer(IPC_EVENTS.SERVICE_STATUS_CHANGED, { isRunning });
     refreshTrayMenu();
     showNotification('服务状态变更', isRunning ? '上报服务已启动' : '上报服务已停止');
   });
   statusService.setKeyStatusCallback((code, message) => {
-    sendToRenderer('service:keyStatus', { code, message });
+    sendToRenderer(IPC_EVENTS.SERVICE_KEY_STATUS, { code, message });
     if (code === 401) showNotification('密钥失效', message || '设备密钥已被吊销，请重新配对');
     if (code === 429) showNotification('请求限流', message || '上报频率过高，已被服务器限流');
   });
@@ -1982,7 +842,7 @@ app.whenReady().then(async () => {
           }
         } else {
           // 不自动下载，只通知渲染进程弹窗提示
-          sendToRenderer('update:available', result);
+          sendToRenderer(IPC_EVENTS.UPDATE_AVAILABLE, result);
         }
         console.log(`[Main] 发现新版本 v${result.latestVersion}${shouldAutoDownload ? '，已启动后台下载' : '，通知用户'}`);
       }
@@ -2008,7 +868,7 @@ app.whenReady().then(async () => {
             console.log(`[Main] 定期检查 - 版本 v${result.latestVersion} 已下载，跳过重复下载`);
           }
         } else {
-          sendToRenderer('update:available', result);
+          sendToRenderer(IPC_EVENTS.UPDATE_AVAILABLE, result);
         }
         console.log(`[Main] 定期检查 - 发现新版本 v${result.latestVersion}`);
       }
@@ -2043,7 +903,7 @@ app.whenReady().then(async () => {
         m.timestamp = Date.now();
         metricsHistory.push(m);
         if (metricsHistory.length > MAX_METRICS_HISTORY) metricsHistory.shift();
-        sendToRenderer('system:metricsUpdate', m);
+        sendToRenderer(IPC_EVENTS.SYSTEM_METRICS_UPDATE, m);
       } catch { /* 指标采集失败静默处理 */ }
     }, 5000);
   }, 3000);

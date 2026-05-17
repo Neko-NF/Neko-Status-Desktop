@@ -11,6 +11,19 @@
 document.addEventListener('DOMContentLoaded', () => {
   // nekoIPC 由 ipc-bridge.js 挂载到 window.nekoIPC
   const ipc = window.nekoIPC;
+  const IPC_EVENTS = window.__NEKO_IPC_CONTRACTS__?.IPC_EVENTS || {
+    APP_INIT: 'app:init',
+    LOG_ENTRY: 'log:entry',
+    SERVICE_TICK: 'service:tick',
+    SERVICE_STATUS_CHANGED: 'service:statusChanged',
+    SERVICE_KEY_STATUS: 'service:keyStatus',
+    UPDATE_PROGRESS: 'update:progress',
+    UPDATE_AVAILABLE: 'update:available',
+    UPDATE_FORCE_INSTALL_STARTED: 'update:forceInstallStarted',
+    UPDATE_AUTO_DOWNLOADED: 'update:autoDownloaded',
+    UPDATE_AUTO_DOWNLOAD_FAILED: 'update:autoDownloadFailed',
+    SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
+  };
   const consoleNavEntry = document.getElementById('navConsole');
   const setExpandableSectionState = window._nekoUIHelpers?.setExpandableSectionState
     || ((el, expanded, options = {}) => {
@@ -2096,7 +2109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  更新下载进度事件
   // ══════════════════════════════════════════════════════════════
-  ipc.on('update:progress', (data) => {
+  ipc.on(IPC_EVENTS.UPDATE_PROGRESS, (data) => {
     const progressRow   = document.getElementById('updateProgressRow');
     const progressBar   = document.getElementById('updateProgressBar');
     const progressPct   = document.getElementById('updateProgressPct');
@@ -2239,7 +2252,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 后台自动下载完成通知
-  ipc.on('update:autoDownloaded', (data) => {
+  ipc.on(IPC_EVENTS.UPDATE_AUTO_DOWNLOADED, (data) => {
     const badge = document.getElementById('updateStatusBadge');
     if (badge) { badge.className = 'update-status-badge info'; badge.innerHTML = `<i class="ph ph-download-simple"></i> 已下载 v${data.version}，下次启动时安装`; }
     showNekoIsland(`更新 v${data.version} 已在后台下载完成，下次启动时自动安装`, 'info', 6000);
@@ -2250,7 +2263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 强制更新即将安装通知
-  ipc.on('update:forceInstallStarted', (data) => {
+  ipc.on(IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED, (data) => {
     const badge = document.getElementById('updateStatusBadge');
     if (badge) { badge.className = 'update-status-badge error'; badge.innerHTML = `<i class="ph ph-warning"></i> 强制更新安装中...`; }
     showNekoIsland(`强制更新 v${data.version} 安装程序已启动，应用即将关闭`, 'warn', 6000);
@@ -2258,13 +2271,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 后台自动下载失败通知
-  ipc.on('update:autoDownloadFailed', (data) => {
+  ipc.on(IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED, (data) => {
     addLogLine('ERROR', `后台自动下载 v${data.version} 失败: ${data.error}`);
     showNekoIsland(`更新 v${data.version} 后台下载失败，请手动检查更新`, 'error', 5000);
   });
 
   // 启动时推送的新版本可用事件
-  ipc.on('update:available', (result) => {
+  ipc.on(IPC_EVENTS.UPDATE_AVAILABLE, (result) => {
     _lastUpdateResult = result;
     const btn   = document.getElementById('checkUpdateBtn');
     const icon  = document.getElementById('checkUpdateIcon');
@@ -2445,7 +2458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshHealthResultsScrollFx();
   });
 
-  ipc.on('app:init', async (data) => {
+  ipc.on(IPC_EVENTS.APP_INIT, async (data) => {
     refreshConsoleStatus();
     addLogLine('INFO', `Neko Status v${data.version} 初始化完成`);
     addLogLine('INFO', `设备: ${data.deviceName} | 平台: ${data.platform}`);
@@ -3091,7 +3104,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 上报成功 Tick
-  ipc.on('service:tick', (data) => {
+  ipc.on(IPC_EVENTS.SERVICE_TICK, (data) => {
     _lastTickSnapshot = data;
     updateDashboardCards(data);
     updateConsoleTickStatus(data);
@@ -3112,7 +3125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 系统指标更新 → 按区间节流图表刷新 ─────────────────────────────────
   // 1m 区间: 每 5s 刷新, 1h 区间: 每 60s 刷新, 12h 区间: 每 3600s 刷新
   const _trendThrottleMs = { '1m': 5000, '1h': 60000, '12h': 3600000 };
-  ipc.on('system:metricsUpdate', (m) => {
+  ipc.on(IPC_EVENTS.SYSTEM_METRICS_UPDATE, (m) => {
     _lastMetricsSnapshot = m;
     updateConsoleMetricsStatus(m);
     _metricsBuffer.push(m);
@@ -3154,7 +3167,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 服务启停状态变化
-  ipc.on('service:statusChanged', (data) => {
+  ipc.on(IPC_EVENTS.SERVICE_STATUS_CHANGED, (data) => {
     applyServiceState(data.isRunning);
     addDiagnosticEntry('守护进程', 'success',
       data.isRunning ? '上报服务已启动' : '上报服务已停止');
@@ -3162,7 +3175,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 日志条目（来自主进程 StatusService）
-  ipc.on('log:entry', (data) => {
+  ipc.on(IPC_EVENTS.LOG_ENTRY, (data) => {
     addLogLine(data.level, data.msg, data.time);
     // 将 ERROR / WARN 级别同步到诊断日志表
     const lvl = (data.level || '').toUpperCase();
@@ -3174,7 +3187,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 密钥状态事件（密钥失效/设备删除/接管）— 弹出醒目警告弹窗
-  ipc.on('service:keyStatus', (data) => {
+  ipc.on(IPC_EVENTS.SERVICE_KEY_STATUS, (data) => {
     const { code, message } = data;
     if (code === 'KEY_REVOKED') {
       addLogLine('ERROR', `密钥已被撤销: ${message}`);
@@ -4002,7 +4015,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 监听指标推送
-  ipc.on('system:metricsUpdate', (m) => {
+  ipc.on(IPC_EVENTS.SYSTEM_METRICS_UPDATE, (m) => {
     updateDeviceStatusPage(m);
     // 指标阈值 → 诊断日志
     _checkMetricThresholds(m);
