@@ -11,10 +11,8 @@ body {
 
 body {
     font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    color: #e5edf7;
-    background:
-        radial-gradient(circle at 18% 10%, rgba(20, 184, 166, 0.24), transparent 30%),
-        linear-gradient(135deg, #111827 0%, #172033 48%, #101820 100%);
+    color: var(--text-main, #e5edf7);
+    background: var(--bg-gradient, linear-gradient(135deg, #0f172a 0%, #1e293b 100%));
     overflow: hidden;
 }
 
@@ -34,10 +32,12 @@ body {
     justify-content: center;
     gap: 18px;
     padding: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, 0.72);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    border: var(--glass-border, 1px solid rgba(255, 255, 255, 0.14));
+    border-radius: var(--radius-card, 24px);
+    background: var(--glass-bg, rgba(15, 23, 42, 0.72));
+    backdrop-filter: var(--glass-blur, blur(20px));
+    -webkit-backdrop-filter: var(--glass-blur, blur(20px));
+    box-shadow: var(--glass-shadow, 0 24px 60px rgba(0, 0, 0, 0.34));
 }
 
 .brand-mark {
@@ -45,11 +45,12 @@ body {
     height: 44px;
     display: grid;
     place-items: center;
-    border-radius: 8px;
-    color: #04111a;
-    background: #22d3ee;
+    border-radius: var(--radius-compact, 12px);
+    color: #fff;
+    background: var(--theme-color, #06b6d4);
     font-size: 22px;
     font-weight: 800;
+    box-shadow: var(--shadow-sm);
 }
 
 .startup-copy {
@@ -67,7 +68,7 @@ body {
 
 .startup-copy p {
     margin: 0;
-    color: rgba(226, 232, 240, 0.72);
+    color: var(--text-secondary, rgba(226, 232, 240, 0.72));
     font-size: 13px;
     line-height: 1.6;
 }
@@ -77,14 +78,15 @@ body {
     height: 6px;
     overflow: hidden;
     border-radius: 999px;
-    background: rgba(148, 163, 184, 0.18);
+    background: color-mix(in srgb, var(--text-main) 10%, transparent);
 }
 
 .progress-fill {
     width: 36%;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #22d3ee, #34d399);
+    background: var(--theme-color, #06b6d4);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--theme-color) 50%, transparent);
     transition: width 0.24s ease;
 }
 
@@ -95,7 +97,7 @@ body {
 
 .startup-meta {
     min-height: 18px;
-    color: rgba(226, 232, 240, 0.62);
+    color: var(--text-secondary, rgba(226, 232, 240, 0.62));
     font-size: 12px;
 }
 

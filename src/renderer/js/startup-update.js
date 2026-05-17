@@ -23,6 +23,14 @@
     if (payload.title) title.textContent = payload.title;
     if (payload.message) desc.textContent = payload.message;
     if (payload.detail) meta.textContent = payload.detail;
+
+    if (payload.themeMode) {
+      document.documentElement.setAttribute('data-theme', payload.themeMode);
+    }
+    if (payload.themeColor) {
+      document.documentElement.style.setProperty('--theme-color', payload.themeColor);
+    }
+
     setProgress(payload.pct);
   }
 

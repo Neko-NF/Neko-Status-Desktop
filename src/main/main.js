@@ -323,9 +323,14 @@ function createStartupUpdateWindow() {
 }
 
 function sendStartupUpdateStatus(payload) {
-  pendingStartupStatus = payload;
+  const themePayload = {
+    ...payload,
+    themeColor: configStore.get('themeColor') || '#06b6d4',
+    themeMode: configStore.get('themeMode') || 'dark',
+  };
+  pendingStartupStatus = themePayload;
   if (startupUpdateWindow && !startupUpdateWindow.isDestroyed() && startupUpdateWindow.webContents) {
-    startupUpdateWindow.webContents.send(IPC_EVENTS.STARTUP_UPDATE_STATUS, payload);
+    startupUpdateWindow.webContents.send(IPC_EVENTS.STARTUP_UPDATE_STATUS, themePayload);
   }
 }
 
@@ -429,20 +434,25 @@ function ensureWindowsNotificationShortcut() {
     const args = app.isPackaged ? '' : `"${app.getAppPath()}"`;
     const cwd = app.getAppPath();
     const icon = getAppIconPath();
-    const shortcutPaths = [
-      path.join(programsDir, 'NekoStatus.lnk'),
+    const primaryShortcut = path.join(programsDir, 'NekoStatus.lnk');
+    const legacyShortcuts = [
       path.join(programsDir, 'Neko Status.lnk'),
-      path.join(desktopDir, 'NekoStatus.lnk'),
-      path.join(desktopDir, 'Neko Status.lnk'),
-    ];
-    fs.mkdirSync(programsDir, { recursive: true });
-    if (desktopDir) fs.mkdirSync(desktopDir, { recursive: true });
+      desktopDir ? path.join(desktopDir, 'Neko Status.lnk') : null,
+    ].filter(Boolean);
 
-    for (const shortcutPath of shortcutPaths) {
-      const written = writeShortcutIfNeeded(shortcutPath, target, args, cwd, icon);
-      if (!written) return { ok: false, error: 'shortcut-write-failed', shortcutPath };
+    fs.mkdirSync(programsDir, { recursive: true });
+
+    // 清理旧的带空格快捷方式
+    for (const legacy of legacyShortcuts) {
+      if (fs.existsSync(legacy)) {
+        try { fs.unlinkSync(legacy); } catch {}
+      }
     }
-    return { ok: true, shortcutPath: shortcutPaths[0] };
+
+    const written = writeShortcutIfNeeded(primaryShortcut, target, args, cwd, icon);
+    if (!written) return { ok: false, error: 'shortcut-write-failed', shortcutPath: primaryShortcut };
+    
+    return { ok: true, shortcutPath: primaryShortcut };
   } catch (err) {
     console.warn('[Notification] Failed to prepare Windows shortcut:', err.message);
     return { ok: false, error: err.message };
@@ -796,21 +806,26 @@ async function waitForNetwork(timeoutMs = 30000) {
 app.whenReady().then(async () => {
   ensureWindowsNotificationShortcut();
   setupIPC();
-  createStartupUpdateWindow();
+  const shouldAutoDownload = configStore.get('autoDownload') === true;
+  const pendingInstall = configStore.get('pendingInstall');
+  const isDevScenario = !app.isPackaged && !!process.env.NEKO_DEV_STARTUP_UPDATE_SCENARIO;
 
-  const startupUpdate = await runStartupUpdateGate({
-    configStore,
-    checkForUpdates,
-    launchInstaller,
-    sendToRenderer: sendStartupUpdateProgress,
-    onStatus: sendStartupUpdateStatus,
-    setIsQuitting: (value) => { isQuitting = value; },
-    quitApp: () => app.quit(),
-    showNotification,
-    isPackaged: app.isPackaged,
-  });
-  if (startupUpdate.action === 'installing') return;
-  closeStartupUpdateWindow();
+  if (shouldAutoDownload || pendingInstall || isDevScenario) {
+    createStartupUpdateWindow();
+    const startupUpdate = await runStartupUpdateGate({
+      configStore,
+      checkForUpdates,
+      launchInstaller,
+      sendToRenderer: sendStartupUpdateProgress,
+      onStatus: sendStartupUpdateStatus,
+      setIsQuitting: (value) => { isQuitting = value; },
+      quitApp: () => app.quit(),
+      showNotification,
+      isPackaged: app.isPackaged,
+    });
+    if (startupUpdate.action === 'installing') return;
+    closeStartupUpdateWindow();
+  }
 
   createWindow();
   createTray();
