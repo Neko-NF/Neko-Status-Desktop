@@ -1,4 +1,5 @@
 const { IPC_CHANNELS, createIpcSuccess, createIpcError } = require('../../shared/ipc-contracts');
+const { validateStreamConfigPayload } = require('../../shared/schemas');
 
 function registerStreamIpc({ ipcMain, streamService }) {
   ipcMain.handle(IPC_CHANNELS.STREAM_GET_CONFIG, async () => {
@@ -11,6 +12,8 @@ function registerStreamIpc({ ipcMain, streamService }) {
   });
 
   ipcMain.handle(IPC_CHANNELS.STREAM_SAVE_CONFIG, async (_, config) => {
+    const validation = validateStreamConfigPayload(config);
+    if (!validation.ok) return createIpcError('INVALID_STREAM_CONFIG', validation.reason);
     try {
       const result = await streamService.saveStreamConfig(config);
       if (result.ok) return createIpcSuccess({ ok: true, success: true, ...result.config });
@@ -54,6 +57,8 @@ function registerStreamIpc({ ipcMain, streamService }) {
   });
 
   ipcMain.handle(IPC_CHANNELS.STREAM_TEST_SRS, async (_, config) => {
+    const validation = validateStreamConfigPayload(config);
+    if (!validation.ok) return createIpcError('INVALID_STREAM_CONFIG', validation.reason);
     try {
       const result = await streamService.testSrsConnection(config);
       if (result.ok) return createIpcSuccess(result);
@@ -64,6 +69,8 @@ function registerStreamIpc({ ipcMain, streamService }) {
   });
 
   ipcMain.handle(IPC_CHANNELS.STREAM_TEST_OBS_WS, async (_, config) => {
+    const validation = validateStreamConfigPayload(config);
+    if (!validation.ok) return createIpcError('INVALID_STREAM_CONFIG', validation.reason);
     try {
       const result = await streamService.testObsWebSocket(config);
       if (result.connected) return createIpcSuccess(result);
@@ -74,6 +81,8 @@ function registerStreamIpc({ ipcMain, streamService }) {
   });
 
   ipcMain.handle(IPC_CHANNELS.STREAM_APPLY_TO_OBS, async (_, config) => {
+    const validation = validateStreamConfigPayload(config);
+    if (!validation.ok) return createIpcError('INVALID_STREAM_CONFIG', validation.reason);
     try {
       const result = await streamService.applyStreamConfigToObs(config);
       if (result.ok) return createIpcSuccess({ ok: true, success: true });

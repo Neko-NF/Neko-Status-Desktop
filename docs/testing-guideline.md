@@ -55,10 +55,29 @@ node --test --test-concurrency=1 "tests/unit/*.test.js"
 
 开发版人工检查必须确认：
 
+- `npm run dev` 通过真实 GUI 启动方式验证，不要把受限 shell / 沙箱里启动 Electron 的结果当作唯一结论。
 - 日志没有 `preload bridge missing`。
 - 日志没有 `process is not defined`。
+- 日志没有持续性的 `GPU process isn't usable`；如果出现，确认启动脚本是否已触发软件渲染兜底并继续打开窗口。
 - 点击页面按钮时，不只是 UI 状态变化，还能看到后端状态或持久化结果变化。
 - 新增 IPC 的返回结构有单元测试覆盖。
+
+## Dev 启动与临时 exe 对照
+
+当开发版启动失败但怀疑不是业务代码问题时，按以下顺序复核：
+
+1. 先运行 `npm run verify`，确认静态校验和单元测试通过。
+2. 运行 `npm run build`，启动 `dist/win-unpacked/NekoStatus.exe` 做临时正式态对照。
+3. 如果临时 exe 可以打开，而受限 shell 中的 `npm run dev` 报 `GPU process exited unexpectedly` 或 `GPU process isn't usable. Goodbye.`，优先判断为 dev 启动环境 / Electron dev binary / GPU 初始化问题。
+4. 使用真实 GUI 权限重新启动 `npm run dev`。在 Codex 或类似工具中，GUI 启动应走提升权限，不要用普通沙箱命令直接下结论。
+5. 如果 GUI 权限下 dev 仍失败，再检查 `scripts/start-electron.js` 的 GPU fallback、`src/main/main.js` 早期 `app.disableHardwareAcceleration()` 分支，以及最近是否新增透明窗口、无边框窗口或启动前更新窗口逻辑。
+
+判断依据：
+
+- GPU fatal：优先看启动环境和 Electron/Chromium GPU 参数。
+- `preload bridge missing`：优先看 `webPreferences.preload`、`contextIsolation`、`sandbox`。
+- `process is not defined`：优先看 renderer 是否直接访问 Node 全局。
+- IPC handler missing：优先看 `src/shared/ipc-contracts.js`、`src/preload/index.js`、`src/main/ipc/*.ipc.js` 是否同步。
 
 ## 条件型 UIUX / 前后端状态测试
 
@@ -70,14 +89,18 @@ node --test --test-concurrency=1 "tests/unit/*.test.js"
 npm run dev:startup-update:checking
 npm run dev:startup-update:available
 npm run dev:startup-update:download
+npm run dev:startup-update:installing
 npm run dev:startup-update:failed
 npm run dev:startup-update:offline
+npm run dev:startup-update:up-to-date
 ```
 
 也可以直接传参：
 
 ```bash
 npm run dev -- --dev-startup-update=download
+npm run dev -- --dev-startup-update=installing
+npm run dev -- --dev-startup-update=up-to-date
 ```
 
 约束：
@@ -86,3 +109,15 @@ npm run dev -- --dev-startup-update=download
 - 场景入口要覆盖前端 UI、preload 事件、主进程状态分发三层，不允许只做静态页面截图。
 - 新增条件型 UI 时，至少补一个单元测试或开发场景命令，并在相关文档写明如何触发。
 - 失败态必须验证“放行路径”：例如启动更新失败或离线时，必须能继续打开主窗口。
+# 2026-05 Renderer service 检查补充
+
+拆分 renderer service 或 page 后，提交前至少补充以下语法检查：
+
+```bash
+node --check src/renderer/js/services/ipc-client.js
+node --check src/renderer/js/services/stream-client.js
+node --check src/renderer/js/pages/stream.page.js
+node --check src/renderer/js/pages/settings.page.js
+```
+
+service 层测试优先覆盖：方法名映射、运行时读取 `window.nekoIPC`、mock 覆盖兼容、旧返回字段透传。

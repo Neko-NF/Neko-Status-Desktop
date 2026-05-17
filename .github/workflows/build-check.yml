@@ -23,11 +23,13 @@ jobs:
       - name: Verify
         run: npm run verify
 
-      - name: Build ZIP package
-        run: npm run build:zip
+      - name: Build Windows packages
+        run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: neko-status-build-check
-          path: dist/*.zip
+          path: |
+            dist/*.exe
+            dist/*.zip

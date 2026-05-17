@@ -1794,6 +1794,7 @@
 .console-nav,
 .conditional-nav {
     display: flex !important;
+    overflow: hidden;
     transform-origin: center left;
     transition:
         opacity 0.22s ease,
@@ -1807,7 +1808,9 @@
 .console-nav:not(.show),
 .conditional-nav:not(.show) {
     max-height: 0;
-    margin: 0;
+    min-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
     padding-top: 0;
     padding-bottom: 0;
     opacity: 0;
@@ -1819,6 +1822,8 @@
 .console-nav.show,
 .conditional-nav.show {
     max-height: 50px;
+    min-height: 44px;
+    margin-bottom: 8px;
     opacity: 1;
     transform: scale(1);
     visibility: visible;

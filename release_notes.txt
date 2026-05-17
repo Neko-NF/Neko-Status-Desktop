@@ -1,8 +1,13 @@
-## 新增
+## 工程化完善
 
-- 优化更新检查 UI 样式，完全移除硬编码色值，无缝适配全局设计系统的 tokens 变量（包含自定义主题色和夜晚模式的玻璃质感与色彩）。
+- 继续推进 renderer 模块化拆分，新增 `services/ipc-client.js` 和 `services/stream-client.js`，直播推流页通过 service 层访问 IPC。
+- 设置页字体选择器迁移到 `settings.page.js`，减少 `app.js` 中的集中式页面逻辑，并保留已保存字体的启动兼容。
+- `scripts/verify.js` 新增 renderer service 文件结构检查，并将 IPC 事件硬编码扫描扩展到整个 `src/renderer`。
+- 新增 renderer service 单元测试，覆盖 stream client 方法映射和运行时 mock 兼容。
+- 同步更新架构、前端规范、IPC 契约和测试规范，明确后续 page -> service -> preload -> main 的调用边界。
 
-## 修复
+## 验证
 
-- 修复软件安装后可能会在桌面和开始菜单生成重复快捷方式（`Neko Status.lnk` 与 `NekoStatus.lnk` 并存）的问题。现在自动清理并只维护用于 Windows 通知的无空格开始菜单快捷方式。
-- 修复软件打开前的自动更新检查 UI 在用户未开启“自动下载新版本”开关时也会显示并拦截应用启动的问题。现在当且仅当用户开启“自动下载新版本”或存在本地待安装包时才会前置展示启动更新 UI，其余情况直接极速启动软件，并在 15 秒后转为纯后台静默运行。
+- `npm run verify` 通过。
+- `npm run build:zip` 通过。
+- dev 后台 smoke test 可正常启动，未发现 preload bridge 缺失、renderer exception 或 GPU fatal。

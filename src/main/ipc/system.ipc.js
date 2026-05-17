@@ -85,7 +85,7 @@ function registerSystemIpc(deps) {
 
   const focusAssistRegPath = 'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings';
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_FOCUS_ASSIST, async () => {
-    if (process.platform !== 'win32') return createIpcError('NOT_WINDOWS', '非 Windows 系统');
+    if (os.platform() !== 'win32') return createIpcError('NOT_WINDOWS', '非 Windows 系统');
     try {
       let dndEnabled = false;
       try {
@@ -112,7 +112,7 @@ function registerSystemIpc(deps) {
   });
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_SET_FOCUS_ASSIST, async (_, enabled) => {
-    if (process.platform !== 'win32') return createIpcError('NOT_WINDOWS', '非 Windows 系统');
+    if (os.platform() !== 'win32') return createIpcError('NOT_WINDOWS', '非 Windows 系统');
     try {
       try {
         execSync(

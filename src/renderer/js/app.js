@@ -203,7 +203,8 @@
 
             normalizeServiceHealthCheckCopy();
 
-            function syncNavIndicator(target) {
+            let navIndicatorFrame = 0;
+            function syncNavIndicatorNow(target) {
                 if (!navMenu || !navIndicator) return;
                 const item = target || document.querySelector('.nav-menu .nav-item.active');
                 if (!item || getComputedStyle(item).display === 'none') return;
@@ -212,22 +213,29 @@
                 navMenu.style.setProperty('--nav-indicator-h', `${item.offsetHeight}px`);
                 navIndicator.classList.add('is-ready');
             }
-
-            requestAnimationFrame(() => syncNavIndicator());
-            window.addEventListener('resize', () => syncNavIndicator());
-            navMenu?.addEventListener('transitionend', () => syncNavIndicator());
-            if (window.ResizeObserver && navMenu) {
-                const navResizeObserver = new ResizeObserver(() => syncNavIndicator());
-                navResizeObserver.observe(navMenu);
-                navItems.forEach(item => navResizeObserver.observe(item));
+            function syncNavIndicator(target) {
+                if (navIndicatorFrame) cancelAnimationFrame(navIndicatorFrame);
+                navIndicatorFrame = requestAnimationFrame(() => {
+                    navIndicatorFrame = 0;
+                    syncNavIndicatorNow(target);
+                });
             }
+            function syncNavIndicatorAfterLayout(target) {
+                syncNavIndicator(target);
+                requestAnimationFrame(() => syncNavIndicator(target));
+                setTimeout(() => syncNavIndicator(target), 280);
+            }
+            window._nekoSyncNavIndicator = syncNavIndicatorAfterLayout;
+
+            syncNavIndicator();
+            window.addEventListener('resize', () => syncNavIndicator());
             if (window.MutationObserver && navMenu) {
                 const navMutationObserver = new MutationObserver(() => requestAnimationFrame(() => syncNavIndicator()));
                 navMutationObserver.observe(navMenu, {
                     subtree: true,
-                    childList: true,
+                    childList: false,
                     attributes: true,
-                    attributeFilter: ['class', 'style'],
+                    attributeFilter: ['class'],
                 });
             }
 
@@ -316,6 +324,10 @@
                             if (topNavEditBtn) topNavEditBtn.classList.add('hidden-action');
                             if (headerTitleText) {
                                 headerTitleText.innerHTML = '<i class="ph ph-gear" style="color: var(--theme-color);"></i>\n                    设置 / Settings';
+                            }
+                            if (window._nekoModules?.pages?.SettingsPage && !window._settingsPageInited) {
+                                window._settingsPageInited = true;
+                                window._nekoModules.pages.SettingsPage.init();
                             }
                         } else if (targetAreaId === 'page-stream') {
                             if (topNavEditBtn) topNavEditBtn.classList.add('hidden-action');
@@ -526,6 +538,7 @@
                     navConsole.classList.add('show');
                     navConsole.setAttribute('aria-hidden', 'false');
                     navConsole.removeAttribute('tabindex');
+                    syncNavIndicatorAfterLayout();
                 } else {
                     navConsole.classList.remove('show');
                     navConsole.setAttribute('aria-hidden', 'true');
@@ -533,7 +546,7 @@
                     if (navConsole.classList.contains('active')) {
                         document.querySelector('.nav-menu .nav-item[data-target="mainDashboardArea"]')?.click();
                     } else {
-                        syncNavIndicator();
+                        syncNavIndicatorAfterLayout();
                     }
                 }
             });
@@ -1775,7 +1788,7 @@
             }
 
             // ======== 设置页：系统字体列表填充（从系统枚举） ======== //
-            const stgFontSelect = document.getElementById('stgFontSelect');
+            const stgFontSelect = null;
             if (stgFontSelect) {
                 function applyFont(font) {
                     if (font) {

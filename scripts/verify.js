@@ -99,6 +99,8 @@ function checkFileStructure() {
     'src/renderer/js/app.js',
     'src/renderer/js/app-ipc.js',
     'src/renderer/js/ipc-bridge.js',
+    'src/renderer/js/services/ipc-client.js',
+    'src/renderer/js/services/stream-client.js',
     'src/renderer/js/components/ui-helpers.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
@@ -389,7 +391,10 @@ function checkIpcChannels() {
     else warn(`主进程可能缺少 ${channel} 注册`);
   }
 
-  const rendererIpc = readFile('src/renderer/js/app-ipc.js') || '';
+  const rendererIpc = walkTextFiles(SRC_RENDERER)
+    .filter((abs) => abs.endsWith('.js'))
+    .map((abs) => fs.readFileSync(abs, 'utf8'))
+    .join('\n');
   const hardcodedRendererEvents = rendererIpc.match(/ipc\.on\(['"][^'"]+['"]/g) || [];
   if (hardcodedRendererEvents.length === 0) {
     pass('renderer IPC 事件监听使用 IPC_EVENTS 常量或兼容封装');

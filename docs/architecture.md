@@ -109,8 +109,9 @@
 
 项目不是一次性重写，而是持续工程化迁移：
 
-- **已完成**：preload 安全桥、共享 IPC 契约、主进程 IPC 注册常量化、主进程壳层拆分、隐私选择器 preload 化、所有主进程 IPC 领域模块化（config / api / auth / stream / system / service / update）、更新 payload 校验、renderer 通用 UI helper 第一阶段组件化、基础测试、编码污染扫描与 CI 入口
+- **已完成**：preload 安全桥、共享 IPC 契约、主进程 IPC 注册常量化、主进程壳层拆分、隐私选择器 preload 化、所有主进程 IPC 领域模块化（config / api / auth / stream / system / service / update）、更新/auth/config/stream payload 校验、renderer 通用 UI helper 第一阶段组件化、基础测试、编码污染扫描与 CI 入口
 - **主进程 IPC 拆分完成**：`main.js` 中不再保留任何内联 IPC handler，所有 IPC 均通过 `src/main/ipc/*.ipc.js` 模块注册
+- **IPC 契约继续收敛**：auth 和 config 读写已改为主进程统一返回 `{ ok, data, error }`，preload 继续负责兼容解包，renderer 仍可读取既有的业务字段
 - **Renderer 第一阶段拆分**：`src/renderer/js/components/ui-helpers.js` 已承接可复用 UI helper；`app.js` 仍保留旧实现作为兜底，但运行时优先使用组件目录中的 helper
 - **下一步重点**：把 renderer 从 `app.js / app-ipc.js` 逐步拆成更清晰的 `pages / services / state / components` 结构
 
@@ -127,3 +128,9 @@
 - renderer 不得直接访问 `process`、`require`、`ipcRenderer`、`fs` 等 Node/Electron 能力。
 - 运行时版本、系统能力、文件保存、截图等能力必须通过 preload 暴露的最小 API 转发。
 - `ipc-bridge.js` 的 fallback 只用于防崩溃，不可作为功能验收依据。
+# 2026-05 Renderer service 进展
+
+- `src/renderer/js/services/ipc-client.js` 已作为 renderer IPC 基础 client，负责运行时查找 `window.nekoIPC` 并统一缺失方法报错。
+- `src/renderer/js/services/stream-client.js` 已封装直播推流页使用的 stream IPC 方法，保留原返回结构透传以兼容既有 UI 判断。
+- `src/renderer/js/pages/stream.page.js` 已从直接访问 `window.nekoIPC` 改为调用 `StreamClient`。
+- `src/renderer/js/pages/settings.page.js` 已承接设置页字体选择器，`app.js` 中对应旧绑定保持停用兜底，避免重复事件绑定。

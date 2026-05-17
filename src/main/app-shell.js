@@ -113,7 +113,12 @@ function createAppShell(deps) {
     };
 
     mainWindow.once('ready-to-show', revealIfNeeded);
-    mainWindow.webContents.on('did-finish-load', pushInitialState);
+    mainWindow.webContents.on('did-finish-load', () => {
+      if (process.env.NEKO_STARTUP_TRACE === '1') {
+        console.log('[StartupTrace] main window did-finish-load');
+      }
+      pushInitialState();
+    });
 
     if (!app.isPackaged) {
       mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
@@ -129,6 +134,13 @@ function createAppShell(deps) {
 
     mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
       console.error('[MainWindow] failed to load renderer:', errorCode, errorDescription);
+    });
+
+    mainWindow.on('closed', () => {
+      if (process.env.NEKO_STARTUP_TRACE === '1') {
+        console.log('[StartupTrace] main window closed');
+      }
+      setMainWindow(null);
     });
 
     mainWindow.on('close', (event) => {
@@ -167,9 +179,6 @@ function createAppShell(deps) {
       }
     });
 
-    mainWindow.on('closed', () => {
-      setMainWindow(null);
-    });
   }
 
   function showWindow() {

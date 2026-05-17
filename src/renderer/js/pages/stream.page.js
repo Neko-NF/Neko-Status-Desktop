@@ -107,6 +107,10 @@
     if (duration) duration.textContent = isLive && info?.streamTime ? `${Math.floor(info.streamTime / 60)} min` : '';
   }
 
+  function streamClient() {
+    return window._nekoModules?.services?.StreamClient || null;
+  }
+
   const StreamPage = {
     init() {
       this.bindEvents();
@@ -114,14 +118,15 @@
     },
 
     async initData() {
-      if (!window.nekoIPC) return;
+      const client = streamClient();
+      if (!client?.isReady?.()) return;
       try {
-        const cfg = await window.nekoIPC.getStreamConfig();
+        const cfg = await client.getConfig();
         applyConfigToForm(cfg || {});
         renderStreamIdentity(cfg || {});
 
         try {
-          const info = await window.nekoIPC.getStreamKey();
+          const info = await client.getStreamKey();
           const key = streamKeyFrom(info);
           if (key) renderStreamIdentity({ ...(cfg || {}), streamKey: key });
         } catch {}
@@ -134,7 +139,8 @@
     },
 
     bindEvents() {
-      if (!window.nekoIPC) return;
+      const client = streamClient();
+      if (!client?.isReady?.()) return;
 
       replaceHandler('goToStreamSettings', () => {
         document.querySelector('.nav-item[data-target="page-settings"]')?.click();
@@ -150,7 +156,7 @@
 
       replaceHandler('resetStreamKeyBtn', async () => {
         try {
-          const info = await window.nekoIPC.resetStreamKey();
+          const info = await client.resetStreamKey();
           const key = streamKeyFrom(info);
           renderStreamIdentity({ ...collectSrsSettings(), streamKey: key });
           notify('Stream Key 已重置', 'success');
@@ -173,7 +179,7 @@
             obsWsPort: Number($('obsWsPort')?.value || 4455),
             obsWsPassword: $('obsWsPassword')?.value || '',
           };
-          const saved = await window.nekoIPC.saveStreamConfig(cfg);
+          const saved = await client.saveConfig(cfg);
           if (saved && saved.ok === false) throw new Error(saved.error || '保存失败');
           applyConfigToForm(saved || cfg);
           renderStreamIdentity(saved || cfg);
@@ -195,7 +201,7 @@
           resultEl.className = 'test-result-label pending';
         }
         try {
-          const res = await window.nekoIPC.testSrsConnection(collectSrsSettings());
+          const res = await client.testSrsConnection(collectSrsSettings());
           if (res?.ok) {
             if (resultEl) {
               resultEl.textContent = `✓ 连通成功 ${res.srsVersion ? `SRS ${res.srsVersion}` : ''}`;
@@ -220,7 +226,7 @@
 
       replaceHandler('exportObsConfigBtn', async () => {
         try {
-          const res = await window.nekoIPC.exportObsServiceConfig();
+          const res = await client.exportObsServiceConfig();
           const savedPath = typeof res === 'string' ? res : res?.path;
           if (!savedPath || res?.ok === false) throw new Error(res?.error || '导出失败');
           notify(`OBS 配置已导出: ${savedPath}`, 'success');
@@ -248,19 +254,21 @@
     },
 
     async pollStreamStatus() {
-      if (!window.nekoIPC) return;
+      const client = streamClient();
+      if (!client?.isReady?.()) return;
       try {
-        renderLiveStatus(await window.nekoIPC.getStreamLiveStatus());
+        renderLiveStatus(await client.getLiveStatus());
       } catch {
         renderLiveStatus('error');
       }
     },
 
     async testObsWebSocket(options = {}) {
-      if (!window.nekoIPC) return;
+      const client = streamClient();
+      if (!client?.isReady?.()) return;
       setObsStatus(false, 'OBS WebSocket 连接中...');
       try {
-        const res = await window.nekoIPC.testObsWebSocket(collectObsSettings());
+        const res = await client.testObsWebSocket(collectObsSettings());
         if (res?.connected) {
           setObsStatus(true, `OBS 已连接${res.obsVersion ? ` (${res.obsVersion})` : ''}`);
           if (!options.silent) notify('OBS WebSocket 连接成功', 'success');
@@ -275,9 +283,10 @@
     },
 
     async applyStreamConfigToObs() {
-      if (!window.nekoIPC) return;
+      const client = streamClient();
+      if (!client?.isReady?.()) return;
       try {
-        const res = await window.nekoIPC.applyStreamConfigToObs(collectObsSettings());
+        const res = await client.applyConfigToObs(collectObsSettings());
         if (res?.ok || res?.success) {
           notify('OBS 推流配置已应用', 'success');
         } else {

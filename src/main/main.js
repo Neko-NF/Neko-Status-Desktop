@@ -56,6 +56,38 @@ const {
 const APP_NAME    = 'Neko Status';
 const APP_VERSION = app.getVersion();
 
+function writeStartupDiagnostic(label, error) {
+  const message = [
+    `[${new Date().toISOString()}] ${label}`,
+    error?.stack || error?.message || String(error || 'unknown error'),
+    '',
+  ].join('\n');
+  const candidates = [];
+  try { candidates.push(path.join(app.getPath('userData'), 'startup-diagnostics.log')); } catch {}
+  try { candidates.push(path.join(path.dirname(process.execPath), 'startup-diagnostics.log')); } catch {}
+  for (const filePath of candidates) {
+    try {
+      fs.appendFileSync(filePath, message, 'utf8');
+      return;
+    } catch {}
+  }
+}
+
+function traceStartup(message, extra = '') {
+  if (process.env.NEKO_STARTUP_TRACE !== '1') return;
+  writeStartupDiagnostic(`trace: ${message}`, extra ? { message: String(extra) } : null);
+}
+
+process.on('uncaughtException', (error) => {
+  writeStartupDiagnostic('uncaughtException', error);
+  console.error('[Startup] uncaughtException:', error);
+});
+
+process.on('unhandledRejection', (error) => {
+  writeStartupDiagnostic('unhandledRejection', error);
+  console.error('[Startup] unhandledRejection:', error);
+});
+
 // 检测是否为开机自启动模式
 const isAutoStart = process.argv.includes('--autostart');
 
@@ -295,6 +327,8 @@ function createStartupUpdateWindow() {
     maximizable: false,
     minimizable: false,
     frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
     show: false,
     title: `${APP_NAME} Update`,
     icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
@@ -325,7 +359,8 @@ function createStartupUpdateWindow() {
 function sendStartupUpdateStatus(payload) {
   const themePayload = {
     ...payload,
-    themeColor: configStore.get('themeColor') || '#06b6d4',
+    themeColor: configStore.get('seedColor') || configStore.get('themeColor') || '#06b6d4',
+    customThemeColor: configStore.get('customSeedColor') || '',
     themeMode: configStore.get('themeMode') || 'dark',
   };
   pendingStartupStatus = themePayload;
@@ -353,7 +388,11 @@ function closeStartupUpdateWindow() {
 //  单 实 例 运 行
 // ═══════════════════════════════════════════════════════════════════════
 const gotTheLock = app.requestSingleInstanceLock();
+traceStartup('single-instance lock result', gotTheLock ? 'granted' : 'denied');
 if (!gotTheLock) {
+  writeStartupDiagnostic('single-instance lock denied', {
+    message: 'Another Neko Status instance is already running or holding the lock.',
+  });
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -804,13 +843,16 @@ async function waitForNetwork(timeoutMs = 30000) {
 //  应 用 生 命 周 期
 // ═══════════════════════════════════════════════════════════════════════
 app.whenReady().then(async () => {
+  traceStartup('whenReady entered', `packaged=${app.isPackaged}`);
   ensureWindowsNotificationShortcut();
   setupIPC();
   const shouldAutoDownload = configStore.get('autoDownload') === true;
   const pendingInstall = configStore.get('pendingInstall');
   const isDevScenario = !app.isPackaged && !!process.env.NEKO_DEV_STARTUP_UPDATE_SCENARIO;
+  traceStartup('startup gate flags', `autoDownload=${shouldAutoDownload}; pending=${!!pendingInstall}; devScenario=${isDevScenario}`);
 
   if (shouldAutoDownload || pendingInstall || isDevScenario) {
+    traceStartup('startup gate begin');
     createStartupUpdateWindow();
     const startupUpdate = await runStartupUpdateGate({
       configStore,
@@ -823,12 +865,16 @@ app.whenReady().then(async () => {
       showNotification,
       isPackaged: app.isPackaged,
     });
+    traceStartup('startup gate result', JSON.stringify(startupUpdate || {}));
     if (startupUpdate.action === 'installing') return;
     closeStartupUpdateWindow();
   }
 
+  traceStartup('create main window begin');
   createWindow();
+  traceStartup('create tray begin');
   createTray();
+  traceStartup('shell created');
 
   // StatusService 日志/Tick/状态变更 → 推送到渲染进程
   statusService.setLogCallback((level, msg, time) => {
@@ -937,6 +983,10 @@ app.whenReady().then(async () => {
       } catch { /* 指标采集失败静默处理 */ }
     }, 5000);
   }, 3000);
+}).catch((error) => {
+  writeStartupDiagnostic('whenReady failed', error);
+  console.error('[Startup] whenReady failed:', error);
+  app.quit();
 });
 
 app.on('activate', () => {

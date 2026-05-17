@@ -1,6 +1,7 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*.*.*"
@@ -28,6 +29,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate release tag matches package version
+        shell: pwsh
+        run: |
+          $refType = "${{ github.ref_type }}"
+          if ($refType -ne "tag") {
+            Write-Error "Release workflow must run from a v* tag. Current ref type: $refType"
+            exit 1
+          }
+
+          $tagVersion = "${{ github.ref_name }}" -replace '^v',''
+          $packageVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          if ($tagVersion -ne $packageVersion) {
+            Write-Error "Tag version ($tagVersion) does not match package.json version ($packageVersion)."
+            exit 1
+          }
+
+          echo "VERSION=$tagVersion" >> $env:GITHUB_ENV
+
       - name: Verify
         run: npm run verify
 
@@ -39,7 +58,6 @@ jobs:
       - name: Build SHA256 sums
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v',''
           $distDir = "dist"
           $sumsPath = "$distDir\SHA256SUMS.txt"
           if (Test-Path $sumsPath) { Remove-Item $sumsPath }
@@ -48,8 +66,6 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)" | Out-File -FilePath $sumsPath -Append -Encoding utf8
           }
-
-          echo "VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Resolve release flags
         shell: pwsh

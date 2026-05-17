@@ -1,7 +1,7 @@
 # Neko Status — 版本号规范与更新通道说明
 
 > **适用范围**：Neko Status Electron 桌面客户端  
-> **最后更新**：2026-03-09
+> **最后更新**：2026-05-17
 
 ---
 
@@ -98,8 +98,8 @@ git push origin v1.2.0-nightly.20260310
 `package.json` 中的 `version` 字段决定：
 
 - 应用内显示的版本号（`app.getVersion()`）
-- 构建产物名称（如 `NekoStatus-Setup-1.0.0.exe`）
-- GitHub Actions 读取并写入 Release Tag 名称
+- 构建产物名称（如 `NekoStatus-Setup-1.2.6.exe`）
+- GitHub Actions 读取并校验 Release Tag 名称
 
 **发版前必须同步修改 `package.json` 版本号**：
 
@@ -182,7 +182,7 @@ Neko Status v{version} [Nightly {date}]  # Nightly
 ## 七、快速参考卡
 
 ```
-当前版本: 1.0.0（稳定版，见 package.json）
+当前版本: 1.2.6（稳定版，见 package.json）
 
 发下一个 Bug 修复:
   1. 修复 Bug

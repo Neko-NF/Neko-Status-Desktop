@@ -24,11 +24,14 @@
     if (payload.message) desc.textContent = payload.message;
     if (payload.detail) meta.textContent = payload.detail;
 
-    if (payload.themeMode) {
-      document.documentElement.setAttribute('data-theme', payload.themeMode);
+    if (payload.themeMode === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else if (payload.themeMode) {
+      document.documentElement.removeAttribute('data-theme');
     }
-    if (payload.themeColor) {
-      document.documentElement.style.setProperty('--theme-color', payload.themeColor);
+    const themeColor = payload.themeColor || payload.customThemeColor;
+    if (themeColor) {
+      document.documentElement.style.setProperty('--theme-color', themeColor);
     }
 
     setProgress(payload.pct);

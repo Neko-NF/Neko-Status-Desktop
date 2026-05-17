@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Development guide
+    url: https://github.com/Neko-NF/Neko-Status-Desktop/blob/main/CONTRIBUTING.md
+    about: Read this before opening implementation or refactor work.
+  - name: Release workflow
+    url: https://github.com/Neko-NF/Neko-Status-Desktop/blob/main/docs/RELEASE_WORKFLOW.md
+    about: Use this for packaging, versioning, and release process questions.

@@ -79,13 +79,19 @@
 
 现象：
 - 为绕过 GPU 崩溃使用软件渲染后，界面明显卡顿。
+- 在受限/沙箱环境里直接跑 `npm run dev`，日志出现 `GPU process exited unexpectedly`、`GPU process isn't usable. Goodbye.`，但临时构建出的 `dist/win-unpacked/NekoStatus.exe` 可以正常打开。
 
 根因：
 - 默认关闭硬件加速会让整个 UI 走软件渲染。
 - 截图权限被拒绝时，自动截图反复失败也会拖慢后台循环。
+- GUI 程序必须在真实桌面/GUI 权限下验证；受限 shell 或沙箱里启动 Electron dev binary，可能触发 Chromium GPU 子进程失败，和业务代码、preload、IPC 失败不是同一种问题。
+- 开发版 `node_modules/electron` 与打包后的 `NekoStatus.exe` 启动路径不同，不能只凭其中一个结果直接推断另一个必然损坏。
 
 防错规则：
-- 不要默认禁用硬件加速。仅在 `NEKO_DISABLE_HW_ACCEL=1` 时启用软件渲染兜底。
+- 不要默认禁用硬件加速。`scripts/start-electron.js` 会先按正常 GPU 路径启动；只有捕获到 GPU fatal 时才自动用软件渲染兜底重试。需要人工强制兜底时才设置 `NEKO_DISABLE_HW_ACCEL=1`。
+- 验证 dev 可用性时，必须用真实 GUI 启动方式执行 `npm run dev`，不要用普通受限 shell 里的超时命令当作唯一结论。
+- 如果 dev 报 GPU fatal，先临时执行 `npm run build` 并启动 `dist/win-unpacked/NekoStatus.exe` 对照；正式 exe 正常且 dev 仅在受限环境失败时，优先排查启动环境、GPU 参数和 Electron dev binary，不要先回滚业务代码。
+- 如果日志出现 `preload bridge missing`、`process is not defined`、renderer exception、IPC handler missing，才优先按前后端桥接问题排查。
 - 对可能失败且代价高的系统能力加退避，例如截图失败后也要更新时间戳，避免紧密重试。
 
 ### 7. 条件型 UI 没有可重复触发入口

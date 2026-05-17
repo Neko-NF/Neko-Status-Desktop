@@ -1672,11 +1672,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (streamPage && !enabled) streamPage.style.display = 'none';
     if (navStream) {
       navStream.classList.toggle('show', enabled);
-      navStream.style.display = '';
       navStream.setAttribute('aria-hidden', enabled ? 'false' : 'true');
       if (enabled) navStream.removeAttribute('tabindex');
       else navStream.setAttribute('tabindex', '-1');
       navStream.classList.toggle('experimental-off', !enabled);
+      window._nekoSyncNavIndicator?.();
     }
     if (!enabled && document.querySelector('.nav-item.active[data-target="page-stream"]')) {
       document.querySelector('.nav-item[data-target="mainDashboardArea"]')?.click();
@@ -4594,7 +4594,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="avatar-editor-sidebar">
               <div class="avatar-editor-preview-wrap">
                 <div class="avatar-editor-preview">
-                  <img id="avatarPreviewImage" alt="avatar preview">
+                  <img id="avatarPreviewImage" alt="" hidden>
                 </div>
                 <div class="avatar-editor-preview-label">1:1 圆形预览</div>
               </div>
@@ -4731,7 +4731,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateAvatarPreview() {
     const preview = document.getElementById('avatarPreviewImage');
     if (!preview) return;
-    preview.src = buildCroppedAvatarDataUrl();
+    const dataUrl = buildCroppedAvatarDataUrl();
+    if (!dataUrl) {
+      preview.hidden = true;
+      preview.removeAttribute('src');
+      return;
+    }
+    preview.src = dataUrl;
+    preview.hidden = false;
   }
 
   function renderAvatarCropper() {
@@ -4746,6 +4753,7 @@ document.addEventListener('DOMContentLoaded', () => {
       shell.classList.remove('is-ready');
       empty.hidden = false;
       imageEl.removeAttribute('src');
+      updateAvatarPreview();
       return;
     }
 
@@ -4968,7 +4976,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const clone = btn.cloneNode(true);
     btn.parentNode.replaceChild(clone, btn);
     clone.addEventListener('click', async () => {
-      // 先从服务端刷新用户信息
       const state = await ipc.authGetState() || {};
       if (!state.isLoggedIn) {
         showAuthNotice('请先登录后再编辑个人信息', 'info');
@@ -4976,9 +4983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const me = await ipc.authGetMe();
-      if (me.success && me.user) {
-        const u = me.user;
+      const fillProfileForm = (u = {}) => {
         const pUsername = document.getElementById('profileUsername');
         const pEmail = document.getElementById('profileEmail');
         const pAvatar = document.getElementById('profileModalAvatar');
@@ -4986,10 +4991,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pEmail) pEmail.value = u.email || '';
         avatarEditorState.pendingAvatar = u.avatar || '';
         if (pAvatar && u.avatar) pAvatar.src = u.avatar;
-        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username)}&background=06b6d4&color=fff`;
-      }
+        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=06b6d4&color=fff`;
+      };
 
+      fillProfileForm(state.user || {});
       if (profileModal) profileModal.classList.add('show');
+
+      const me = await ipc.authGetMe();
+      if (me.success && me.user) {
+        fillProfileForm(me.user);
+      } else if (me && me.success === false) {
+        showAuthNotice(me.message || me.error || '用户信息刷新失败', 'error');
+      }
     });
   });
 
@@ -5003,6 +5016,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const email = document.getElementById('profileEmail')?.value?.trim();
       const currentPassword = document.getElementById('profileCurrentPassword')?.value;
       const newPassword = document.getElementById('profileNewPassword')?.value;
+
+      if (newPassword && !currentPassword) {
+        showAuthNotice('请先输入当前密码', 'error');
+        document.getElementById('profileCurrentPassword')?.focus();
+        return;
+      }
+      if (currentPassword && !newPassword) {
+        showAuthNotice('请输入新密码', 'error');
+        document.getElementById('profileNewPassword')?.focus();
+        return;
+      }
+      if (newPassword && newPassword.length < 6) {
+        showAuthNotice('新密码至少需要 6 位', 'error');
+        document.getElementById('profileNewPassword')?.focus();
+        return;
+      }
 
       const data = {};
       if (username) data.username = username;
@@ -5029,7 +5058,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cp) cp.value = '';
         if (np) np.value = '';
       } else {
-        showAuthNotice(result.message || '保存失败', 'error');
+        showAuthNotice(result.message || result.error || '保存失败', 'error');
       }
 
       setButtonBusyState(clone, false, clone.innerHTML);

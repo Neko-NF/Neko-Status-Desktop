@@ -46,7 +46,7 @@ Renderer 访问方式统一通过：
 
 ## 3. 当前结果结构
 
-仓库仍处于迁移期，历史 handler 返回值并不完全统一。
+仓库仍处于迁移期，历史 handler 返回值并不完全统一。当前已收敛到标准结构的领域包括 `api`、`auth`、`config`、`stream`、`system`、`service` 和大部分 `update` handler。
 
 新接口或改造接口应尽量使用：
 
@@ -81,6 +81,16 @@ Renderer 访问方式统一通过：
 
 - `update:download`
 - `update:install`
+- `auth:login`
+- `auth:register`
+- `auth:updateProfile`
+- `config:get`
+- `config:set`
+- `config:setMany`
+- `stream:saveConfig`
+- `stream:testSrs`
+- `stream:testObsWs`
+- `stream:applyToObs`
 
 规则是：
 
@@ -143,3 +153,8 @@ Renderer 访问方式统一通过：
 - renderer 不直接使用 `process`、`require` 或 Node/Electron 全局对象；需要运行时信息时由 preload 暴露只读对象。
 - main handler 默认返回 `createIpcSuccess(data)` / `createIpcError(...)`，preload 负责解包兼容，renderer 不直接解析 main 层包装。
 - 页面字段和后端字段必须逐项对齐，尤其是 `ok`、`success`、`data`、`isRunning` 等易混字段。
+# Renderer service 约定
+
+- 新增 renderer IPC 调用时，优先在 `src/renderer/js/services/*` 新增业务 client，由 service 访问 `window.nekoIPC`。
+- `pages/*` 只调用 service，不直接拼 channel 字符串；迁移期保留的 `app-ipc.js` 调用点逐步收敛。
+- `scripts/verify.js` 会扫描整个 `src/renderer` 的 JS 文件，避免 `app-ipc.js`、`services`、`pages` 中重新出现硬编码 `ipc.on('...')` 事件名。
