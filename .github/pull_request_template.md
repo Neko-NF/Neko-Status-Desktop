@@ -11,6 +11,7 @@
 ## Checks
 
 - [ ] `npm run verify`
+- [ ] `npm run test:smoke` (Electron/preload smoke)
 - [ ] `npm run build` or `npm run build:zip` when packaging is affected
 - [ ] Manual smoke test completed
 

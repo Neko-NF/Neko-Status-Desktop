@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const SRC_MAIN = path.join(ROOT, 'src', 'main');
@@ -100,7 +101,13 @@ function checkFileStructure() {
     'src/renderer/js/app-ipc.js',
     'src/renderer/js/ipc-bridge.js',
     'src/renderer/js/services/ipc-client.js',
+    'src/renderer/js/services/api-client.js',
+    'src/renderer/js/services/config-client.js',
+    'src/renderer/js/services/auth-client.js',
+    'src/renderer/js/services/service-client.js',
+    'src/renderer/js/services/system-client.js',
     'src/renderer/js/services/stream-client.js',
+    'src/renderer/js/services/update-client.js',
     'src/renderer/js/components/ui-helpers.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
@@ -108,10 +115,16 @@ function checkFileStructure() {
     'src/renderer/js/components/neko-island.js',
     'src/renderer/js/components/expandable-section.js',
     'src/renderer/js/components/modal.js',
+    'src/renderer/js/components/developer-console.js',
     'src/renderer/js/state/app-state.js',
     'src/renderer/js/pages/settings.page.js',
+    'src/renderer/js/pages/config.page.js',
     'src/renderer/js/pages/stream.page.js',
     'src/renderer/js/pages/dashboard.page.js',
+    'src/renderer/js/pages/device-status.page.js',
+    'src/renderer/js/pages/screenshot.page.js',
+    'src/renderer/js/pages/update.page.js',
+    'src/renderer/js/pages/auth.page.js',
     'src/renderer/css/tokens.css',
     'src/renderer/css/base.css',
     'src/renderer/css/layout.css',
@@ -134,6 +147,52 @@ function checkFileStructure() {
     else fail('package.json 缺少 main 字段');
   } catch (e) {
     fail(`package.json 解析失败: ${e.message}`);
+  }
+}
+
+function checkRendererSplitSyntax() {
+  section('Renderer split module syntax');
+
+  const modules = [
+    'src/renderer/js/services/ipc-client.js',
+    'src/renderer/js/services/api-client.js',
+    'src/renderer/js/services/config-client.js',
+    'src/renderer/js/services/auth-client.js',
+    'src/renderer/js/services/service-client.js',
+    'src/renderer/js/services/system-client.js',
+    'src/renderer/js/services/stream-client.js',
+    'src/renderer/js/services/update-client.js',
+    'src/renderer/js/components/ui-helpers.js',
+    'src/renderer/js/core/event-bus.js',
+    'src/renderer/js/core/theme.js',
+    'src/renderer/js/core/router.js',
+    'src/renderer/js/components/neko-island.js',
+    'src/renderer/js/components/expandable-section.js',
+    'src/renderer/js/components/modal.js',
+    'src/renderer/js/components/developer-console.js',
+    'src/renderer/js/state/app-state.js',
+    'src/renderer/js/pages/settings.page.js',
+    'src/renderer/js/pages/config.page.js',
+    'src/renderer/js/pages/stream.page.js',
+    'src/renderer/js/pages/dashboard.page.js',
+    'src/renderer/js/pages/device-status.page.js',
+    'src/renderer/js/pages/screenshot.page.js',
+    'src/renderer/js/pages/update.page.js',
+    'src/renderer/js/pages/auth.page.js',
+  ];
+
+  for (const relPath of modules) {
+    const source = readFile(relPath);
+    if (!source) {
+      fail(`${relPath} is not readable`);
+      continue;
+    }
+    try {
+      new vm.Script(source, { filename: relPath });
+      pass(`${relPath} parses`);
+    } catch (e) {
+      fail(`${relPath} syntax error: ${e.message}`);
+    }
   }
 }
 
@@ -412,6 +471,7 @@ console.log(`${C.cyan}═══════════════════�
 console.log(`${C.dim}  项目路径: ${ROOT}${C.reset}`);
 
 checkFileStructure();
+checkRendererSplitSyntax();
 checkHtmlIds();
 checkCssConsistency();
 checkEncodingSafety();

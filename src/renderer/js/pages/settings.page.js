@@ -2,8 +2,12 @@
     window._nekoModules = window._nekoModules || {};
     window._nekoModules.pages = window._nekoModules.pages || {};
 
-    function getIpcClient() {
-        return window._nekoModules?.services?.IpcClient || null;
+    function getConfigClient() {
+        return window._nekoModules?.services?.ConfigClient || null;
+    }
+
+    function getSystemClient() {
+        return window._nekoModules?.services?.SystemClient || null;
     }
 
     function applySavedFontProfile() {
@@ -25,7 +29,7 @@
         }
         window._nekoUIHelpers?.applyUIFontProfile?.(font);
         localStorage.setItem('neko-ui-font', font);
-        const savePromise = getIpcClient()?.invoke?.('setConfig', 'uiFont', font);
+        const savePromise = getConfigClient()?.set?.('uiFont', font);
         if (savePromise?.catch) savePromise.catch(() => {});
     }
 
@@ -33,8 +37,8 @@
         select.innerHTML = '<option value="">系统默认</option>';
         let fonts = [];
         try {
-            const client = getIpcClient();
-            fonts = client?.isReady?.() ? await client.invoke('getSystemFonts') : [];
+            const client = getSystemClient();
+            fonts = client?.isReady?.() ? await client.getFonts() : [];
         } catch {}
         [...new Set(fonts || [])]
             .sort((a, b) => a.localeCompare(b, 'zh-CN'))

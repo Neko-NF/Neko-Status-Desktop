@@ -9,8 +9,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // nekoIPC 由 ipc-bridge.js 挂载到 window.nekoIPC
-  const ipc = window.nekoIPC;
+  const ipcClient = window._nekoModules?.services?.IpcClient;
   const runtimeVersions = window.nekoRuntime?.versions || {};
   const IPC_EVENTS = window.__NEKO_IPC_CONTRACTS__?.IPC_EVENTS || {
     APP_INIT: 'app:init',
@@ -35,6 +34,13 @@ document.addEventListener('DOMContentLoaded', () => {
     || (() => {});
   const normalizeServiceHealthCheckCopy = window._nekoUIHelpers?.normalizeServiceHealthCheckCopy
     || (() => {});
+  const authClient = () => window._nekoModules?.services?.AuthClient || null;
+  const apiClient = () => window._nekoModules?.services?.ApiClient || null;
+  const configClient = () => window._nekoModules?.services?.ConfigClient || null;
+  const serviceClient = () => window._nekoModules?.services?.ServiceClient || null;
+  const systemClient = () => window._nekoModules?.services?.SystemClient || null;
+  const updateClient = () => window._nekoModules?.services?.UpdateClient || null;
+  const updatePage = () => window._nekoModules?.pages?.UpdatePage || null;
 
   function mountExperimentalSettingsZone() {
     const zone = document.getElementById('settingsExperimentalZone');
@@ -76,10 +82,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
   mountExperimentalSettingsZone();
   normalizeServiceHealthCheckCopy();
-  if (!ipc) {
-    console.error('[app-ipc] 找不到 nekoIPC，请确认 ipc-bridge.js 已在本文件之前加载');
+  if (!ipcClient?.isReady?.()) {
+    console.error('[app-ipc] IPC service is not ready, please check preload and ipc-client loading order');
     return;
   }
+
+  function callUpdate(methodName, _fallbackName, ...args) {
+    const client = updateClient();
+    if (client && typeof client[methodName] === 'function') {
+      return client[methodName](...args);
+    }
+    throw new Error(`UpdateClient method missing: ${methodName}`);
+  }
+
+  function callRendererClient(factory, methodName, _fallbackName, ...args) {
+    const client = factory();
+    if (client && typeof client[methodName] === 'function') {
+      return client[methodName](...args);
+    }
+    throw new Error(`Renderer service method missing: ${methodName}`);
+  }
+
+  const callApi = (methodName, fallbackName, ...args) =>
+    callRendererClient(apiClient, methodName, fallbackName, ...args);
+  const callAuth = (methodName, fallbackName, ...args) =>
+    callRendererClient(authClient, methodName, fallbackName, ...args);
+  const callConfig = (methodName, fallbackName, ...args) =>
+    callRendererClient(configClient, methodName, fallbackName, ...args);
+  const callService = (methodName, fallbackName, ...args) =>
+    callRendererClient(serviceClient, methodName, fallbackName, ...args);
+  const callSystem = (methodName, fallbackName, ...args) =>
+    callRendererClient(systemClient, methodName, fallbackName, ...args);
+
+  const deviceStatusPage = () => window._nekoModules?.pages?.DeviceStatusPage || null;
+
+  function ensureDeviceStatusPage() {
+    const page = deviceStatusPage();
+    page?.init?.({
+      notify: (title, body) => callSystem('notify', 'notify', title, body),
+      escapeHtml,
+    });
+    return page;
+  }
+
+  function updatePowerKpi(level, isCharging, hasBattery, footerText) {
+    return ensureDeviceStatusPage()?.updatePowerKpi?.(level, isCharging, hasBattery, footerText);
+  }
+
+  function updateDeviceStatusPage(metrics) {
+    return ensureDeviceStatusPage()?.updateMetrics?.(metrics);
+  }
+
+  function addDiagnosticEntry(module, status, detail, actionHtml) {
+    return ensureDeviceStatusPage()?.addDiagnosticEntry?.(module, status, detail, actionHtml);
+  }
+
+  function applyDeviceStatusSparklineTheme() {
+    return ensureDeviceStatusPage()?.applySparklineTheme?.();
+  }
+
+  ensureDeviceStatusPage();
 
   function initHealthResultsScrollFx() {
     const shell = document.getElementById('healthResultsShell');
@@ -435,6 +497,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return Number.isFinite(n) ? `${n.toFixed(1)}%` : '--';
   }
 
+  function formatBytes(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = n;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+  }
+
   function formatUptime(sec) {
     const total = Math.max(0, Number(sec) || 0);
     const h = Math.floor(total / 3600);
@@ -473,10 +548,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function refreshConsoleStatus() {
     try {
       const [running, proc, cacheSize, metrics] = await Promise.all([
-        ipc.isRunning().catch(() => false),
-        ipc.getProcessInfo().catch(() => null),
-        ipc.getCacheSize().catch(() => 0),
-        ipc.getMetrics().catch(() => null),
+        callService('isRunning', 'isRunning').catch(() => false),
+        callService('getProcessInfo', 'getProcessInfo').catch(() => null),
+        callSystem('getCacheSize', 'getCacheSize').catch(() => 0),
+        callSystem('getMetrics', 'getMetrics').catch(() => null),
       ]);
       setConsoleStatus('Runtime', proc ? `PID ${proc.pid}` : '--', proc ? `RSS ${proc.memoryMB} MB / up ${formatUptime(proc.uptimeSec)}` : 'Process unavailable', proc ? 'ok' : 'warn');
       updateConsoleServiceStatus(running);
@@ -597,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .filter(Boolean);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     try {
-      const result = await ipc.saveTextFile({
+      const result = await callSystem('saveTextFile', 'saveTextFile', {
         title: '导出控制台日志',
         defaultPath: `neko-console-${stamp}.log`,
         content: lines.join('\n') + '\n',
@@ -611,69 +686,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 控制台输入执行
   const consoleInput = document.getElementById('consoleInput');
+  const developerConsoleIpc = {
+    getVersion: () => callSystem('getVersion', 'getVersion'),
+    runHealthCheck: () => callService('runHealthCheck', 'runHealthCheck'),
+    getMetrics: () => callSystem('getMetrics', 'getMetrics'),
+    getCacheSize: () => callSystem('getCacheSize', 'getCacheSize'),
+    clearCache: () => callSystem('clearCache', 'clearCache'),
+    getLastResult: () => callService('getLastResult', 'getLastResult'),
+    getAllConfig: () => callConfig('getAll', 'getAllConfig'),
+    getConfig: (key) => callConfig('get', 'getConfig', key),
+    startService: () => callService('start', 'startService'),
+    stopService: () => callService('stop', 'stopService'),
+    restartService: () => callService('restart', 'restartService'),
+    isRunning: () => callService('isRunning', 'isRunning'),
+    checkUpdate: () => callUpdate('check', 'checkUpdate'),
+    getPendingInstall: () => callUpdate('getPendingInstall', 'getPendingInstall'),
+    checkIntegrity: () => callUpdate('checkIntegrity', 'checkIntegrity'),
+  };
+  const developerConsole = window._nekoModules?.components?.DeveloperConsole?.createCommandRegistry?.({
+    addLogLine,
+    clearOutput: () => { if (consoleOutput) consoleOutput.innerHTML = ''; },
+    ipc: developerConsoleIpc,
+    helpers: {
+      applyServiceState,
+      refreshConsoleStatus,
+      updateConsoleMetricsStatus,
+      triggerScreenshot,
+      setConsoleStatus,
+      formatBytes,
+      formatMetrics: (m) => `metrics cpu=${formatPercent(m?.cpuPct)} mem=${formatPercent(m?.memPct)} used=${formatBytes(m?.memUsed)} total=${formatBytes(m?.memTotal)}`,
+      setLastMetricsSnapshot: (m) => { _lastMetricsSnapshot = m; },
+      getStatusSummary: () => `runtime=${document.getElementById('consoleRuntimeValue')?.textContent || '--'} service=${document.getElementById('consoleServiceValue')?.textContent || '--'} cache=${document.getElementById('consoleCacheValue')?.textContent || '--'}`,
+    },
+  });
+
   function handleConsoleCommand() {
     const cmd = consoleInput?.value?.trim();
     if (!cmd) return;
     addLogLine('INFO', `> ${cmd}`);
     consoleInput.value = '';
-    // 基础命令处理
-    if (cmd === 'help') {
-      const cmds = [
-        'help - show commands',
-        'status - refresh runtime snapshot',
-        'health - run health checks',
-        'metrics - print CPU/memory snapshot',
-        'cache - print cache size',
-        'last - print last upload result',
-        'version - app version',
-        'config - current config',
-        'start/stop - control reporter',
-        'clear - clear console',
-        'capture - capture screenshot',
-      ];
-      cmds.forEach((c) => addLogLine('INFO', c));
-    } else if (cmd === 'version') {
-      ipc.getVersion().then((v) => addLogLine('INFO', `Neko Status v${v}`));
-    } else if (cmd === 'config') {
-      ipc.getAllConfig().then((cfg) => addLogLine('INFO', JSON.stringify(cfg)));
-    } else if (cmd === 'start') {
-      ipc.startService().then((result) => {
-        applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : true);
-        addLogLine('SUCCESS', 'reporter started');
-      }).catch(e => addLogLine('ERROR', `start failed: ${e.message}`));
-    } else if (cmd === 'stop') {
-      ipc.stopService().then((result) => {
-        applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : false);
-        addLogLine('INFO', 'reporter stopped');
-      }).catch(e => addLogLine('ERROR', `stop failed: ${e.message}`));
-    } else if (cmd === 'clear') {
-      if (consoleOutput) consoleOutput.innerHTML = '';
-    } else if (cmd === 'capture') {
-      triggerScreenshot();
-    } else if (cmd === 'status') {
-      refreshConsoleStatus().then(() => {
-        addLogLine('INFO', `runtime=${document.getElementById('consoleRuntimeValue')?.textContent || '--'} service=${document.getElementById('consoleServiceValue')?.textContent || '--'} cache=${document.getElementById('consoleCacheValue')?.textContent || '--'}`);
-      });
-    } else if (cmd === 'health') {
-      ipc.runHealthCheck().then((items) => {
-        (items || []).forEach(item => addLogLine(item.ok ? 'INFO' : 'WARN', `[health] ${item.name}: ${item.text}`));
-      }).catch(e => addLogLine('ERROR', `health failed: ${e.message}`));
-    } else if (cmd === 'metrics') {
-      ipc.getMetrics().then((m) => {
-        _lastMetricsSnapshot = m;
-        updateConsoleMetricsStatus(m);
-        addLogLine('INFO', `metrics cpu=${formatPercent(m.cpuPct)} mem=${formatPercent(m.memPct)} used=${formatBytes(m.memUsed)} total=${formatBytes(m.memTotal)}`);
-      }).catch(e => addLogLine('ERROR', `metrics failed: ${e.message}`));
-    } else if (cmd === 'cache') {
-      ipc.getCacheSize().then((size) => {
-        setConsoleStatus('Cache', formatBytes(size), 'Local cache', Number(size) > 0 ? 'warn' : 'ok');
-        addLogLine('INFO', `cache=${formatBytes(size)}`);
-      }).catch(e => addLogLine('ERROR', `cache query failed: ${e.message}`));
-    } else if (cmd === 'last') {
-      ipc.getLastResult().then((result) => addLogLine('INFO', `last=${JSON.stringify(result || {})}`));
-    } else {
-      addLogLine('WARN', `Unknown command: ${cmd}. Type help.`);
+    if (!developerConsole) {
+      addLogLine('ERROR', 'Developer console module is not loaded');
+      return;
     }
+    developerConsole.execute(cmd);
   }
   document.getElementById('consoleSendBtn')?.addEventListener('click', handleConsoleCommand);
   consoleInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleConsoleCommand(); });
@@ -929,7 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('reportToggleBtn');
     if (!btn || btn.classList.contains('btn-pending')) return;
 
-    const running = await ipc.isRunning();
+    const running = await callService('isRunning', 'isRunning');
     btn.className = 'status-toggle-btn btn-pending';
     btn.innerHTML = running
       ? '<i class="ph ph-spinner ph-spin"></i> 停止中...'
@@ -937,19 +993,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       if (running) {
-        const result = await ipc.stopService();
+        const result = await callService('stop', 'stopService');
         addLogLine('INFO', '已手动停止上报服务');
         showNekoIsland('上报服务已停止', 'info', 2000);
         applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : false);
       } else {
-        const cfg = await ipc.getAllConfig();
+        const cfg = await callConfig('getAll', 'getAllConfig');
         if (!cfg.deviceKey) {
           addLogLine('WARN', '请先在配置中填写设备密钥，再启动上报服务');
           showNekoIsland('请先配置设备密钥', 'warn', 3000);
           applyServiceState(false);
           return;
         }
-        const result = await ipc.startService();
+        const result = await callService('start', 'startService');
         addLogLine('INFO', '已手动启动上报服务');
         showNekoIsland('上报服务已启动', 'success', 2000);
         applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : true);
@@ -957,158 +1013,20 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       addLogLine('ERROR', `服务切换失败: ${e.message}`);
       showNekoIsland('服务切换失败', 'error', 3000);
-      applyServiceState(await ipc.isRunning());
+      applyServiceState(await callService('isRunning', 'isRunning'));
     }
   });
 
   // ══════════════════════════════════════════════════════════════
   //  覆盖配置弹窗保存按钮
   // ══════════════════════════════════════════════════════════════
-  async function loadConfigToModal() {
-    const cfg = await ipc.getAllConfig();
-    if (!cfg) return;
-
-    const urlInput = document.getElementById('configUrlInput');
-    const keyInput = document.getElementById('configApiKeyInput');
-
-    // 根据当前模式显示对应 URL
-    const isLocal = cfg.serverMode === 'local';
-    if (urlInput) urlInput.value = isLocal ? cfg.serverUrlLocal : cfg.serverUrlProd;
-    if (keyInput) keyInput.value = cfg.deviceKey || '';
-
-    // 同步模式切换器状态
-    const switcher = document.getElementById('configModeSwitcher');
-    if (switcher) {
-      switcher.querySelectorAll('.modal-mode-btn').forEach((b) => {
-        b.classList.toggle('active', b.dataset.mode === (isLocal ? 'local' : 'server'));
-      });
-    }
-  }
-
-  // 每次打开弹窗时加载最新配置
-  document.getElementById('btnConfigKey')?.addEventListener('click', loadConfigToModal);
-  document.getElementById('stgConfigBtn')?.addEventListener('click', loadConfigToModal);
-
-  // 覆盖保存按钮
-  replaceHandler('saveConfigBtn', async () => {
-    const saveBtn = document.getElementById('saveConfigBtn');
-    if (!saveBtn) return;
-
-    const urlInput = document.getElementById('configUrlInput');
-    const keyInput = document.getElementById('configApiKeyInput');
-    const serverUrl = urlInput?.value?.trim() || '';
-    const deviceKey = keyInput?.value?.trim() || '';
-
-    if (!serverUrl) {
-      addLogLine('WARN', '请填写服务器地址');
-      return;
-    }
-
-    const originalHtml = saveBtn.innerHTML;
-    saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 测试连接中...';
-    saveBtn.disabled = true;
-
-    try {
-      // 测试连通性
-      const connResult = await ipc.testConnection(serverUrl);
-
-      if (!connResult.ok) {
-        saveBtn.innerHTML = '<i class="ph ph-wifi-slash"></i> 连接失败';
-        saveBtn.classList.add('btn-feedback-error');
-        addLogLine('ERROR', `服务器连接失败: ${connResult.error || '无法连接'}`);
-        showNekoIsland('服务器连接失败', 'error', 3500);
-        setTimeout(() => {
-          saveBtn.innerHTML = originalHtml;
-          saveBtn.classList.remove('btn-feedback-error');
-          saveBtn.disabled = false;
-        }, 2500);
-        return;
-      }
-
-      // ── 密钥变更安全检查：如果新密钥不同于当前密钥，预验证是否会触发接管 ──
-      const oldKey = await ipc.getConfig('deviceKey');
-      if (deviceKey && deviceKey !== oldKey) {
-        saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 验证密钥中...';
-        addLogLine('INFO', '检测到密钥变更，正在预验证...');
-
-        let validationResult;
-        try {
-          // 使用预验证（不发送指纹），服务器会返回 warning 而非 403
-          // 设定 5 秒竞赛超时，避免预验证阻塞保存流程
-          validationResult = await Promise.race([
-            ipc.preValidateKey(deviceKey, serverUrl),
-            new Promise(resolve => setTimeout(() => resolve(null), 5000)),
-          ]);
-        } catch (preErr) {
-          addLogLine('WARN', `密钥预验证失败: ${preErr.message || '未知错误'}，继续保存`);
-          validationResult = null;
-        }
-
-        // 密钥已绑定到其他设备 → 弹出确认框
-        if (validationResult && validationResult.warning === 'KEY_BOUND_TO_OTHER_DEVICE') {
-          saveBtn.innerHTML = originalHtml;
-          saveBtn.disabled = false;
-          const userConfirmed = await showTakeoverConfirmDialog();
-          if (!userConfirmed) {
-            addLogLine('INFO', '用户取消了密钥变更');
-            return;
-          }
-          addLogLine('WARN', '用户确认接管密钥，继续保存');
-          saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
-          saveBtn.disabled = true;
-        } else {
-          // 预验证通过或跳过，继续保存
-          saveBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
-        }
-      }
-
-      // 判断是本地还是生产模式
-      const isLocal = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1');
-      const configUpdate = {
-        deviceKey,
-        serverMode: isLocal ? 'local' : 'production',
-        serverConfigured: true,   // 标记服务器已成功配置
-      };
-      if (isLocal) configUpdate.serverUrlLocal = serverUrl;
-      else configUpdate.serverUrlProd = serverUrl;
-
-      await ipc.setManyConfig(configUpdate);
-
-      saveBtn.innerHTML = '<i class="ph ph-check"></i> 已保存';
-      saveBtn.classList.add('btn-feedback-success');
-      addLogLine('SUCCESS', `配置已保存，服务器延迟 ${connResult.latencyMs || '—'}ms`);
-      showNekoIsland('配置已保存', 'success', 2000);
-
-      setTimeout(() => {
-        document.getElementById('configModal')?.classList.remove('show');
-        setTimeout(() => {
-          saveBtn.innerHTML = originalHtml;
-          saveBtn.classList.remove('btn-feedback-success');
-          saveBtn.disabled = false;
-        }, 300);
-
-        // auth modal 内来的配置请求：配置成功后重新打开 auth modal
-        if (window._authPendingAfterConfig) {
-          window._authPendingAfterConfig = false;
-          setTimeout(() => openAuthModal('login'), 400);
-        }
-      }, 800);
-
-    } catch (e) {
-      saveBtn.innerHTML = '<i class="ph ph-x-circle"></i> 出错了';
-      saveBtn.classList.add('btn-feedback-error');
-      addLogLine('ERROR', `保存配置出错: ${e.message}`);
-      setTimeout(() => {
-        saveBtn.innerHTML = originalHtml;
-        saveBtn.classList.remove('btn-feedback-error');
-        saveBtn.disabled = false;
-      }, 2000);
-    }
+  window._nekoModules?.pages?.ConfigPage?.init?.({
+    addLogLine,
+    showNotice: showNekoIsland,
+    showTakeoverConfirmDialog,
+    reopenAuthModal: openAuthModal,
   });
 
-  // ══════════════════════════════════════════════════════════════
-  //  开机自启开关联动（设置页 + 服务页）
-  // ══════════════════════════════════════════════════════════════
   async function syncAutoStartToggles(enabled) {
     ['stgAutoStartSwitch', 'autoStartSwitch'].forEach((id) => {
       const el = document.getElementById(id);
@@ -1121,8 +1039,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('autoStartSwitch')?.addEventListener('click', async function () {
     const newState = this.classList.contains('on');  // app.js 已经切换过了，读新状态
     try {
-      if (newState) await ipc.enableAutoStart();
-      else await ipc.disableAutoStart();
+      if (newState) await callService('enableAutoStart', 'enableAutoStart');
+      else await callService('disableAutoStart', 'disableAutoStart');
       addLogLine('INFO', `开机自启 → ${newState ? '已启用' : '已禁用'}`);
       showNekoIsland(newState ? '开机自启已启用' : '开机自启已禁用', newState ? 'success' : 'info', 2000);
       // 同步到设置页
@@ -1140,8 +1058,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('stgAutoStartSwitch')?.addEventListener('click', async function () {
     const newState = this.classList.contains('on');
     try {
-      if (newState) await ipc.enableAutoStart();
-      else await ipc.disableAutoStart();
+      if (newState) await callService('enableAutoStart', 'enableAutoStart');
+      else await callService('disableAutoStart', 'disableAutoStart');
       addLogLine('INFO', `开机自启 → ${newState ? '已启用' : '已禁用'}`);
       showNekoIsland(newState ? '开机自启已启用' : '开机自启已禁用', newState ? 'success' : 'info', 2000);
       const svcSwitch = document.getElementById('autoStartSwitch');
@@ -1159,7 +1077,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   document.getElementById('autoStartMinimizeSwitch')?.addEventListener('click', async function () {
     const enabled = this.classList.contains('on');
-    await ipc.setConfig('minimizeOnAutoStart', enabled);
+    await callConfig('set', 'setConfig', 'minimizeOnAutoStart', enabled);
     addLogLine('INFO', `开机自启最小化 → ${enabled ? '已启用' : '已禁用'}`);
   });
 
@@ -1167,7 +1085,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       addLogLine('INFO', '正在重启上报服务...');
       showNekoIsland('正在重启上报服务...', 'info', 2000);
-      await ipc.restartService();
+      await callService('restart', 'restartService');
       addLogLine('SUCCESS', '上报服务已重启');
       showNekoIsland('上报服务已重启', 'success', 2000);
     } catch (e) {
@@ -1177,10 +1095,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('btnStopReporter')?.addEventListener('click', async () => {
-    const running = await ipc.isRunning();
+    const running = await callService('isRunning', 'isRunning');
     if (!running) { showNekoIsland('上报服务未在运行', 'info', 2000); return; }
     try {
-      await ipc.stopService();
+      await callService('stop', 'stopService');
       addLogLine('INFO', '已手动停止上报服务');
       showNekoIsland('上报服务已停止', 'info', 2000);
     } catch (e) {
@@ -1194,7 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureStatusEl = document.getElementById('captureStatus');
     try {
       addLogLine('INFO', '正在测试屏幕捕获...');
-      const result = await ipc.captureScreen();
+      const result = await callSystem('captureScreen', 'captureScreen');
       if (result) {
         if (captureStatusEl) {
           captureStatusEl.className = 'svc-pill-status running';
@@ -1222,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   document.getElementById('reportAutoStartSwitch')?.addEventListener('click', async function () {
     const enabled = this.classList.contains('on');
-    await ipc.setConfig('enableAutoServiceStart', enabled);
+    await callConfig('set', 'setConfig', 'enableAutoServiceStart', enabled);
     const delayRow = document.getElementById('reportAutoDelayRow');
     setExpandableSectionState(delayRow, enabled, { display: 'flex' });
     addLogLine('INFO', `启动后自动上报 → ${enabled ? '已启用' : '已禁用'}`);
@@ -1233,7 +1151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   document.getElementById('autoRestartSwitch')?.addEventListener('click', async function () {
     const enabled = this.classList.contains('on');
-    await ipc.setConfig('enableAutoRestart', enabled);
+    await callConfig('set', 'setConfig', 'enableAutoRestart', enabled);
     addLogLine('INFO', `崩溃自动重启 → ${enabled ? '已启用' : '已禁用'}`);
   });
 
@@ -1258,7 +1176,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const max = parseInt(el.max, 10) || Infinity;
         const clamped = Math.max(min, Math.min(max, val));
         el.value = clamped;
-        await ipc.setConfig(key, multiplier ? clamped * multiplier : clamped);
+        await callConfig('set', 'setConfig', key, multiplier ? clamped * multiplier : clamped);
         addLogLine('INFO', `${label} → ${clamped}${multiplier ? 'ms' : ''}`);
       }, 600);
     });
@@ -1277,7 +1195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     list.innerHTML = '';
 
     try {
-      const results = await ipc.runHealthCheck();
+      const results = await callService('runHealthCheck', 'runHealthCheck');
       results.forEach((item, i) => {
         const el = document.createElement('div');
         el.className = 'health-result-item';
@@ -1330,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 异步检测权限
     try {
-      const perms = await ipc.checkPermissions();
+      const perms = await callService('checkPermissions', 'checkPermissions');
       const permMap = {
         screenCapture: 'permScreenCapture',
         processEnum: 'permProcessEnum',
@@ -1371,22 +1289,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   document.getElementById('toggleScreenshot')?.addEventListener('click', async function () {
     const enabled = this.classList.contains('on');
-    await ipc.setConfig('enableScreenshot', enabled);
+    await callConfig('set', 'setConfig', 'enableScreenshot', enabled);
     // 同步截图页上传开关 UI
     const upload = document.getElementById('uploadSwitch');
     if (upload) upload.classList.toggle('on', enabled);
     addLogLine('INFO', `截图上报 → ${enabled ? '已启用' : '已禁用'}`);
-    ipc.syncMeta().catch(() => {}); // 同步元数据到 Web
+    callService('syncMeta', 'syncMeta').catch(() => {}); // 同步元数据到 Web
   });
 
   // 截图页上传开关
   document.getElementById('uploadSwitch')?.addEventListener('click', async function () {
     const enabled = this.classList.contains('on');
-    await ipc.setConfig('enableScreenshot', enabled);
+    await callConfig('set', 'setConfig', 'enableScreenshot', enabled);
     // 同步快捷操作自动捕获开关 UI
     const toggle = document.getElementById('toggleScreenshot');
     if (toggle) toggle.classList.toggle('on', enabled);
-    ipc.syncMeta().catch(() => {}); // 同步元数据到 Web
+    callService('syncMeta', 'syncMeta').catch(() => {}); // 同步元数据到 Web
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -1395,7 +1313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function triggerScreenshot() {
     addLogLine('INFO', '正在截图...');
     const captureTs = Date.now();
-    const result = await ipc.captureScreen();
+    const result = await callSystem('captureScreen', 'captureScreen');
     if (!result) {
       addLogLine('ERROR', '截图失败或功能不可用');
       showNekoIsland('截图失败', 'error', 3000);
@@ -1421,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2) 截图隐私保护 + 前台应用匹配规则 → 模糊截图
     if (!isBlurred && screenshotPrivacyOn) {
       try {
-        const activeWin = await ipc.getActiveWindow();
+        const activeWin = await callSystem('getActiveWindow', 'getActiveWindow');
         const rules = helpers.getPrivacyRules();
         if (activeWin && activeWin.processName && rules.length > 0) {
           const procLower = helpers.normalizePrivacyRule(activeWin.processName).toLowerCase();
@@ -1496,7 +1414,7 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(syncDeviceAuthExpandedState);
     // 持久化折叠状态
     const isCollapsed = authList ? authList.classList.contains('collapsed') : false;
-    ipc.setConfig('authListCollapsed', isCollapsed);
+    callConfig('set', 'setConfig', 'authListCollapsed', isCollapsed);
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -1509,9 +1427,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runPermissionDiagnosis() {
     const [perms, running, autoStart] = await Promise.all([
-      ipc.checkPermissions(),
-      ipc.isRunning(),
-      ipc.isAutoStartEnabled(),
+      callService('checkPermissions', 'checkPermissions'),
+      callService('isRunning', 'isRunning'),
+      callService('isAutoStartEnabled', 'isAutoStartEnabled'),
     ]);
 
     let grantedCount = 0;
@@ -1786,7 +1704,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const result = await ipc.checkUpdate();
+      const result = await callUpdate('check', 'checkUpdate');
       _lastUpdateResult = result;
       btn.disabled = false;
       _hideProgress();
@@ -1795,12 +1713,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const isUncfg = result.error.includes('未配置');
         if (icon)  { icon.className = 'ph ph-arrows-clockwise'; icon.style.animation = ''; }
         if (label) label.textContent = '检查更新';
-        if (badge) {
-          badge.className = 'update-status-badge error';
-          badge.innerHTML = isUncfg
+        updatePage()?.setError?.(result.error, {
+          isConfigError: isUncfg,
+          badgeHtml: isUncfg
             ? '<i class="ph ph-gear"></i> 请先配置更新源'
-            : '<i class="ph ph-warning"></i> 检查失败';
-        }
+            : '<i class="ph ph-warning"></i> 检查失败',
+        });
         showNekoIsland(isUncfg ? '请先在右侧配置 GitHub 仓库地址' : `检查更新失败: ${result.error}`, 'error', 4000);
         addLogLine('ERROR', `检查更新失败: ${result.error}`);
         return;
@@ -1820,35 +1738,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // 跳过版本
-      const skipped = await ipc.getConfig('skippedVersion');
+      const skipped = await callConfig('get', 'getConfig', 'skippedVersion');
       if (result.hasUpdate && skipped === result.latestVersion) {
-        if (icon)  { icon.className = 'ph ph-arrows-clockwise'; icon.style.animation = ''; }
-        if (label) label.textContent = '检查更新';
-        if (badge) { badge.className = 'update-status-badge success'; badge.innerHTML = `<i class="ph ph-check-circle"></i> 已跳过 v${result.latestVersion}`; }
+        updatePage()?.setSkipped?.(result.latestVersion);
         addLogLine('INFO', `已跳过版本 v${result.latestVersion}`);
         renderReleaseNotes(result);
         return;
       }
 
       if (result.hasUpdate) {
-        btn._updateMode = 'download';
-        btn.classList.remove('rollback-install-btn');
-        btn.classList.add('primary');
-        if (icon)  { icon.className = 'ph ph-download-simple'; icon.style.animation = ''; }
-        if (label) label.textContent = '立刻更新';
-        if (badge) { badge.className = 'update-status-badge warn'; badge.innerHTML = `<i class="ph ph-arrow-circle-up"></i> 发现新版本 v${result.latestVersion}`; }
+        updatePage()?.setAvailable?.(result);
         showNekoIsland(`发现新版本 v${result.latestVersion}，点击「立刻更新」下载安装`, 'info', 5000);
         addLogLine('INFO', `发现新版本 v${result.latestVersion}（当前 v${result.currentVersion}）`);
-        // 导航栏脉冲提示
-        const navUpd = document.querySelector('.nav-item[data-target="page-update"]');
-        if (navUpd) navUpd.classList.add('has-update');
       } else {
         btn._updateMode = 'check';
         btn.classList.remove('rollback-install-btn');
         btn.classList.add('primary');
-        if (icon)  { icon.className = 'ph ph-check-circle'; icon.style.animation = ''; }
-        if (label) label.textContent = '已是最新';
-        if (badge) { badge.className = 'update-status-badge success'; badge.innerHTML = `<i class="ph ph-check-circle"></i> 已是最新`; }
+        updatePage()?.setLatest?.();
         showNekoIsland(`当前已是最新版本 v${result.currentVersion}`, 'success', 2500);
         addLogLine('INFO', `当前已是最新版本 v${result.currentVersion}`);
         // 5s 后恢复检查按钮文字
@@ -1908,7 +1814,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     addLogLine('INFO', `开始下载更新 v${result.latestVersion}...`);
 
-    const dlResult = await ipc.downloadUpdate(downloadUrl);
+    const dlResult = await callUpdate('download', 'downloadUpdate', downloadUrl);
     if (!dlResult.success) {
       addLogLine('ERROR', `下载失败: ${dlResult.error}`);
       if (progressLabel) progressLabel.textContent = '下载失败';
@@ -1922,7 +1828,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 自动安装
     addLogLine('INFO', '正在启动安装...');
-    const installResult = await ipc.installUpdate(dlResult.filePath, dlResult.sha256);
+    const installResult = await callUpdate('install', 'installUpdate', dlResult.filePath, dlResult.sha256);
     if (!installResult.success) {
       addLogLine('ERROR', `安装失败: ${installResult.error}`);
       if (progressLabel) progressLabel.textContent = '安装失败';
@@ -1946,7 +1852,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 先检查更新
       let result = _lastUpdateResult;
       if (!result || !result.hasUpdate) {
-        result = await ipc.checkUpdate();
+        result = await callUpdate('check', 'checkUpdate');
         _lastUpdateResult = result;
       }
 
@@ -1965,7 +1871,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // 清除跳过的版本
-      await ipc.setConfig('skippedVersion', '');
+      await (updateClient()?.setSkippedVersion?.('') || callConfig('set', 'setConfig', 'skippedVersion', ''));
 
       btn.querySelector('.update-ctrl-label').textContent = '下载中...';
       await doDownloadAndInstall(result);
@@ -1987,7 +1893,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true;
     if (labelSpan) labelSpan.textContent = '检查中...';
     try {
-      const results = await ipc.checkIntegrity();
+      const results = await callUpdate('checkIntegrity', 'checkIntegrity');
       const failCount = results.filter(r => !r.ok).length;
       if (failCount === 0) {
         showNekoIsland('系统完整性正常，所有项目通过检查', 'success', 3500);
@@ -2042,7 +1948,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (labelSpan) labelSpan.textContent = '查询中...';
 
     try {
-      const result = await ipc.rollbackInfo();
+      const result = await callUpdate('rollbackInfo', 'rollbackInfo');
       if (!result.success) {
         showNekoIsland(`无法查询回滚版本: ${result.error}`, 'error', 4000);
         addLogLine('ERROR', `无法回滚: ${result.error}`);
@@ -2077,7 +1983,7 @@ document.addEventListener('DOMContentLoaded', () => {
     radio.addEventListener('change', async () => {
       if (!radio.checked) return;
       const channel = radio.value;
-      const ok = await ipc.setUpdateChannel(channel);
+      const ok = await callUpdate('setChannel', 'setUpdateChannel', channel);
       if (ok) {
         addLogLine('INFO', `更新通道已切换为 ${channel}`);
         // 注意：通道切换不改变版本卡上的徽章（徽章反映当前安装版本）
@@ -2121,7 +2027,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      await ipc.setManyConfig({ githubOwner: owner, githubRepo: repo });
+      await callUpdate('saveSource', 'setManyConfig', { githubOwner: owner, githubRepo: repo });
 
       const currentUrlSpan = currentWrap?.querySelector('.update-source-current-url');
       if (currentUrlSpan) currentUrlSpan.textContent = `github.com/${owner}/${repo}`;
@@ -2141,7 +2047,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   //  更新下载进度事件
   // ══════════════════════════════════════════════════════════════
-  ipc.on(IPC_EVENTS.UPDATE_PROGRESS, (data) => {
+  ipcClient.on(IPC_EVENTS.UPDATE_PROGRESS, (data) => {
     const progressRow   = document.getElementById('updateProgressRow');
     const progressBar   = document.getElementById('updateProgressBar');
     const progressPct   = document.getElementById('updateProgressPct');
@@ -2188,6 +2094,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /** 打开更新弹窗 */
   function showUpdateDialog(result) {
+    if (updatePage()?.showDialog?.(result)) return;
+
     const overlay = document.getElementById('updateDialogOverlay');
     if (!overlay) return;
 
@@ -2240,51 +2148,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /** 关闭更新弹窗 */
   function hideUpdateDialog() {
+    if (updatePage()?.hideDialog?.()) return;
+
     const overlay = document.getElementById('updateDialogOverlay');
     if (overlay) overlay.classList.remove('show');
   }
 
-  // ── 更新弹窗按钮事件 ───────────────────────────────────────
-  // 关闭按钮
-  document.getElementById('updateDialogClose')?.addEventListener('click', hideUpdateDialog);
+  function bindUpdateDialogFallbackActions() {
+    document.getElementById('updateDialogClose')?.addEventListener('click', hideUpdateDialog);
 
-  // 点击遮罩关闭（非强制更新时）
-  document.getElementById('updateDialogOverlay')?.addEventListener('click', (e) => {
-    if (e.target.id === 'updateDialogOverlay') {
+    document.getElementById('updateDialogOverlay')?.addEventListener('click', (e) => {
+      if (e.target.id === 'updateDialogOverlay') {
+        const overlay = document.getElementById('updateDialogOverlay');
+        const result = overlay?._updateResult;
+        if (result && result.forceUpdate) return;
+        hideUpdateDialog();
+      }
+    });
+
+    document.getElementById('updateDialogSkipBtn')?.addEventListener('click', async () => {
       const overlay = document.getElementById('updateDialogOverlay');
       const result = overlay?._updateResult;
-      if (result && result.forceUpdate) return; // 强制更新不允许点击遮罩关闭
+      if (result && result.latestVersion) {
+        await callConfig('set', 'setConfig', 'skippedVersion', result.latestVersion);
+        addLogLine('INFO', `已跳过版本 v${result.latestVersion}，下一版本发布前不再提醒`);
+        showNekoIsland(`已跳过 v${result.latestVersion}`, 'info', 3000);
+      }
       hideUpdateDialog();
-    }
-  });
+    });
 
-  // 跳过此版本
-  document.getElementById('updateDialogSkipBtn')?.addEventListener('click', async () => {
-    const overlay = document.getElementById('updateDialogOverlay');
-    const result = overlay?._updateResult;
-    if (result && result.latestVersion) {
-      await ipc.setConfig('skippedVersion', result.latestVersion);
-      addLogLine('INFO', `已跳过版本 v${result.latestVersion}，下一版本发布前不再提醒`);
-      showNekoIsland(`已跳过 v${result.latestVersion}`, 'info', 3000);
-    }
-    hideUpdateDialog();
-  });
+    document.getElementById('updateDialogInstallBtn')?.addEventListener('click', async () => {
+      const overlay = document.getElementById('updateDialogOverlay');
+      const result = overlay?._updateResult;
+      if (!result) return;
+      hideUpdateDialog();
+      await callConfig('set', 'setConfig', 'skippedVersion', '');
+      showNekoIsland(`开始下载 v${result.latestVersion}...`, 'info', 3000);
+      addLogLine('INFO', `用户确认更新 v${result.latestVersion}，开始下载`);
+      doDownloadAndInstall(result);
+    });
+  }
 
-  // 立即更新
-  document.getElementById('updateDialogInstallBtn')?.addEventListener('click', async () => {
-    const overlay = document.getElementById('updateDialogOverlay');
-    const result = overlay?._updateResult;
-    if (!result) return;
-    hideUpdateDialog();
-    // 清除跳过记录
-    await ipc.setConfig('skippedVersion', '');
-    showNekoIsland(`开始下载 v${result.latestVersion}...`, 'info', 3000);
-    addLogLine('INFO', `用户确认更新 v${result.latestVersion}，开始下载`);
-    doDownloadAndInstall(result);
-  });
+  const updateDialogPage = updatePage();
+  if (updateDialogPage?.bindDialogActions) {
+    updateDialogPage.bindDialogActions({
+      onClose: hideUpdateDialog,
+      onSkip: async (result) => {
+        if (result?.latestVersion) {
+          await (updateClient()?.setSkippedVersion?.(result.latestVersion) || callConfig('set', 'setConfig', 'skippedVersion', result.latestVersion));
+          addLogLine('INFO', `已跳过版本 v${result.latestVersion}，下一版本发布前不再提醒`);
+          showNekoIsland(`已跳过 v${result.latestVersion}`, 'info', 3000);
+        }
+        hideUpdateDialog();
+      },
+      onInstall: async (result) => {
+        if (!result) return;
+        hideUpdateDialog();
+        await (updateClient()?.setSkippedVersion?.('') || callConfig('set', 'setConfig', 'skippedVersion', ''));
+        showNekoIsland(`开始下载 v${result.latestVersion}...`, 'info', 3000);
+        addLogLine('INFO', `用户确认更新 v${result.latestVersion}，开始下载`);
+        doDownloadAndInstall(result);
+      },
+    });
+  } else {
+    bindUpdateDialogFallbackActions();
+  }
 
   // 后台自动下载完成通知
-  ipc.on(IPC_EVENTS.UPDATE_AUTO_DOWNLOADED, (data) => {
+  ipcClient.on(IPC_EVENTS.UPDATE_AUTO_DOWNLOADED, (data) => {
     const badge = document.getElementById('updateStatusBadge');
     if (badge) { badge.className = 'update-status-badge info'; badge.innerHTML = `<i class="ph ph-download-simple"></i> 已下载 v${data.version}，下次启动时安装`; }
     showNekoIsland(`更新 v${data.version} 已在后台下载完成，下次启动时自动安装`, 'info', 6000);
@@ -2295,7 +2226,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 强制更新即将安装通知
-  ipc.on(IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED, (data) => {
+  ipcClient.on(IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED, (data) => {
     const badge = document.getElementById('updateStatusBadge');
     if (badge) { badge.className = 'update-status-badge error'; badge.innerHTML = `<i class="ph ph-warning"></i> 强制更新安装中...`; }
     showNekoIsland(`强制更新 v${data.version} 安装程序已启动，应用即将关闭`, 'warn', 6000);
@@ -2303,13 +2234,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 后台自动下载失败通知
-  ipc.on(IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED, (data) => {
+  ipcClient.on(IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED, (data) => {
     addLogLine('ERROR', `后台自动下载 v${data.version} 失败: ${data.error}`);
     showNekoIsland(`更新 v${data.version} 后台下载失败，请手动检查更新`, 'error', 5000);
   });
 
   // 启动时推送的新版本可用事件
-  ipc.on(IPC_EVENTS.UPDATE_AVAILABLE, (result) => {
+  ipcClient.on(IPC_EVENTS.UPDATE_AVAILABLE, (result) => {
     _lastUpdateResult = result;
     const btn   = document.getElementById('checkUpdateBtn');
     const icon  = document.getElementById('checkUpdateIcon');
@@ -2343,16 +2274,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(id)?.addEventListener('click', (e) => {
       e.preventDefault();
       const url = e.currentTarget.href || e.currentTarget.getAttribute('href');
-      if (url && url !== '#') ipc.openExternal(url);
+      if (url && url !== '#') callSystem('openExternal', 'openExternal', url);
     });
   });
 
   // 更新日志“查看全部”按钮 → 跳转GitHub Releases
-  document.querySelector('.update-see-all-btn')?.addEventListener('click', () => {
-    const cfg = ipc.getConfigSync?.() || {};
+  document.querySelector('.update-see-all-btn')?.addEventListener('click', async () => {
+    const cfg = await callConfig('getAll', 'getAllConfig') || {};
     const owner = cfg.githubOwner || 'Neko-NF';
     const repo  = cfg.githubRepo  || 'Neko-Status-Desktop';
-    ipc.openExternal(`https://github.com/${owner}/${repo}/releases`);
+    callSystem('openExternal', 'openExternal', `https://github.com/${owner}/${repo}/releases`);
   });
 
   // ══════════════════════════════════════════════════════════════
@@ -2382,7 +2313,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const cfg = await ipc.getAllConfig();
+    const cfg = await callConfig('getAll', 'getAllConfig');
 
     await runCheck('设备密钥配置', async () => {
       const key = cfg.deviceKey;
@@ -2390,17 +2321,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     await runCheck('上报服务状态', async () => {
-      const running = await ipc.isRunning();
+      const running = await callService('isRunning', 'isRunning');
       return running ? { ok: true, text: '上报服务运行中' } : { ok: 'warn', text: '上报服务未启动' };
     });
 
     await runCheck('服务器连通性', async () => {
-      const result = await ipc.testConnection();
+      const result = await callConfig('testConnection', 'testConnection');
       return result.ok ? { ok: true, text: `服务器在线，延迟 ${result.latencyMs}ms` } : { ok: false, text: `无法连接服务器: ${result.error}` };
     });
 
     await runCheck('开机自启配置', async () => {
-      const enabled = await ipc.isAutoStartEnabled();
+      const enabled = await callService('isAutoStartEnabled', 'isAutoStartEnabled');
       return enabled ? { ok: true, text: '开机自启已启用' } : { ok: 'warn', text: '开机自启未启用（可在"服务与自启动"中开启）' };
     });
 
@@ -2476,7 +2407,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const startedAt = Date.now();
 
     try {
-      const results = await ipc.runHealthCheck();
+      const results = await callService('runHealthCheck', 'runHealthCheck');
       list.appendChild(renderHealthSummary(results, Date.now() - startedAt));
       results.forEach((result, index) => list.appendChild(renderHealthItem(result, index)));
     } catch (e) {
@@ -2490,7 +2421,7 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshHealthResultsScrollFx();
   });
 
-  ipc.on(IPC_EVENTS.APP_INIT, async (data) => {
+  ipcClient.on(IPC_EVENTS.APP_INIT, async (data) => {
     refreshConsoleStatus();
     addLogLine('INFO', `Neko Status v${data.version} 初始化完成`);
     addLogLine('INFO', `设备: ${data.deviceName} | 平台: ${data.platform}`);
@@ -2498,7 +2429,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyServiceState(data.isRunning);
 
     try {
-      const lastResult = await ipc.getLastResult();
+      const lastResult = await callService('getLastResult', 'getLastResult');
       if (lastResult) {
         _lastTickSnapshot = lastResult;
         updateDashboardCards(lastResult, { recordHealth: false });
@@ -2508,7 +2439,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 检查是否有已下载（等待安装）的更新
     try {
-      const pending = await ipc.getPendingInstall();
+      const pending = await callUpdate('getPendingInstall', 'getPendingInstall');
       if (pending && pending.hasPending) {
         showNekoIsland(
           `发现已预下载的更新 v${pending.version}，点击「立即安装」完成更新`,
@@ -2516,33 +2447,23 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         addLogLine('INFO', `检测到待安装更新 v${pending.version}，已在后台下载完成`);
         // 更新中心页面按钮也同步变为「安装待更新」
-        const btn = document.getElementById('checkUpdateBtn');
-        const icon = document.getElementById('checkUpdateIcon');
-        const label = document.getElementById('checkUpdateLabel');
-        const badge = document.getElementById('updateStatusBadge');
-        if (btn) {
-          btn._updateMode = 'install-pending';
-          btn.classList.remove('rollback-install-btn');
-          btn.classList.add('primary');
-        }
-        if (icon) { icon.className = 'ph ph-package'; icon.style.animation = ''; }
-        if (label) label.textContent = '立即安装';
-        if (badge) { badge.className = 'update-status-badge warn'; badge.innerHTML = `<i class="ph ph-arrow-circle-up"></i> 已下载 v${pending.version}，等待安装`; }
-        // 按钮点击 → 安装
-        replaceHandler('checkUpdateBtn', async () => {
-          if (btn && btn._updateMode === 'install-pending') {
-            btn.disabled = true;
-            if (label) label.textContent = '安装中...';
-            const res = await ipc.installPendingUpdate();
+        updatePage()?.setPendingInstall?.(pending.version);
+        const installBtn = replaceHandler('checkUpdateBtn', async () => {
+          if (installBtn && installBtn._updateMode === 'install-pending') {
+            const installLabel = document.getElementById('checkUpdateLabel');
+            installBtn.disabled = true;
+            if (installLabel) installLabel.textContent = '安装中...';
+            const res = await callUpdate('installPending', 'installPendingUpdate');
             if (!res.success) {
               addLogLine('ERROR', `安装失败: ${res.error}`);
-              btn.disabled = false;
-              if (label) label.textContent = '立即安装';
+              installBtn.disabled = false;
+              if (installLabel) installLabel.textContent = '立即安装';
             } else {
               addLogLine('SUCCESS', '安装程序已启动，应用即将关闭');
             }
           }
         });
+        if (installBtn) installBtn._updateMode = 'install-pending';
       }
     } catch (e) {
       console.warn('[Init] 检查待安装更新失败:', e.message);
@@ -2558,7 +2479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始化开关状态
     const cfg = data.config;
-    const autoStartEnabled = await ipc.isAutoStartEnabled();
+    const autoStartEnabled = await callService('isAutoStartEnabled', 'isAutoStartEnabled');
     syncAutoStartToggles(autoStartEnabled);
 
     const autoStartMinimizeSwitch = document.getElementById('autoStartMinimizeSwitch');
@@ -2630,14 +2551,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 勿扰模式 — 从 Windows 免打扰实际状态同步
     const dndSwitch = document.getElementById('stgDndSwitch');
     (async () => {
-      const fa = await ipc.getFocusAssist();
+      const fa = await callSystem('getFocusAssist', 'getFocusAssist');
       const winDnd = fa && fa.ok ? fa.enabled : !!cfg.doNotDisturb;
       if (dndSwitch) dndSwitch.classList.toggle('on', winDnd);
-      if (winDnd !== !!cfg.doNotDisturb) await ipc.setConfig('doNotDisturb', winDnd);
+      if (winDnd !== !!cfg.doNotDisturb) await callConfig('set', 'setConfig', 'doNotDisturb', winDnd);
       // 勿扰开启时强制关闭通知开关
       if (winDnd && notifySwitch) {
         notifySwitch.classList.remove('on');
-        if (cfg.enableNotification !== false) await ipc.setConfig('enableNotification', false);
+        if (cfg.enableNotification !== false) await callConfig('set', 'setConfig', 'enableNotification', false);
       }
     })();
 
@@ -2803,7 +2724,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── 缓存大小显示 ─────────────────────────────────────────────────
     try {
-      const cacheSize = await ipc.getCacheSize();
+      const cacheSize = await callSystem('getCacheSize', 'getCacheSize');
       const cacheSizeMB = (cacheSize / 1024 / 1024).toFixed(1);
       const cacheDesc = document.getElementById('cacheSizeDesc');
       if (cacheDesc) cacheDesc.textContent = `会话缓存（图片、脚本等）· 当前 ${cacheSizeMB} MB`;
@@ -2827,7 +2748,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── 界面缩放应用 ─────────────────────────────────────────────────
     if (cfg.uiScale && cfg.uiScale !== 100) {
-      await ipc.setZoom(cfg.uiScale / 100);
+      await callSystem('setZoom', 'setZoom', cfg.uiScale / 100);
     }
 
     // ── 恢复上次页面 ─────────────────────────────────────────────────
@@ -2875,7 +2796,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ── 在线获取更新日志（异步，不阻塞 init）──────────────────────────
-    ipc.getChangelog().then((entries) => {
+    callUpdate('getChangelog', 'getChangelog').then((entries) => {
       if (entries && entries.length > 0) {
         renderChangelogEntries(entries);
       } else {
@@ -2884,7 +2805,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).catch(() => {});
 
     // ── 趋势图表：预加载历史指标数据 ──────────────────────────────────
-    ipc.getMetricsHistory().then(history => {
+    callSystem('getMetricsHistory', 'getMetricsHistory').then(history => {
       if (history && history.length) _metricsBuffer = history;
       _initTrendChart();
       _updateTrendChart();
@@ -2945,7 +2866,7 @@ document.addEventListener('DOMContentLoaded', () => {
         aboutDeveloperCard.dataset.boundClick = 'true';
         aboutDeveloperCard.addEventListener('click', () => {
           const href = aboutDeveloperCard.dataset.href;
-          if (href) ipc.openExternal(href);
+          if (href) callSystem('openExternal', 'openExternal', href);
         });
       }
     }
@@ -2975,14 +2896,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始设备状态页加载一次
     try {
-      const metrics = await ipc.getMetrics();
+      const metrics = await callSystem('getMetrics', 'getMetrics');
       updateDeviceStatusPage(metrics);
 
       // 设备元信息卡：使用 ID 选择器填充真实数据
       // 操作系统 — 由 updateDeviceStatusPage 处理
       // 设备指纹 — 获取真实 SHA256 指纹（与服务端通信一致）
       try {
-        const fp = await ipc.getFingerprint();
+        const fp = await callSystem('getFingerprint', 'getFingerprint');
         const fpEl = document.getElementById('metaFingerprint');
         if (fpEl && fp) fpEl.textContent = fp.substring(0, 16) + '…';
         if (fpEl && fp) fpEl.title = fp; // 完整指纹 tooltip
@@ -3002,7 +2923,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 关键权限详情 — 真实检测 + 折叠逻辑
       try {
-        const perms = await ipc.checkPermissions();
+        const perms = await callService('checkPermissions', 'checkPermissions');
         const permUI = {
           metaAuthScreenCapture: perms.screenCapture,
           metaAuthProcessEnum: perms.processEnum,
@@ -3117,7 +3038,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch {}
 
       // 初始电量更新 (设备状态页 + 仪表盘)
-      const bat = await ipc.getBattery();
+      const bat = await callSystem('getBattery', 'getBattery');
       updatePowerKpi(bat.level, bat.isCharging, bat.hasBattery, bat.hasBattery === false ? '桌面供电 · 无电池' : '电池状态实时采样');
       // 仪表盘电量卡
       updateDashboardCards({
@@ -3140,12 +3061,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 无论用户是否开启上报或截图，确保网页端能立即看到真实的开关状态
     // 不依赖用户操作，不依赖主进程 10s 延迟定时器
     if (cfg.deviceKey) {
-      ipc.syncMeta().catch(() => {});
+      callService('syncMeta', 'syncMeta').catch(() => {});
     }
   });
 
   // 上报成功 Tick
-  ipc.on(IPC_EVENTS.SERVICE_TICK, (data) => {
+  ipcClient.on(IPC_EVENTS.SERVICE_TICK, (data) => {
     _lastTickSnapshot = data;
     updateDashboardCards(data);
     updateConsoleTickStatus(data);
@@ -3160,15 +3081,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 主题色板切换时重绘图表（响应 app.js 发出的自定义事件）──────────────
   document.addEventListener('neko:themeChange', () => {
     _rebuildTrendChartDeferred();
-    _applySparklineTheme();
+    applyDeviceStatusSparklineTheme();
   });
 
   // ── 系统指标更新 → 按区间节流图表刷新 ─────────────────────────────────
   // 1m 区间: 每 5s 刷新, 1h 区间: 每 60s 刷新, 12h 区间: 每 3600s 刷新
   const _trendThrottleMs = { '1m': 5000, '1h': 60000, '12h': 3600000 };
-  ipc.on(IPC_EVENTS.SYSTEM_METRICS_UPDATE, (m) => {
+  ipcClient.on(IPC_EVENTS.SYSTEM_METRICS_UPDATE, (m) => {
     _lastMetricsSnapshot = m;
     updateConsoleMetricsStatus(m);
+    updateDeviceStatusPage(m);
     _metricsBuffer.push(m);
     if (_metricsBuffer.length > 8640) _metricsBuffer.shift(); // 保留 24h
     // 仅在仪表盘页可见时刷新，且遵守当前区间节流间隔
@@ -3208,15 +3130,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 服务启停状态变化
-  ipc.on(IPC_EVENTS.SERVICE_STATUS_CHANGED, (data) => {
+  ipcClient.on(IPC_EVENTS.SERVICE_STATUS_CHANGED, (data) => {
     applyServiceState(data.isRunning);
     addDiagnosticEntry('守护进程', 'success',
       data.isRunning ? '上报服务已启动' : '上报服务已停止');
-    ipc.syncMeta().catch(() => {}); // 服务状态变化时同步元数据
+    callService('syncMeta', 'syncMeta').catch(() => {}); // 服务状态变化时同步元数据
   });
 
   // 日志条目（来自主进程 StatusService）
-  ipc.on(IPC_EVENTS.LOG_ENTRY, (data) => {
+  ipcClient.on(IPC_EVENTS.LOG_ENTRY, (data) => {
     addLogLine(data.level, data.msg, data.time);
     // 将 ERROR / WARN 级别同步到诊断日志表
     const lvl = (data.level || '').toUpperCase();
@@ -3228,7 +3150,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 密钥状态事件（密钥失效/设备删除/接管）— 弹出醒目警告弹窗
-  ipc.on(IPC_EVENTS.SERVICE_KEY_STATUS, (data) => {
+  ipcClient.on(IPC_EVENTS.SERVICE_KEY_STATUS, (data) => {
     const { code, message } = data;
     if (code === 'KEY_REVOKED') {
       addLogLine('ERROR', `密钥已被撤销: ${message}`);
@@ -3319,26 +3241,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // 最小化到托盘
   document.getElementById('stgTraySwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('closeAction', isOn ? 'minimize' : 'ask');
+    await callConfig('set', 'setConfig', 'closeAction', isOn ? 'minimize' : 'ask');
     addLogLine('INFO', `关闭行为 → ${isOn ? '最小化到托盘' : '每次询问'}`);
   });
 
   // 恢复上次状态
   document.getElementById('stgRestoreSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('restoreLastState', isOn);
+    await callConfig('set', 'setConfig', 'restoreLastState', isOn);
   });
 
   // 自动下载最新安装包
   document.getElementById('stgAutoDownloadSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('autoDownload', isOn);
+    await callConfig('set', 'setConfig', 'autoDownload', isOn);
     addLogLine('INFO', `自动下载更新 → ${isOn ? '开启（后台静默下载，下次启动时安装）' : '已关闭'}`);
   });
 
   document.getElementById('stgExperimentalSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('enableExperimentalFeatures', isOn);
+    await callConfig('set', 'setConfig', 'enableExperimentalFeatures', isOn);
     applyExperimentalFeatureState({ enableExperimentalFeatures: isOn });
     addLogLine('INFO', `实验性内容 → ${isOn ? '已开启' : '已关闭'}`);
   });
@@ -3357,12 +3279,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!btn || !btn.dataset.mode) return;
     const mode = btn.dataset.mode;
     document.querySelectorAll('#stgReportModeGroup .toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
-    await ipc.setConfig('reportIntervalMode', mode);
+    await callConfig('set', 'setConfig', 'reportIntervalMode', mode);
     const customRow = document.getElementById('stgCustomIntervalRow');
     setExpandableSectionState(customRow, mode === 'custom', { display: 'flex' });
     const descEl = document.getElementById('stgReportIntervalDesc');
     if (mode === 'auto') {
-      await ipc.setConfig('reportInterval', 10);
+      await callConfig('set', 'setConfig', 'reportInterval', 10);
       if (descEl) descEl.textContent = '自动模式: 每 10s 自动上报';
       const qi = document.getElementById('quickIntervalInput');
       if (qi) qi.value = 10;
@@ -3392,7 +3314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('stgReportIntervalInput');
     const val = parseInt(input?.value, 10);
     if (isNaN(val) || val < 5) { showNekoIsland('间隔不能小于 5 秒', 'warn', 2000); return; }
-    await ipc.setConfig('reportInterval', val);
+    await callConfig('set', 'setConfig', 'reportInterval', val);
     const descEl = document.getElementById('stgReportIntervalDesc');
     if (descEl) descEl.textContent = `自定义模式: 每 ${val}s 上报`;
     const qi = document.getElementById('quickIntervalInput');
@@ -3408,12 +3330,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 设置页：截图间隔同步开关 ─────────────────────────────
   document.getElementById('stgSyncScreenshotSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('syncScreenshotInterval', isOn);
+    await callConfig('set', 'setConfig', 'syncScreenshotInterval', isOn);
     // 联动截图页模式
     const modeGroup = document.getElementById('screenshotModeGroup');
     if (modeGroup) {
       const targetMode = isOn ? 'auto' : 'interval';
-      await ipc.setConfig('screenshotMode', targetMode);
+      await callConfig('set', 'setConfig', 'screenshotMode', targetMode);
       modeGroup.querySelectorAll('.toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === targetMode));
     }
     addLogLine('INFO', `截图间隔同步 → ${isOn ? '已启用 (跟随上报)' : '已关闭 (独立间隔)'}`);
@@ -3424,7 +3346,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('quickIntervalCard')?.addEventListener('click', async (e) => {
     // 如果点击的是 stepper 内部元素（自定义模式），不触发导航
     if (e.target.closest('.neko-stepper')) return;
-    const cfg = await ipc.getAllConfig();
+    const cfg = await callConfig('getAll', 'getAllConfig');
     if ((cfg.reportIntervalMode || 'auto') !== 'auto') return;
     // 切换到设置页
     const settingsNav = document.querySelector('.nav-item[data-target="page-settings"]');
@@ -3453,8 +3375,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('quickIntervalInput')?.addEventListener('change', async function () {
     const val = parseInt(this.value, 10);
     if (isNaN(val) || val < 5) return;
-    await ipc.setConfig('reportInterval', val);
-    await ipc.setConfig('reportIntervalMode', 'custom');
+    await callConfig('set', 'setConfig', 'reportInterval', val);
+    await callConfig('set', 'setConfig', 'reportIntervalMode', 'custom');
     // 同步设置页
     document.querySelectorAll('#stgReportModeGroup .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'custom'));
     const customRow = document.getElementById('stgCustomIntervalRow');
@@ -3480,9 +3402,9 @@ document.addEventListener('DOMContentLoaded', () => {
       addLogLine('WARN', '勿扰模式已开启，无法开启通知');
       return;
     }
-    await ipc.setConfig('enableNotification', isOn);
+    await callConfig('set', 'setConfig', 'enableNotification', isOn);
     if (isOn) {
-      const result = await ipc.notify('Neko Status', '系统推送通知已启用');
+      const result = await callSystem('notify', 'notify', 'Neko Status', '系统推送通知已启用');
       if (result && result.shown === false) {
         addLogLine('WARN', `系统通知未显示: ${result.reason || 'unknown'}`);
       }
@@ -3494,17 +3416,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('stgDndSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
     _dndUserAction = true;
-    await ipc.setConfig('doNotDisturb', isOn);
-    const result = await ipc.setFocusAssist(isOn);
+    await callConfig('set', 'setConfig', 'doNotDisturb', isOn);
+    const result = await callSystem('setFocusAssist', 'setFocusAssist', isOn);
     // 勿扰开启时自动关闭通知开关，关闭时自动恢复
     const notifySw = document.getElementById('stgNotifySwitch');
     if (notifySw) {
       if (isOn) {
         notifySw.classList.remove('on');
-        await ipc.setConfig('enableNotification', false);
+        await callConfig('set', 'setConfig', 'enableNotification', false);
       } else {
         notifySw.classList.add('on');
-        await ipc.setConfig('enableNotification', true);
+        await callConfig('set', 'setConfig', 'enableNotification', true);
       }
     }
     if (result && result.ok) {
@@ -3518,22 +3440,22 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(async () => {
     if (_dndUserAction) { _dndUserAction = false; return; }
     try {
-      const fa = await ipc.getFocusAssist();
+      const fa = await callSystem('getFocusAssist', 'getFocusAssist');
       if (!fa || !fa.ok) return;
       const sw = document.getElementById('stgDndSwitch');
       const curOn = sw ? sw.classList.contains('on') : false;
       if (fa.enabled !== curOn) {
         if (sw) sw.classList.toggle('on', fa.enabled);
-        await ipc.setConfig('doNotDisturb', fa.enabled);
+        await callConfig('set', 'setConfig', 'doNotDisturb', fa.enabled);
         // 同步通知开关状态
         const notifySw = document.getElementById('stgNotifySwitch');
         if (notifySw) {
           if (fa.enabled) {
             notifySw.classList.remove('on');
-            await ipc.setConfig('enableNotification', false);
+            await callConfig('set', 'setConfig', 'enableNotification', false);
           } else {
             notifySw.classList.add('on');
-            await ipc.setConfig('enableNotification', true);
+            await callConfig('set', 'setConfig', 'enableNotification', true);
           }
         }
       }
@@ -3543,7 +3465,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 隐身模式
   document.getElementById('stgIncognitoSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('enableIncognito', isOn);
+    await callConfig('set', 'setConfig', 'enableIncognito', isOn);
     addLogLine('INFO', `隐身模式 → ${isOn ? '已启用（截图将模糊处理）' : '已禁用'}`);
     // 隐身模式关闭时隐藏「设置隐私规则」按钮，卡片始终可见
     const privacyRulesBtn = document.getElementById('openPrivacyRulesBtn');
@@ -3566,7 +3488,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!btn) return;
     const scope = btn.dataset.scope || 'screenshot';
     setIncognitoScopeUI(scope);
-    await ipc.setConfig('incognitoScope', scope);
+    await callConfig('set', 'setConfig', 'incognitoScope', scope);
     window._nekoActivityHelpers?.syncPrivacyBar?.();
     addLogLine('INFO', `隐身保护范围 → ${scope}`);
   });
@@ -3574,21 +3496,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // 全局截图模糊开关（在隐私规则弹窗中）
   document.getElementById('blurAllSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('blurAllScreenshots', isOn);
+    await callConfig('set', 'setConfig', 'blurAllScreenshots', isOn);
     addLogLine('INFO', `全局截图模糊 → ${isOn ? '已启用' : '已禁用'}`);
   });
 
   // 双重认证
   document.getElementById('stg2FASwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('enable2FA', isOn);
+    await callConfig('set', 'setConfig', 'enable2FA', isOn);
     addLogLine('INFO', `双重认证 → ${isOn ? '已启用' : '已禁用'}`);
   });
 
   // 玻璃拟态效果
   document.getElementById('stgGlassSwitch')?.addEventListener('click', async function () {
     const isOn = this.classList.contains('on');
-    await ipc.setConfig('glassEffect', isOn);
+    await callConfig('set', 'setConfig', 'glassEffect', isOn);
     document.documentElement.classList.toggle('no-glass', !isOn);
     addLogLine('INFO', `玻璃拟态 → ${isOn ? '已启用' : '已禁用'}`);
   });
@@ -3602,9 +3524,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isSchedule) {
       schedSwitch.classList.remove('on');
       setExpandableSectionState(document.getElementById('stgDarkTimeRow'), false, { display: 'flex' });
-      await ipc.setConfig('themeMode', isOn ? 'dark' : 'light');
+      await callConfig('set', 'setConfig', 'themeMode', isOn ? 'dark' : 'light');
     } else {
-      await ipc.setConfig('themeMode', isOn ? 'dark' : 'light');
+      await callConfig('set', 'setConfig', 'themeMode', isOn ? 'dark' : 'light');
     }
     applyThemeMode(isOn ? 'dark' : 'light',
       document.getElementById('stgDarkStartTime')?.value || '18:00',
@@ -3619,16 +3541,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const start = document.getElementById('stgDarkStartTime')?.value || '18:00';
     const end   = document.getElementById('stgDarkEndTime')?.value   || '07:00';
     const mode  = isOn ? 'auto' : (document.getElementById('stgDarkSwitch')?.classList.contains('on') ? 'dark' : 'light');
-    await ipc.setConfig('themeMode', mode);
+    await callConfig('set', 'setConfig', 'themeMode', mode);
     applyThemeMode(mode, start, end);
     addLogLine('INFO', `定时深色模式 → ${isOn ? `${start}–${end}` : '已关闭'}`);
   });
   document.getElementById('stgDarkStartTime')?.addEventListener('change', async function () {
-    await ipc.setConfig('darkModeStart', this.value);
+    await callConfig('set', 'setConfig', 'darkModeStart', this.value);
     applyThemeMode('auto', this.value, document.getElementById('stgDarkEndTime')?.value || '07:00');
   });
   document.getElementById('stgDarkEndTime')?.addEventListener('change', async function () {
-    await ipc.setConfig('darkModeEnd', this.value);
+    await callConfig('set', 'setConfig', 'darkModeEnd', this.value);
     applyThemeMode('auto', document.getElementById('stgDarkStartTime')?.value || '18:00', this.value);
   });
 
@@ -3644,8 +3566,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (scaleLabel) scaleLabel.textContent = pct + '%';
     if (scaleDown)  scaleDown.disabled  = _scaleIdx <= 0;
     if (scaleUp)    scaleUp.disabled    = _scaleIdx >= SCALE_STEPS.length - 1;
-    ipc.setConfig('uiScale', pct);
-    ipc.setZoom(pct / 100);
+    callConfig('set', 'setConfig', 'uiScale', pct);
+    callSystem('setZoom', 'setZoom', pct / 100);
     addLogLine('INFO', `界面缩放 → ${pct}%`);
   }
   document.getElementById('stgScaleDown')?.addEventListener('click', () => _doScale(-1));
@@ -3660,7 +3582,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const label = this.childNodes[this.childNodes.length - 1];
     if (label) label.textContent = ' 清理中…';
     try {
-      const result = await ipc.clearCache();
+      const result = await callSystem('clearCache', 'clearCache');
       if (result.success) {
         addLogLine('SUCCESS', `cache cleared: ${formatBytes(result.clearedBytes || 0)} freed, ${result.removedCount || 0} paths touched`);
         if (icon) { icon.className = 'ph ph-check-circle'; icon.classList.remove('spinning'); }
@@ -3684,7 +3606,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('startDelayInput')?.addEventListener('change', async function () {
     const val = parseInt(this.value, 10);
     if (!isNaN(val) && val >= 0) {
-      await ipc.setConfig('startupDelayMs', val * 1000);
+      await callConfig('set', 'setConfig', 'startupDelayMs', val * 1000);
       addLogLine('INFO', `启动延迟已设为 ${val} 秒`);
     }
   });
@@ -3693,7 +3615,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('maxRestartsInput')?.addEventListener('change', async function () {
     const val = parseInt(this.value, 10);
     if (!isNaN(val) && val >= 1) {
-      await ipc.setConfig('maxRestarts', val);
+      await callConfig('set', 'setConfig', 'maxRestarts', val);
     }
   });
 
@@ -3703,7 +3625,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const unit = document.getElementById('restartIntervalUnit')?.value || 's';
     const sec = unit === 'm' ? val * 60 : val;
     if (!isNaN(sec) && sec >= 5) {
-      await ipc.setConfig('restartIntervalSec', sec);
+      await callConfig('set', 'setConfig', 'restartIntervalSec', sec);
     }
   });
   document.getElementById('restartIntervalUnit')?.addEventListener('change', () => {
@@ -3716,7 +3638,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const unit = document.getElementById('watchdogUnit')?.value || 's';
     const sec = unit === 'm' ? val * 60 : val;
     if (!isNaN(sec) && sec >= 10) {
-      await ipc.setConfig('watchdogTimeoutSec', sec);
+      await callConfig('set', 'setConfig', 'watchdogTimeoutSec', sec);
     }
   });
   document.getElementById('watchdogUnit')?.addEventListener('change', () => {
@@ -3727,12 +3649,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('screenshotModeGroup')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('.toggle-btn');
     if (!btn || !btn.dataset.mode) return;
-    await ipc.setConfig('screenshotMode', btn.dataset.mode);
+    await callConfig('set', 'setConfig', 'screenshotMode', btn.dataset.mode);
     // 同步截图间隔设定
     if (btn.dataset.mode === 'auto') {
-      await ipc.setConfig('syncScreenshotInterval', true);
+      await callConfig('set', 'setConfig', 'syncScreenshotInterval', true);
     } else if (btn.dataset.mode === 'interval') {
-      await ipc.setConfig('syncScreenshotInterval', false);
+      await callConfig('set', 'setConfig', 'syncScreenshotInterval', false);
     }
   });
 
@@ -3742,7 +3664,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!btn || !btn.dataset.value) return;
     const sec = parseInt(btn.dataset.value, 10);
     if (!isNaN(sec) && sec >= 10) {
-      await ipc.setConfig('screenshotInterval', sec);
+      await callConfig('set', 'setConfig', 'screenshotInterval', sec);
     }
   });
 
@@ -3753,7 +3675,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (unit === 'm') sec = val * 60;
     else if (unit === 'h') sec = val * 3600;
     if (!isNaN(sec) && sec >= 10) {
-      await ipc.setConfig('screenshotInterval', sec);
+      await callConfig('set', 'setConfig', 'screenshotInterval', sec);
     }
   });
 
@@ -3762,13 +3684,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
   document.getElementById('localInstallBtn')?.addEventListener('click', async () => {
     try {
-      const filePath = await ipc.selectFile({
+      const filePath = await callSystem('selectFile', 'selectFile', {
         title: '选择更新安装包',
         filters: [{ name: '安装包', extensions: ['exe', 'zip', '7z'] }],
       });
       if (!filePath) return;
       addLogLine('INFO', `选择本地安装包: ${filePath}`);
-      const result = await ipc.installUpdate(filePath);
+      const result = await callUpdate('install', 'installUpdate', filePath);
       if (result.success) {
         addLogLine('SUCCESS', '安装程序已启动');
       } else {
@@ -3787,7 +3709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reportIntervalInput.addEventListener('change', async () => {
       const val = parseInt(reportIntervalInput.value, 10);
       if (!isNaN(val) && val >= 0) {
-        await ipc.setConfig('reportInterval', val);
+        await callConfig('set', 'setConfig', 'reportInterval', val);
         addLogLine('INFO', `上报间隔已设为 ${val} 秒`);
       }
     });
@@ -3798,1436 +3720,29 @@ document.addEventListener('DOMContentLoaded', () => {
   // ══════════════════════════════════════════════════════════════
 
   // 格式化字节数为人类可读
-  function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-    return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
-  }
+  // Auth page behavior lives in pages/auth.page.js.
 
-  // 格式化网络速率 (bps → KB/s, MB/s)
-  function formatBps(bps) {
-    if (bps < 1024) return bps.toFixed(0) + ' B/s';
-    if (bps < 1024 * 1024) return (bps / 1024).toFixed(1) + ' KB/s';
-    return (bps / 1024 / 1024).toFixed(1) + ' MB/s';
-  }
+  const authPage = () => window._nekoModules?.pages?.AuthPage || null;
 
-  function clampNumber(value, min, max) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return min;
-    return Math.max(min, Math.min(max, n));
-  }
-
-  function getNetworkLevel(latency) {
-    if (latency == null || latency < 0) return { level: 'error', text: '离线' };
-    if (latency > 300) return { level: 'error', text: '拥塞' };
-    if (latency > 150) return { level: 'warn', text: '延迟高' };
-    if (latency > 60) return { level: 'info', text: '正常' };
-    return { level: 'info', text: '极佳' };
-  }
-
-  function getNetworkScore(m) {
-    if (!m || m.networkLatency == null || m.networkLatency < 0) return 0;
-    const latencyScore = 100 - clampNumber(m.networkLatency, 0, 300) / 3;
-    const trafficBps = Math.max(0, Number(m.netDownBps || 0) + Number(m.netUpBps || 0));
-    const trafficBoost = trafficBps > 0 ? Math.min(18, Math.log10(trafficBps + 1) * 2.4) : 0;
-    return clampNumber(latencyScore + trafficBoost, 0, 100);
-  }
-
-  function getNetworkTrendValue(m) {
-    if (!m || m.networkLatency == null || m.networkLatency < 0) return 100;
-    return clampNumber(m.networkLatency / 3, 0, 100);
-  }
-
-  function getBatteryLevelInfo(level, isCharging, hasBattery) {
-    if (hasBattery === false) return { level: 'info', text: '桌面供电' };
-    if (isCharging) return { level: 'info', text: '充电中' };
-    if (level < 15) return { level: 'error', text: '电量低' };
-    if (level < 35) return { level: 'warn', text: '偏低' };
-    return { level: 'success', text: '使用电池' };
-  }
-
-  function updatePowerKpi(level, isCharging, hasBattery, footerText) {
-    const kpiCards = document.querySelectorAll('#page-device-status .kpi-card');
-    const card = kpiCards[3];
-    if (!card) return;
-    const displayLevel = hasBattery === false ? 100 : clampNumber(level, 0, 100);
-    const batValue = card.querySelector('.kpi-value');
-    const batBadge = card.querySelector('.kpi-badge');
-    const batFooter = card.querySelector('.kpi-footer');
-    const info = getBatteryLevelInfo(displayLevel, isCharging, hasBattery);
-    if (batValue) batValue.innerHTML = `${displayLevel}<small>%</small>`;
-    if (batBadge) {
-      batBadge.className = `kpi-badge ${info.level}`;
-      batBadge.textContent = info.text;
-    }
-    if (batFooter && footerText) batFooter.textContent = footerText;
-    _updateBatterySparkline(displayLevel);
-  }
-
-  function updateDeviceStatusPage(m) {
-    if (!m) return;
-    const kpiCards = document.querySelectorAll('#page-device-status .kpi-card');
-    if (kpiCards.length < 4) return;
-
-    // CPU
-    const cpuValue = kpiCards[0].querySelector('.kpi-value');
-    const cpuBadge = kpiCards[0].querySelector('.kpi-badge');
-    if (cpuValue) cpuValue.innerHTML = `${m.cpuPct}<small>%</small>`;
-    if (cpuBadge) {
-      const level = m.cpuPct > 90 ? 'error' : m.cpuPct > 70 ? 'warn' : 'info';
-      const text = m.cpuPct > 90 ? '过高' : m.cpuPct > 70 ? '偏高' : '正常';
-      cpuBadge.className = `kpi-badge ${level}`;
-      cpuBadge.textContent = text;
-    }
-    const cpuFooter = kpiCards[0].querySelector('.kpi-footer');
-    if (cpuFooter && m.cpuModel) cpuFooter.textContent = `${m.cpuCores} 核 · ${m.cpuModel.split('@')[0].trim().slice(0, 30)}`;
-
-    // 内存
-    const memValue = kpiCards[1].querySelector('.kpi-value');
-    const memBadge = kpiCards[1].querySelector('.kpi-badge');
-    if (memValue) memValue.innerHTML = `${m.memPct}<small>%</small>`;
-    if (memBadge) {
-      const level = m.memPct > 90 ? 'error' : m.memPct > 80 ? 'warn' : 'info';
-      const text = m.memPct > 90 ? '危险' : m.memPct > 80 ? '警告' : '正常';
-      memBadge.className = `kpi-badge ${level}`;
-      memBadge.textContent = text;
-    }
-    const memFooter = kpiCards[1].querySelector('.kpi-footer');
-    if (memFooter) memFooter.textContent = `${formatBytes(m.memUsed)} / ${formatBytes(m.memTotal)}`;
-
-    // 网络
-    const netValue = kpiCards[2].querySelector('.kpi-value') || kpiCards[2].querySelector('.kpi-value-sm');
-    const netBadge = kpiCards[2].querySelector('.kpi-badge');
-    if (netValue) {
-      const lat = m.networkLatency;
-      netValue.innerHTML = lat >= 0 ? `${lat} <span class="kpi-value-unit">ms 延迟</span>` : `— <span class="kpi-value-unit">不可达</span>`;
-    }
-    if (netBadge) {
-      const netState = getNetworkLevel(m.networkLatency);
-      netBadge.className = `kpi-badge ${netState.level}`;
-      netBadge.textContent = netState.text;
-    }
-    // 网络上传/下载速度
-    const netSpeedFooter = document.getElementById('netSpeedFooter');
-    if (netSpeedFooter && (m.netDownBps != null || m.netUpBps != null)) {
-      const down = formatBps(m.netDownBps || 0);
-      const up   = formatBps(m.netUpBps || 0);
-      netSpeedFooter.innerHTML = `<i class="ph ph-arrow-down"></i> ${down} &nbsp;&nbsp; <i class="ph ph-arrow-up"></i> ${up}`;
-    }
-
-    // 供电卡保留电池百分比，指标更新时只刷新运行时间说明
-    if (m.uptime) {
-      const hr = Math.floor(m.uptime / 3600);
-      const min = Math.floor((m.uptime % 3600) / 60);
-      const batFooter = kpiCards[3].querySelector('.kpi-footer');
-      if (batFooter) batFooter.textContent = `系统运行: ${hr}h ${min}m`;
-    }
-
-    // 设备元信息 — 仅更新操作系统，指纹由 init 时设置
-    const metaOSEl = document.getElementById('metaOS');
-    if (metaOSEl && m.osFriendlyName) metaOSEl.textContent = `${m.osFriendlyName} (${m.arch})`;
-    else if (metaOSEl && m.osRelease) metaOSEl.textContent = `Windows ${m.osRelease} (${m.arch})`;
-
-    // 更新迷你 Sparkline
-    _updateSparklines(m);
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  //  迷你 Sparkline 折线（KPI 卡片内嵌小图表）
-  // ══════════════════════════════════════════════════════════════
-  const SPARK_MAX = 30; // 保留最近 30 个点
-  const _sparkData = { cpu: [], mem: [], net: [], battery: [] };
-  const _sparkCharts = {};
-
-  function getSparklineThemeColor() {
-    return getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || 'rgb(99,102,241)';
-  }
-
-  function sparklineFillColor(color, alpha = 0.12) {
-    const probe = document.createElement('span');
-    probe.style.color = color;
-    document.body.appendChild(probe);
-    const resolved = getComputedStyle(probe).color;
-    probe.remove();
-    const nums = resolved.match(/\d+(\.\d+)?/g) || [];
-    const [r, g, b] = nums.map(Number);
-    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)
-      ? `rgba(${r}, ${g}, ${b}, ${alpha})`
-      : `rgba(99, 102, 241, ${alpha})`;
-  }
-
-  function _applySparklineTheme() {
-    const themeColor = getSparklineThemeColor();
-    Object.values(_sparkCharts).forEach((chart) => {
-      if (!chart) return;
-      chart.data.datasets[0].borderColor = themeColor;
-      chart.data.datasets[0].backgroundColor = sparklineFillColor(themeColor);
-      chart.update('none');
+  function ensureAuthPage() {
+    const page = authPage();
+    page?.init?.({
+      callAuth,
+      callConfig,
+      callSystem,
+      validateKey: () => callApi('validateKey', 'validateKey'),
+      addLogLine,
+      showNekoIsland,
+      escapeHtml,
     });
+    return page;
   }
-
-  function _createSparkline(canvasId) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return null;
-    const themeColor = getSparklineThemeColor();
-    return new Chart(canvas, {
-      type: 'line',
-      data: {
-        labels: Array(SPARK_MAX).fill(''),
-        datasets: [{
-          data: [],
-          borderColor: themeColor,
-          backgroundColor: sparklineFillColor(themeColor),
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0.4,
-          fill: true,
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: {
-          x: { display: false },
-          y: { display: false, min: 0, max: 100 }
-        },
-        animation: { duration: 300 },
-        elements: { line: { borderCapStyle: 'round' } },
-      }
-    });
-  }
-
-  function _initSparklines() {
-    if (_sparkCharts.cpu) return; // 已初始化
-    _sparkCharts.cpu = _createSparkline('sparkCpu');
-    _sparkCharts.mem = _createSparkline('sparkMem');
-    _sparkCharts.net = _createSparkline('sparkNet');
-    _sparkCharts.battery = _createSparkline('sparkBattery');
-    _applySparklineTheme();
-  }
-
-  function _setSparklineData(key, value) {
-    _initSparklines();
-    if (value != null) _sparkData[key].push(clampNumber(value, 0, 100));
-    if (_sparkData[key].length > SPARK_MAX) _sparkData[key].shift();
-    const chart = _sparkCharts[key];
-    if (!chart) return;
-    chart.data.labels = _sparkData[key].map(() => '');
-    chart.data.datasets[0].data = [..._sparkData[key]];
-    chart.update('none');
-  }
-
-  function _updateBatterySparkline(level) {
-    if (level == null) return;
-    _initSparklines();
-    const value = clampNumber(level, 0, 100);
-    if (_sparkData.battery.length === 0) {
-      _sparkData.battery = Array(SPARK_MAX).fill(value);
-      const chart = _sparkCharts.battery;
-      if (!chart) return;
-      chart.data.labels = _sparkData.battery.map(() => '');
-      chart.data.datasets[0].data = [..._sparkData.battery];
-      chart.update('none');
-      return;
-    }
-    _setSparklineData('battery', value);
-  }
-
-  function _syncBatterySparklineFromCard() {
-    if (_sparkData.battery.length > 0) return;
-    const valueEl = document.querySelector('#sparkBattery')?.closest('.kpi-card')?.querySelector('.kpi-value');
-    const value = parseFloat(valueEl?.textContent || '');
-    _updateBatterySparkline(Number.isFinite(value) ? value : 100);
-  }
-
-  function _updateSparklines(m) {
-    _setSparklineData('cpu', m.cpuPct);
-    _setSparklineData('mem', m.memPct);
-    _setSparklineData('net', getNetworkTrendValue(m));
-  }
-
-  document.querySelector('.nav-item[data-target="page-device-status"]')?.addEventListener('click', () => {
-    requestAnimationFrame(() => {
-      _initSparklines();
-      _syncBatterySparklineFromCard();
-    });
-  });
-
-  // 监听指标推送
-  ipc.on(IPC_EVENTS.SYSTEM_METRICS_UPDATE, (m) => {
-    updateDeviceStatusPage(m);
-    // 指标阈值 → 诊断日志
-    _checkMetricThresholds(m);
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  //  历史状态诊断日志（动态渲染至 #historyTableBody）
-  // ══════════════════════════════════════════════════════════════
-  const _diagEntries = [];
-  const DIAG_MAX = 20;
-  let _lastMemWarn = 0;
-  let _lastCpuWarn = 0;
-
-  function _formatDiagTime(ts) {
-    const d = new Date(ts);
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
-  function addDiagnosticEntry(module, status, detail, actionHtml) {
-    const entry = { time: Date.now(), module, status, detail, actionHtml: actionHtml || '—' };
-    _diagEntries.unshift(entry);
-    if (_diagEntries.length > DIAG_MAX) _diagEntries.pop();
-    _renderDiagTable();
-    _pushDashboardEvent(status, `[${module}] ${detail}`);
-  }
-
-  // 仪表盘最近事件卡片同步
-  const DASH_EVENT_MAX = 20;
-  function _pushDashboardEvent(status, text) {
-    const list = document.getElementById('dashEventList');
-    if (!list) return;
-    // 首次清除空态
-    const emptyHint = list.querySelector('.event-empty-hint');
-    if (emptyHint) emptyHint.remove();
-    // 创建事件行
-    const dotClass = status === 'success' ? 'info' : status === 'warn' ? 'warn' : 'error';
-    const timeStr = new Date().toTimeString().slice(0, 5);
-    const item = document.createElement('div');
-    item.className = 'event-item';
-    item.innerHTML = `<span class="event-time">${timeStr}</span><div class="event-dot ${dotClass}"></div><span class="event-desc">${escapeHtml(text)}</span>`;
-    list.insertBefore(item, list.firstChild);
-    while (list.children.length > DASH_EVENT_MAX) list.removeChild(list.lastChild);
-  }
-
-  function _renderDiagTable() {
-    const tbody = document.getElementById('historyTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = _diagEntries.map(e => `
-      <tr data-status="${e.status}">
-        <td>${_formatDiagTime(e.time)}</td>
-        <td>${escapeHtml(e.module)}</td>
-        <td><span class="status-badge ${e.status}">${e.status === 'success' ? '正常' : e.status === 'warn' ? '警告' : '错误'}</span></td>
-        <td>${escapeHtml(e.detail)}</td>
-        <td class="col-action">${e.actionHtml}</td>
-      </tr>`).join('');
-    // 重新应用当前筛选
-    _applyHistoryFilter();
-  }
-
-  function _applyHistoryFilter() {
-    const activeBtn = document.querySelector('#historyFilterGroup .filter-segmented-btn.active');
-    const filter = activeBtn ? activeBtn.dataset.filter : 'all';
-    const rows = document.querySelectorAll('#historyTableBody tr');
-    rows.forEach(row => {
-      row.style.display = (filter === 'all' || row.dataset.status === filter) ? '' : 'none';
-    });
-  }
-
-  function _checkMetricThresholds(m) {
-    const now = Date.now();
-    // 内存超过 85% 且距上次警告 > 3 分钟
-    if (m.memPct > 85 && now - _lastMemWarn > 180000) {
-      _lastMemWarn = now;
-      addDiagnosticEntry('内存监控', 'warn', `系统内存占用超阈值 (${m.memPct}%)`, '<button class="action-btn x-small">忽略</button>');
-      ipc.notify('内存警告', `系统内存占用 ${m.memPct}%，已超过 85% 阈值`);
-    }
-    // CPU 超过 90%
-    if (m.cpuPct > 90 && now - _lastCpuWarn > 180000) {
-      _lastCpuWarn = now;
-      addDiagnosticEntry('CPU 监控', 'warn', `CPU 负载过高 (${m.cpuPct}%)`, '<button class="action-btn x-small">忽略</button>');
-      ipc.notify('CPU 警告', `CPU 负载 ${m.cpuPct}%，已超过 90% 阈值`);
-    }
-  }
-
-  // History diagnostic filter
-  const historyFilterGroup = document.getElementById('historyFilterGroup');
-  if (historyFilterGroup) {
-    historyFilterGroup.querySelectorAll('.filter-segmented-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        historyFilterGroup.querySelectorAll('.filter-segmented-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        const filter = btn.dataset.filter;
-        const rows = document.querySelectorAll('#historyTableBody tr');
-        rows.forEach((row) => {
-          if (filter === 'all') { row.style.display = ''; return; }
-          row.style.display = row.dataset.status === filter ? '' : 'none';
-        });
-
-        // 动画化 pill 滑块
-        const pill = document.getElementById('historyFilterPill');
-        if (pill) {
-          const rect = btn.getBoundingClientRect();
-          const parentRect = historyFilterGroup.getBoundingClientRect();
-          pill.style.width = rect.width + 'px';
-          pill.style.transform = `translateX(${rect.left - parentRect.left}px)`;
-        }
-      });
-    });
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  //  用户认证系统
-  // ══════════════════════════════════════════════════════════════
-
-  // ── 辅助：灵动岛通知（复用已有逻辑或简易版）──────────────────
-  function showAuthNotice(msg, type = 'info') {
-    // 尝试使用已有的灵动岛
-    const island = document.getElementById('nekoIsland');
-    if (island && typeof window._showIslandNotice === 'function') {
-      window._showIslandNotice(msg, type);
-      return;
-    }
-    // 降级方案：控制台
-    addLogLine(type === 'error' ? 'ERROR' : 'INFO', msg);
-  }
-
-  // ── UI 状态更新 ────────────────────────────────────────────────
-  function updateAuthUI(isLoggedIn, user) {
-    const avatar = document.getElementById('userAvatar');
-    const nameEl = document.getElementById('dropdownUsername');
-    const roleEl = document.getElementById('dropdownRole');
-    const loginBtn = document.getElementById('btnOpenLogin');
-    const profileBtn = document.getElementById('btnProfileSettings');
-    const logoutBtn = document.getElementById('btnLogout');
-    const logoutDiv = document.getElementById('logoutDivider');
-    const settingsAvatar = document.getElementById('settingsAvatar');
-    const profileAvatar = document.getElementById('profileModalAvatar');
-    const settingsName = document.querySelector('.settings-profile-name');
-    const settingsSub = document.querySelector('.settings-profile-sub');
-
-    if (isLoggedIn && user) {
-      const displayName = user.username || 'User';
-      const avatarUrl = user.avatar
-        ? user.avatar
-        : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=06b6d4&color=fff`;
-
-      if (avatar) avatar.src = avatarUrl;
-      if (nameEl) nameEl.textContent = displayName;
-      if (roleEl) roleEl.textContent = user.role === 'admin' ? '管理员' : '已登录';
-      if (loginBtn) loginBtn.style.display = 'none';
-      if (profileBtn) profileBtn.style.display = '';
-      if (logoutBtn) logoutBtn.style.display = '';
-      if (logoutDiv) logoutDiv.style.display = '';
-      if (settingsAvatar) settingsAvatar.src = avatarUrl;
-      if (profileAvatar) profileAvatar.src = avatarUrl;
-      if (settingsName) settingsName.textContent = displayName;
-      if (settingsSub) settingsSub.textContent = `已登录 · ${user.role === 'admin' ? '管理员' : '普通用户'}`;
-    } else {
-      if (avatar) avatar.src = 'https://api.dicebear.com/7.x/notionists/svg?seed=Guest&backgroundColor=0f172a';
-      if (nameEl) nameEl.textContent = '未登录';
-      if (roleEl) roleEl.textContent = '设备密钥模式';
-      if (loginBtn) loginBtn.style.display = '';
-      if (profileBtn) profileBtn.style.display = 'none';
-      if (logoutBtn) logoutBtn.style.display = 'none';
-      if (logoutDiv) logoutDiv.style.display = 'none';
-      if (profileAvatar) profileAvatar.src = 'https://ui-avatars.com/api/?name=User&background=06b6d4&color=fff';
-      if (settingsName) settingsName.textContent = 'Neko User';
-      if (settingsSub) settingsSub.textContent = '设备监控本地账户';
-    }
-  }
-
-  // ── 认证弹窗逻辑 ──────────────────────────────────────────────
-  const authModal = document.getElementById('authModal');
-  const authLoginView = document.getElementById('authLoginView');
-  const authRegisterView = document.getElementById('authRegisterView');
 
   function openAuthModal(mode = 'login') {
-    if (!authModal) return;
-
-    // 检查服务器配置状态，更新警告/标识显示
-    (async () => {
-      const state = await ipc.authGetState() || {};
-      const warningEl = document.getElementById('authServerWarning');
-      const localBadge = document.getElementById('authLocalBadge');
-      const loginBtn = document.getElementById('authLoginBtn');
-      const regBtn = document.getElementById('authRegBtn');
-
-      if (state.serverMode === 'local' && !state.serverConfigured) {
-        // 本地测试模式，未连接服务器
-        if (warningEl) warningEl.style.display = 'none';
-        if (localBadge) localBadge.style.display = '';
-        if (loginBtn) loginBtn.disabled = false;
-        if (regBtn) regBtn.disabled = false;
-      } else if (!state.serverConfigured) {
-        // 生产模式但未配置服务器
-        if (warningEl) warningEl.style.display = '';
-        if (localBadge) localBadge.style.display = 'none';
-        if (loginBtn) loginBtn.disabled = true;
-        if (regBtn) regBtn.disabled = true;
-      } else {
-        // 服务器已配置
-        if (warningEl) warningEl.style.display = 'none';
-        if (localBadge) localBadge.style.display = 'none';
-        if (loginBtn) loginBtn.disabled = false;
-        if (regBtn) regBtn.disabled = false;
-      }
-    })();
-
-    authModal.style.display = 'flex';
-    if (mode === 'register') {
-      authLoginView.style.display = 'none';
-      authRegisterView.style.display = '';
-    } else {
-      authLoginView.style.display = '';
-      authRegisterView.style.display = 'none';
-    }
-    // 清空错误和输入
-    const errLogin = document.getElementById('authLoginError');
-    const errReg = document.getElementById('authRegError');
-    if (errLogin) errLogin.style.display = 'none';
-    if (errReg) errReg.style.display = 'none';
+    return ensureAuthPage()?.openAuthModal?.(mode);
   }
 
-  function closeAuthModal() {
-    if (authModal) authModal.style.display = 'none';
-  }
-
-  // ===== MOCK IPC — 直播推流（仅显式开启时使用）=====
-  // 默认走真实主进程 IPC，只有手动设置 window.__NEKO_ENABLE_STREAM_MOCK__ = true 时才启用本地 Mock。
-  if (window.__NEKO_ENABLE_STREAM_MOCK__ === true && window.nekoIPC) {
-    // Mock 内存存储
-    window._mockStreamConfig = {
-      srsHost: '',
-      srsRtmpPort: 1935,
-      srsApp: 'live',
-      srsApiPort: 1985,
-      streamKey: '',
-      obsWsHost: '127.0.0.1',
-      obsWsPort: 4455,
-      obsWsPassword: '',
-    };
-
-    window.nekoIPC.getStreamConfig = async () => ({ ...window._mockStreamConfig });
-
-    window.nekoIPC.saveStreamConfig = async (cfg) => {
-      Object.assign(window._mockStreamConfig, cfg);
-      return { ok: true };
-    };
-
-    window.nekoIPC.getStreamKey = async () => ({ stream_key: window._mockStreamConfig.streamKey || '' });
-
-    window.nekoIPC.resetStreamKey = async () => {
-      const newKey = 'nk_mock_' + Math.random().toString(36).slice(2, 10);
-      window._mockStreamConfig.streamKey = newKey;
-      return { stream_key: newKey };
-    };
-
-    window.nekoIPC.getStreamLiveStatus = async () => 'idle';
-
-    window.nekoIPC.testSrsConnection = async () => ({
-      ok: false,
-      reason: 'Mock 模式：尚无真实 SRS 服务器',
-      rtmp_reachable: false,
-      api_reachable: false,
-    });
-
-    window.nekoIPC.testObsWebSocket = async () => ({
-      connected: false,
-      reason: 'Mock 模式：尚无真实 OBS 进程',
-    });
-
-    window.nekoIPC.applyStreamConfigToObs = async () => ({
-      ok: false,
-      error: 'Mock 模式：尚无真实 OBS 进程',
-    });
-
-    window.nekoIPC.exportObsServiceConfig = async () =>
-      'C:\\Users\\Demo\\Desktop\\neko-obs-stream-config.json';
-  }
-  // ===== END MOCK =====
-
-  replaceHandler('testSrsConnectionBtn', async () => {
-    const resultEl = document.getElementById('srsTestResult');
-    const host = document.getElementById('srsHost')?.value?.trim();
-    const rtmpPort = Number(document.getElementById('srsRtmpPort')?.value || 0);
-    const appName = document.getElementById('srsApp')?.value?.trim() || 'live';
-    const apiPort = Number(document.getElementById('srsApiPort')?.value || 0);
-    if (resultEl) {
-      resultEl.textContent = '测试中...';
-      resultEl.className = 'test-result-label pending';
-    }
-
-    try {
-      const result = await ipc.testSrsConnection({
-        srsHost: host,
-        srsRtmpPort: rtmpPort,
-        srsApp: appName,
-        srsApiPort: apiPort,
-      });
-
-      if (!resultEl) return;
-      if (result?.ok) {
-        const versionText = result.srsVersion ? `SRS ${result.srsVersion}` : 'RTMP / API 均已可达';
-        resultEl.textContent = `✓ 连通成功 ${versionText}`;
-        resultEl.className = 'test-result-label success';
-      } else if (result && (result.rtmp_reachable || result.api_reachable)) {
-        resultEl.textContent = `⚠ ${result.reason || '部分端口可达，请继续检查配置'}`;
-        resultEl.className = 'test-result-label warn';
-      } else {
-        resultEl.textContent = `✕ ${result?.reason || '连接失败'}`;
-        resultEl.className = 'test-result-label error';
-      }
-    } catch (e) {
-      if (!resultEl) return;
-      resultEl.textContent = `✕ ${e.message || '连接失败'}`;
-      resultEl.className = 'test-result-label error';
-    }
-  });
-
-  // 关闭按钮
-  const closeAuthBtn = document.getElementById('closeAuthModal');
-  if (closeAuthBtn) closeAuthBtn.addEventListener('click', closeAuthModal);
-  // 切换到注册
-  const switchToReg = document.getElementById('switchToRegister');
-  if (switchToReg) switchToReg.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('register'); });
-  // 切换到登录
-  const switchToLog = document.getElementById('switchToLogin');
-  if (switchToLog) switchToLog.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('login'); });
-  // 点击遮罩关闭
-  if (authModal) authModal.addEventListener('click', (e) => { if (e.target === authModal) closeAuthModal(); });
-
-  // auth modal 内「去配置」按钮 → 关闭 auth modal，打开 configModal
-  const authOpenConfigBtn = document.getElementById('authOpenConfigBtn');
-  if (authOpenConfigBtn) {
-    authOpenConfigBtn.addEventListener('click', () => {
-      closeAuthModal();
-      // 标记来源，以便配置成功后重新打开 authModal
-      window._authPendingAfterConfig = true;
-      document.getElementById('stgConfigBtn')?.click();  // 触发已有的 loadConfigToModal + open modal 逻辑
-      const cm = document.getElementById('configModal');
-      if (cm) cm.classList.add('show');
-    });
-  }
-
-  // 导航栏 "登录/注册" 按钮
-  const btnOpenLogin = document.getElementById('btnOpenLogin');
-  if (btnOpenLogin) btnOpenLogin.addEventListener('click', () => openAuthModal('login'));
-
-  // ── 登录提交 ──────────────────────────────────────────────────
-  const authLoginBtn = document.getElementById('authLoginBtn');
-  if (authLoginBtn) {
-    authLoginBtn.addEventListener('click', async () => {
-      const username = document.getElementById('authLoginUsername')?.value?.trim();
-      const password = document.getElementById('authLoginPassword')?.value;
-      const errEl = document.getElementById('authLoginError');
-
-      if (!username || !password) {
-        if (errEl) { errEl.textContent = '请填写用户名和密码'; errEl.style.display = ''; }
-        return;
-      }
-
-      authLoginBtn.disabled = true;
-      authLoginBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 登录中...';
-
-      const result = await ipc.authLogin(username, password);
-
-      if (result.success) {
-        closeAuthModal();
-        updateAuthUI(true, result.user);
-        const localHint = result.isLocal ? '（本地测试模式）' : '';
-        showAuthNotice(`欢迎回来，${result.user.username}！${localHint}`, 'info');
-        // 登录后自动检查设备密钥（仅在线模式）
-        if (!result.isLocal) await autoProvisionDeviceKey();
-      } else {
-        const errMsg = result.message || '登录失败';
-        if (errEl) { errEl.textContent = errMsg; errEl.style.display = ''; }
-        addLogLine('ERROR', `登录失败: ${errMsg}`);
-      }
-
-      authLoginBtn.disabled = false;
-      authLoginBtn.innerHTML = '<i class="ph ph-sign-in"></i> 登录';
-    });
-  }
-
-  // Enter 键提交登录
-  ['authLoginUsername', 'authLoginPassword'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') authLoginBtn?.click(); });
-  });
-
-  // ── 注册提交 ──────────────────────────────────────────────────
-  const authRegBtn = document.getElementById('authRegBtn');
-  if (authRegBtn) {
-    authRegBtn.addEventListener('click', async () => {
-      const username = document.getElementById('authRegUsername')?.value?.trim();
-      const password = document.getElementById('authRegPassword')?.value;
-      const confirm = document.getElementById('authRegConfirm')?.value;
-      const errEl = document.getElementById('authRegError');
-
-      if (!username || !password) {
-        if (errEl) { errEl.textContent = '请填写用户名和密码'; errEl.style.display = ''; }
-        return;
-      }
-      if (password !== confirm) {
-        if (errEl) { errEl.textContent = '两次输入的密码不一致'; errEl.style.display = ''; }
-        return;
-      }
-
-      authRegBtn.disabled = true;
-      authRegBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 注册中...';
-
-      const result = await ipc.authRegister(username, password);
-
-      if (result.success) {
-        closeAuthModal();
-        updateAuthUI(true, result.user);
-        const localHint = result.isLocal ? '（本地测试模式）' : '';
-        showAuthNotice(`注册成功！欢迎，${result.user.username}${localHint}`, 'info');
-        // 注册后自动生成设备密钥（仅在线模式）
-        if (!result.isLocal) await autoProvisionDeviceKey();
-      } else {
-        const errMsg = result.message || '注册失败';
-        if (errEl) { errEl.textContent = errMsg; errEl.style.display = ''; }
-        addLogLine('ERROR', `注册失败: ${errMsg}`);
-      }
-
-      authRegBtn.disabled = false;
-      authRegBtn.innerHTML = '<i class="ph ph-user-plus"></i> 注册';
-    });
-  }
-
-  // Enter 键提交注册
-  ['authRegUsername', 'authRegPassword', 'authRegConfirm'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') authRegBtn?.click(); });
-  });
-
-  // ── 退出登录 ──────────────────────────────────────────────────
-  const btnLogout = document.getElementById('btnLogout');
-  if (btnLogout) {
-    btnLogout.addEventListener('click', async () => {
-      await ipc.authLogout();
-      updateAuthUI(false, null);
-      showAuthNotice('已退出登录，当前使用设备密钥模式', 'info');
-    });
-  }
-
-  // ── 自动配置设备密钥 ──────────────────────────────────────────
-  async function autoProvisionDeviceKey() {
-    const currentKey = await ipc.getConfig('deviceKey');
-
-    // 已有密钥 → 先验证其有效性，有效则直接跳过
-    if (currentKey) {
-      try {
-        const validation = await ipc.validateKey();
-        if (validation.valid) {
-          addLogLine('INFO', '当前设备密钥有效，跳过自动生成');
-          return;
-        }
-        // 密钥无效（被撤销、设备已删除等）→ 继续生成新密钥
-        addLogLine('WARN', `当前密钥已失效（${validation.error || '未知原因'}），将为当前账户重新生成`);
-      } catch {
-        // 验证请求失败（网络等问题）→ 保守处理，保留现有密钥
-        addLogLine('WARN', '无法验证现有密钥（网络异常），保留当前密钥');
-        return;
-      }
-    } else {
-      addLogLine('INFO', '检测到未配置设备密钥，正在自动为当前设备生成...');
-    }
-
-    const result = await ipc.authGenerateDeviceKey();
-    if (result.success && result.deviceKey) {
-      // deviceKey 已由主进程 IPC handler 自动写入 configStore
-      const keyInputEl = document.getElementById('inputDeviceKey');
-      if (keyInputEl) keyInputEl.value = result.deviceKey;
-
-      const msg = result.isExisting
-        ? `已自动恢复此设备的密钥: ${result.deviceKey}`
-        : `已自动为此设备生成新密钥: ${result.deviceKey}`;
-
-      addLogLine('INFO', msg);
-      showAuthNotice(`${msg}，已自动填入服务器配置`, 'info');
-
-      // 通知系统
-      ipc.notify('设备密钥已自动配置', msg);
-    } else {
-      addLogLine('WARN', '自动生成设备密钥失败: ' + (result.message || '未知错误'));
-    }
-  }
-
-  // ── 个人信息编辑（对接服务端同步）───────────────────────────
-  const avatarEditorState = {
-    sourceUrl: '',
-    image: null,
-    baseScale: 1,
-    scale: 1,
-    offsetX: 0,
-    offsetY: 0,
-    dragging: false,
-    interactionMode: '',
-    dragStartX: 0,
-    dragStartY: 0,
-    dragOriginX: 0,
-    dragOriginY: 0,
-    dragOriginScale: 1,
-    pendingAvatar: '',
-  };
-
-  function ensureAvatarEditorUI() {
-    if (document.getElementById('avatarEditorModal')) return;
-
-    document.body.insertAdjacentHTML('beforeend', `
-      <input type="file" id="avatarFileInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
-      <input type="file" id="avatarDropzoneInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
-      <div class="modal-overlay" id="avatarEditorModal">
-        <div class="avatar-editor-modal-container">
-          <button class="close-profile-btn" id="closeAvatarEditorBtn"><i class="ph ph-x"></i></button>
-          <div class="profile-header">头像编辑器</div>
-          <div class="avatar-editor-body">
-            <div class="avatar-dropzone" id="avatarDropzone">
-              <div class="avatar-dropzone-empty" id="avatarDropzoneEmpty">
-                <i class="ph ph-image-square"></i>
-                <div class="avatar-dropzone-title">拖拽图片到这里，或点击选择文件</div>
-                <div class="avatar-dropzone-desc">支持 PNG / JPG / WEBP / GIF / BMP</div>
-              </div>
-              <div class="avatar-cropper-shell" id="avatarCropperShell">
-                <div class="avatar-cropper-stage" id="avatarCropperStage">
-                  <img id="avatarCropImage" alt="avatar crop source">
-                  <div class="avatar-crop-mask"></div>
-                </div>
-              </div>
-            </div>
-            <div class="avatar-editor-sidebar">
-              <div class="avatar-editor-preview-wrap">
-                <div class="avatar-editor-preview">
-                  <img id="avatarPreviewImage" alt="" hidden>
-                </div>
-                <div class="avatar-editor-preview-label">1:1 圆形预览</div>
-              </div>
-              <div class="avatar-editor-controls">
-                <label class="avatar-editor-label" for="avatarZoomRange">缩放</label>
-                <input type="range" id="avatarZoomRange" min="1" max="3" step="0.01" value="1">
-                <div class="avatar-editor-actions">
-                  <button class="action-btn" id="avatarChooseAnotherBtn"><i class="ph ph-folder-open"></i> 重新选择</button>
-                  <button class="action-btn" id="avatarResetBtn"><i class="ph ph-arrow-counter-clockwise"></i> 重置</button>
-                </div>
-                <div class="avatar-editor-error" id="avatarEditorError" hidden></div>
-              </div>
-            </div>
-          </div>
-          <div class="profile-footer avatar-editor-footer">
-            <div class="profile-sync-hint">
-              <i class="ph ph-crop"></i> 裁剪后仅更新本地预览，保存个人资料时才会上传
-            </div>
-            <div class="avatar-editor-footer-actions">
-              <button class="action-btn avatar-editor-cancel" id="cancelAvatarEditorBtn">取消</button>
-              <button class="btn-theme-save" id="applyAvatarCropBtn"><i class="ph ph-check"></i> 应用头像</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `);
-
-    const avatarEditorModal = document.getElementById('avatarEditorModal');
-    avatarEditorModal?.querySelector('.profile-header')?.replaceChildren(document.createTextNode('头像编辑器'));
-    avatarEditorModal?.querySelector('.avatar-dropzone-title')?.replaceChildren(document.createTextNode('拖拽图片到这里，或点击选择文件'));
-    avatarEditorModal?.querySelector('.avatar-dropzone-desc')?.replaceChildren(document.createTextNode('支持 PNG / JPG / WEBP / GIF / BMP'));
-    avatarEditorModal?.querySelector('.avatar-editor-preview-label')?.replaceChildren(document.createTextNode('1:1 圆形预览'));
-
-    const controls = avatarEditorModal?.querySelector('.avatar-editor-controls');
-    if (controls) {
-      controls.innerHTML = `
-        <div class="avatar-editor-label">操作方式</div>
-        <div class="avatar-editor-instructions">
-          <div class="avatar-editor-instruction"><i class="ph ph-cursor-click"></i><span>左键拖动图片，调整头像位置</span></div>
-          <div class="avatar-editor-instruction"><i class="ph ph-mouse-middle-click"></i><span>中键上下拖动，连续缩放图片</span></div>
-          <div class="avatar-editor-instruction"><i class="ph ph-upload-simple"></i><span>应用头像后，再点击保存更改同步到服务器</span></div>
-        </div>
-        <div class="avatar-editor-actions">
-          <button class="action-btn" id="avatarChooseAnotherBtn"><i class="ph ph-folder-open"></i> 重新选择</button>
-          <button class="action-btn" id="avatarResetBtn"><i class="ph ph-arrow-counter-clockwise"></i> 重置</button>
-        </div>
-        <div class="avatar-editor-error" id="avatarEditorError" hidden></div>
-      `;
-    }
-
-    const footer = avatarEditorModal?.querySelector('.avatar-editor-footer');
-    if (footer) {
-      footer.innerHTML = `
-        <div class="avatar-editor-footer-note">
-          <i class="ph ph-crop"></i>
-          <span>裁剪后的头像会先更新当前预览，点击“保存更改”后才会同步到服务器。</span>
-        </div>
-        <div class="avatar-editor-footer-actions">
-          <button class="action-btn avatar-editor-cancel" id="cancelAvatarEditorBtn">取消</button>
-          <button class="btn-theme-save" id="applyAvatarCropBtn"><i class="ph ph-check"></i> 应用头像</button>
-        </div>
-      `;
-    }
-  }
-
-  function getAvatarCropMetrics() {
-    const shell = document.getElementById('avatarCropperShell');
-    if (!shell) return { radius: 160, diameter: 320 };
-    const shellWidth = shell.clientWidth || 0;
-    const shellHeight = shell.clientHeight || 0;
-    const diameter = Math.max(260, Math.min(shellWidth, shellHeight) - 72);
-    const radius = diameter / 2;
-    shell.style.setProperty('--avatar-crop-diameter', `${diameter}px`);
-    shell.style.setProperty('--avatar-crop-radius', `${radius}px`);
-    return { radius, diameter };
-  }
-
-  function setAvatarEditorError(message = '') {
-    const errorEl = document.getElementById('avatarEditorError');
-    if (!errorEl) return;
-    errorEl.hidden = !message;
-    errorEl.textContent = message || '';
-  }
-
-  function getAvatarFitScale() {
-    if (!avatarEditorState.image) return 1;
-    const { radius } = getAvatarCropMetrics();
-    const cropDiameter = radius * 2;
-    return Math.max(cropDiameter / avatarEditorState.image.width, cropDiameter / avatarEditorState.image.height);
-  }
-
-  function clampAvatarOffsets() {
-    if (!avatarEditorState.image) return;
-    const { radius } = getAvatarCropMetrics();
-    const fitScale = getAvatarFitScale();
-    const renderedWidth = avatarEditorState.image.width * fitScale * avatarEditorState.scale;
-    const renderedHeight = avatarEditorState.image.height * fitScale * avatarEditorState.scale;
-    const maxOffsetX = Math.max(0, renderedWidth / 2 - radius);
-    const maxOffsetY = Math.max(0, renderedHeight / 2 - radius);
-    avatarEditorState.offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, avatarEditorState.offsetX));
-    avatarEditorState.offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, avatarEditorState.offsetY));
-  }
-
-  function clampAvatarScale(nextScale) {
-    return Math.max(1, Math.min(3.2, nextScale));
-  }
-
-  function buildCroppedAvatarDataUrl() {
-    if (!avatarEditorState.image) return '';
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
-
-    const { radius } = getAvatarCropMetrics();
-    const cropDiameter = radius * 2;
-    const transformScale = getAvatarFitScale() * avatarEditorState.scale;
-    const sx = (avatarEditorState.image.width / 2) - ((radius + avatarEditorState.offsetX) / transformScale);
-    const sy = (avatarEditorState.image.height / 2) - ((radius + avatarEditorState.offsetY) / transformScale);
-    const sSize = cropDiameter / transformScale;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(128, 128, 128, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    ctx.drawImage(avatarEditorState.image, sx, sy, sSize, sSize, 0, 0, 256, 256);
-    ctx.restore();
-
-    return canvas.toDataURL('image/png');
-  }
-
-  function updateAvatarPreview() {
-    const preview = document.getElementById('avatarPreviewImage');
-    if (!preview) return;
-    const dataUrl = buildCroppedAvatarDataUrl();
-    if (!dataUrl) {
-      preview.hidden = true;
-      preview.removeAttribute('src');
-      return;
-    }
-    preview.src = dataUrl;
-    preview.hidden = false;
-  }
-
-  function renderAvatarCropper() {
-    const dropzone = document.getElementById('avatarDropzone');
-    const shell = document.getElementById('avatarCropperShell');
-    const empty = document.getElementById('avatarDropzoneEmpty');
-    const imageEl = document.getElementById('avatarCropImage');
-    if (!dropzone || !shell || !empty || !imageEl) return;
-
-    if (!avatarEditorState.image || !avatarEditorState.sourceUrl) {
-      dropzone.classList.remove('has-image');
-      shell.classList.remove('is-ready');
-      empty.hidden = false;
-      imageEl.removeAttribute('src');
-      updateAvatarPreview();
-      return;
-    }
-
-    clampAvatarOffsets();
-    dropzone.classList.add('has-image');
-    shell.classList.add('is-ready');
-    empty.hidden = true;
-    const fitScale = getAvatarFitScale();
-    imageEl.src = avatarEditorState.sourceUrl;
-    imageEl.style.width = `${avatarEditorState.image.width * fitScale * avatarEditorState.scale}px`;
-    imageEl.style.height = `${avatarEditorState.image.height * fitScale * avatarEditorState.scale}px`;
-    imageEl.style.transform = `translate(calc(-50% + ${avatarEditorState.offsetX}px), calc(-50% + ${avatarEditorState.offsetY}px))`;
-    updateAvatarPreview();
-  }
-
-  async function loadAvatarSource(file) {
-    if (!file) return;
-    if (!file.type || !file.type.startsWith('image/')) {
-      setAvatarEditorError('只能上传图片文件');
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      if (avatarEditorState.sourceUrl && avatarEditorState.sourceUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(avatarEditorState.sourceUrl);
-      }
-      avatarEditorState.sourceUrl = objectUrl;
-      avatarEditorState.image = image;
-      avatarEditorState.baseScale = 1;
-      avatarEditorState.scale = 1;
-      avatarEditorState.offsetX = 0;
-      avatarEditorState.offsetY = 0;
-      setAvatarEditorError('');
-      renderAvatarCropper();
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      setAvatarEditorError('图片加载失败，请换一张试试');
-    };
-    image.src = objectUrl;
-  }
-
-  function openAvatarEditor() {
-    ensureAvatarEditorUI();
-    document.getElementById('avatarEditorModal')?.classList.add('show');
-    document.getElementById('avatarDropzone')?.classList.remove('is-dragover');
-    setAvatarEditorError('');
-    renderAvatarCropper();
-  }
-
-  function closeAvatarEditor() {
-    document.getElementById('avatarEditorModal')?.classList.remove('show');
-  }
-
-  function wireAvatarEditor() {
-    ensureAvatarEditorUI();
-    const profileAvatarTrigger = document.querySelector('.profile-avatar-sec');
-    const profileAvatarImage = document.getElementById('profileModalAvatar');
-    const pickerInput = document.getElementById('avatarFileInput');
-    const dropzoneInput = document.getElementById('avatarDropzoneInput');
-    const dropzone = document.getElementById('avatarDropzone');
-    const cropperShell = document.getElementById('avatarCropperShell');
-
-    profileAvatarTrigger?.setAttribute('tabindex', '0');
-    profileAvatarTrigger?.addEventListener('click', openAvatarEditor);
-    profileAvatarTrigger?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        openAvatarEditor();
-      }
-    });
-
-    document.getElementById('closeAvatarEditorBtn')?.addEventListener('click', closeAvatarEditor);
-    document.getElementById('cancelAvatarEditorBtn')?.addEventListener('click', closeAvatarEditor);
-    document.getElementById('avatarChooseAnotherBtn')?.addEventListener('click', () => dropzoneInput?.click());
-    dropzone?.addEventListener('click', (e) => {
-      if (e.target === dropzone || e.target.closest('#avatarDropzoneEmpty')) dropzoneInput?.click();
-    });
-
-    [pickerInput, dropzoneInput].forEach((input) => {
-      input?.addEventListener('change', (e) => {
-        const file = e.target.files && e.target.files[0];
-        if (!file) return;
-        loadAvatarSource(file);
-        e.target.value = '';
-      });
-    });
-
-    ['dragenter', 'dragover'].forEach((eventName) => {
-      dropzone?.addEventListener(eventName, (e) => {
-        e.preventDefault();
-        if ([...(e.dataTransfer?.items || [])].some((item) => item.kind === 'file' && item.type.startsWith('image/'))) {
-          dropzone.classList.add('is-dragover');
-        }
-      });
-    });
-
-    ['dragleave', 'drop'].forEach((eventName) => {
-      dropzone?.addEventListener(eventName, (e) => {
-        e.preventDefault();
-        if (eventName === 'drop') {
-          const file = [...(e.dataTransfer?.files || [])][0];
-          if (file) loadAvatarSource(file);
-        }
-        dropzone.classList.remove('is-dragover');
-      });
-    });
-
-    document.getElementById('avatarResetBtn')?.addEventListener('click', () => {
-      if (!avatarEditorState.image) return;
-      avatarEditorState.scale = 1;
-      avatarEditorState.offsetX = 0;
-      avatarEditorState.offsetY = 0;
-      renderAvatarCropper();
-    });
-
-    function startAvatarInteraction(e) {
-      if (!avatarEditorState.image) return;
-      if (e.button !== 0 && e.button !== 1) return;
-      e.preventDefault();
-      avatarEditorState.dragging = true;
-      avatarEditorState.interactionMode = e.button === 1 ? 'zoom' : 'move';
-      avatarEditorState.dragStartX = e.clientX;
-      avatarEditorState.dragStartY = e.clientY;
-      avatarEditorState.dragOriginX = avatarEditorState.offsetX;
-      avatarEditorState.dragOriginY = avatarEditorState.offsetY;
-      avatarEditorState.dragOriginScale = avatarEditorState.scale;
-      cropperShell?.classList.toggle('zooming', avatarEditorState.interactionMode === 'zoom');
-      cropperShell?.classList.add('dragging');
-      if ('pointerId' in e && cropperShell?.setPointerCapture) {
-        try { cropperShell.setPointerCapture(e.pointerId); } catch {}
-      }
-    }
-
-    function updateAvatarInteraction(e) {
-      if (!avatarEditorState.dragging) return;
-      e.preventDefault();
-      if (avatarEditorState.interactionMode === 'zoom') {
-        const delta = (avatarEditorState.dragStartY - e.clientY) / 160;
-        avatarEditorState.scale = clampAvatarScale(avatarEditorState.dragOriginScale + delta);
-      } else {
-        avatarEditorState.offsetX = avatarEditorState.dragOriginX + (e.clientX - avatarEditorState.dragStartX);
-        avatarEditorState.offsetY = avatarEditorState.dragOriginY + (e.clientY - avatarEditorState.dragStartY);
-      }
-      renderAvatarCropper();
-    }
-
-    function stopAvatarDrag(e) {
-      if (!avatarEditorState.dragging) return;
-      avatarEditorState.dragging = false;
-      avatarEditorState.interactionMode = '';
-      cropperShell?.classList.remove('dragging');
-      cropperShell?.classList.remove('zooming');
-      if (cropperShell && e?.pointerId != null && cropperShell.releasePointerCapture) {
-        try {
-          if (cropperShell.hasPointerCapture?.(e.pointerId)) cropperShell.releasePointerCapture(e.pointerId);
-        } catch {}
-      }
-    }
-
-    cropperShell?.addEventListener('pointerdown', startAvatarInteraction);
-    cropperShell?.addEventListener('pointermove', updateAvatarInteraction);
-    cropperShell?.addEventListener('pointerup', stopAvatarDrag);
-    cropperShell?.addEventListener('pointercancel', stopAvatarDrag);
-    cropperShell?.addEventListener('mousedown', startAvatarInteraction);
-    cropperShell?.addEventListener('auxclick', (e) => {
-      if (e.button === 1) e.preventDefault();
-    });
-    cropperShell?.addEventListener('contextmenu', (e) => {
-      if (avatarEditorState.dragging || e.button === 1) e.preventDefault();
-    });
-    cropperShell?.addEventListener('wheel', (e) => {
-      if (!avatarEditorState.image) return;
-      e.preventDefault();
-      avatarEditorState.scale = clampAvatarScale(avatarEditorState.scale - (e.deltaY * 0.0015));
-      renderAvatarCropper();
-    }, { passive: false });
-    window.addEventListener('mousemove', updateAvatarInteraction);
-    window.addEventListener('mouseup', stopAvatarDrag);
-    window.addEventListener('blur', stopAvatarDrag);
-
-    document.getElementById('applyAvatarCropBtn')?.addEventListener('click', () => {
-      if (!avatarEditorState.image) {
-        setAvatarEditorError('请先选择一张头像图片');
-        return;
-      }
-      const cropped = buildCroppedAvatarDataUrl();
-      if (!cropped) {
-        setAvatarEditorError('头像裁剪失败，请重试');
-        return;
-      }
-      avatarEditorState.pendingAvatar = cropped;
-      if (profileAvatarImage) profileAvatarImage.src = cropped;
-      closeAvatarEditor();
-    });
-
-    document.getElementById('avatarEditorModal')?.addEventListener('paste', (e) => {
-      const file = [...(e.clipboardData?.files || [])][0];
-      if (file) loadAvatarSource(file);
-    });
-
-    window.addEventListener('resize', () => {
-      if (document.getElementById('avatarEditorModal')?.classList.contains('show')) {
-        renderAvatarCropper();
-      }
-    });
-  }
-
-  const profileModal = document.getElementById('profileModal');
-  const openProfileBtns = [
-    document.getElementById('btnProfileSettings'),
-    document.getElementById('openProfileBtnSettings'),
-  ].filter(Boolean);
-
-  wireAvatarEditor();
-
-  openProfileBtns.forEach(btn => {
-    const clone = btn.cloneNode(true);
-    btn.parentNode.replaceChild(clone, btn);
-    clone.addEventListener('click', async () => {
-      const state = await ipc.authGetState() || {};
-      if (!state.isLoggedIn) {
-        showAuthNotice('请先登录后再编辑个人信息', 'info');
-        openAuthModal('login');
-        return;
-      }
-
-      const fillProfileForm = (u = {}) => {
-        const pUsername = document.getElementById('profileUsername');
-        const pEmail = document.getElementById('profileEmail');
-        const pAvatar = document.getElementById('profileModalAvatar');
-        if (pUsername) pUsername.value = u.username || '';
-        if (pEmail) pEmail.value = u.email || '';
-        avatarEditorState.pendingAvatar = u.avatar || '';
-        if (pAvatar && u.avatar) pAvatar.src = u.avatar;
-        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=06b6d4&color=fff`;
-      };
-
-      fillProfileForm(state.user || {});
-      if (profileModal) profileModal.classList.add('show');
-
-      const me = await ipc.authGetMe();
-      if (me.success && me.user) {
-        fillProfileForm(me.user);
-      } else if (me && me.success === false) {
-        showAuthNotice(me.message || me.error || '用户信息刷新失败', 'error');
-      }
-    });
-  });
-
-  // 保存个人信息
-  const saveProfileBtn = document.getElementById('saveProfileBtn');
-  if (saveProfileBtn) {
-    const clone = saveProfileBtn.cloneNode(true);
-    saveProfileBtn.parentNode.replaceChild(clone, saveProfileBtn);
-    clone.addEventListener('click', async () => {
-      const username = document.getElementById('profileUsername')?.value?.trim();
-      const email = document.getElementById('profileEmail')?.value?.trim();
-      const currentPassword = document.getElementById('profileCurrentPassword')?.value;
-      const newPassword = document.getElementById('profileNewPassword')?.value;
-
-      if (newPassword && !currentPassword) {
-        showAuthNotice('请先输入当前密码', 'error');
-        document.getElementById('profileCurrentPassword')?.focus();
-        return;
-      }
-      if (currentPassword && !newPassword) {
-        showAuthNotice('请输入新密码', 'error');
-        document.getElementById('profileNewPassword')?.focus();
-        return;
-      }
-      if (newPassword && newPassword.length < 6) {
-        showAuthNotice('新密码至少需要 6 位', 'error');
-        document.getElementById('profileNewPassword')?.focus();
-        return;
-      }
-
-      const data = {};
-      if (username) data.username = username;
-      if (email !== undefined) data.email = email;
-      if (avatarEditorState.pendingAvatar) data.avatar = avatarEditorState.pendingAvatar;
-      if (currentPassword && newPassword) {
-        data.currentPassword = currentPassword;
-        data.newPassword = newPassword;
-      }
-
-      setButtonBusyState(clone, true, clone.innerHTML);
-      clone.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
-
-      const result = await ipc.authUpdateProfile(data);
-
-      if (result.success) {
-        showAuthNotice('个人信息已更新并同步到服务器', 'info');
-        if (result.user) updateAuthUI(true, result.user);
-        avatarEditorState.pendingAvatar = '';
-        if (profileModal) profileModal.classList.remove('show');
-        // 清空密码字段
-        const cp = document.getElementById('profileCurrentPassword');
-        const np = document.getElementById('profileNewPassword');
-        if (cp) cp.value = '';
-        if (np) np.value = '';
-      } else {
-        showAuthNotice(result.message || result.error || '保存失败', 'error');
-      }
-
-      setButtonBusyState(clone, false, clone.innerHTML);
-      clone.innerHTML = '<i class="ph ph-check-circle"></i> 保存更改';
-    });
-  }
-
-  // ── 首次使用引导提示 ──────────────────────────────────────────
-  async function checkFirstTimeAuthPrompt() {
-    const state = await ipc.authGetState() || {};
-    if (state.isLoggedIn) {
-      // 已登录 — 更新 UI，验证 token 有效性
-      updateAuthUI(true, state.user);
-      // 本地测试 token 无需远程验证
-      if (String(state.user?.id || '').startsWith('local-')) return;
-      // 静默刷新用户信息
-      const me = await ipc.authGetMe();
-      if (me.success && me.user) {
-        updateAuthUI(true, me.user);
-      } else if (!me.success) {
-        // token 过期了
-        updateAuthUI(false, null);
-        showAuthNotice('登录已过期，请重新登录', 'info');
-      }
-      return;
-    }
-
-    updateAuthUI(false, null);
-
-    // 未登录且未曾关闭提示
-    if (!state.promptDismissed) {
-      const prompt = document.getElementById('firstTimeAuthPrompt');
-      const step1 = document.getElementById('firstTimeStep1');
-      const step2 = document.getElementById('firstTimeStep2');
-      if (prompt) {
-        prompt.style.display = 'flex';
-        if (state.serverConfigured) {
-          // 服务器已配置，直接展示 Step 2（登录/注册）
-          if (step1) step1.style.display = 'none';
-          if (step2) step2.style.display = '';
-        } else {
-          // 服务器未配置，展示 Step 1（配置服务器）
-          if (step1) step1.style.display = '';
-          if (step2) step2.style.display = 'none';
-          // 预填充默认服务器地址
-          const urlInput = document.getElementById('firstTimeServerUrl');
-          if (urlInput) {
-            const cfg = await ipc.getAllConfig();
-            if (cfg) {
-              urlInput.value = cfg.serverMode === 'local'
-                ? (cfg.serverUrlLocal || '')
-                : (cfg.serverUrlProd || '');
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Step 1 — "跳过" 按钮
-  const firstTimeSkipBtn = document.getElementById('firstTimeSkipBtn');
-  if (firstTimeSkipBtn) {
-    firstTimeSkipBtn.addEventListener('click', async () => {
-      await ipc.authDismissPrompt();
-      const prompt = document.getElementById('firstTimeAuthPrompt');
-      if (prompt) prompt.style.display = 'none';
-    });
-  }
-
-  // Step 1 — "测试并继续" 按钮（内嵌服务器地址测试）
-  const firstTimeTestBtn = document.getElementById('firstTimeTestBtn');
-  if (firstTimeTestBtn) {
-    firstTimeTestBtn.addEventListener('click', async () => {
-      const urlInput = document.getElementById('firstTimeServerUrl');
-      const statusEl = document.getElementById('firstTimeServerStatus');
-      const serverUrl = urlInput?.value?.trim();
-
-      if (!serverUrl) {
-        if (statusEl) {
-          statusEl.textContent = '请输入服务器地址';
-          statusEl.className = 'first-time-server-status first-time-status-error';
-        }
-        return;
-      }
-
-      firstTimeTestBtn.disabled = true;
-      firstTimeTestBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 测试中...';
-      if (statusEl) {
-        statusEl.textContent = '正在测试连接...';
-        statusEl.className = 'first-time-server-status first-time-status-testing';
-      }
-
-      try {
-        const connResult = await ipc.testConnection(serverUrl);
-
-        if (connResult.ok) {
-          // 保存到配置（与 configModal 同步）
-          const isLocal = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1');
-          const configUpdate = {
-            serverMode: isLocal ? 'local' : 'production',
-            serverConfigured: true,
-          };
-          if (isLocal) configUpdate.serverUrlLocal = serverUrl;
-          else configUpdate.serverUrlProd = serverUrl;
-          await ipc.setManyConfig(configUpdate);
-
-          if (statusEl) {
-            statusEl.textContent = `连接成功！延迟 ${connResult.latencyMs || '—'}ms`;
-            statusEl.className = 'first-time-server-status first-time-status-success';
-          }
-          addLogLine('SUCCESS', `服务器连接成功，延迟 ${connResult.latencyMs || '—'}ms`);
-
-          // 延迟后过渡到 Step 2
-          setTimeout(() => {
-            const step1 = document.getElementById('firstTimeStep1');
-            const step2 = document.getElementById('firstTimeStep2');
-            if (step1) step1.style.display = 'none';
-            if (step2) step2.style.display = '';
-          }, 800);
-        } else {
-          if (statusEl) {
-            statusEl.textContent = `连接失败: ${connResult.error || '无法连接'}`;
-            statusEl.className = 'first-time-server-status first-time-status-error';
-          }
-          addLogLine('ERROR', `服务器连接失败: ${connResult.error || '无法连接'}`);
-        }
-      } catch (e) {
-        if (statusEl) {
-          statusEl.textContent = `错误: ${e.message}`;
-          statusEl.className = 'first-time-server-status first-time-status-error';
-        }
-      }
-
-      firstTimeTestBtn.disabled = false;
-      firstTimeTestBtn.innerHTML = '<i class="ph ph-plugs"></i> 测试并继续';
-    });
-  }
-
-  // Enter 键提交服务器地址
-  const firstTimeUrlInput = document.getElementById('firstTimeServerUrl');
-  if (firstTimeUrlInput) {
-    firstTimeUrlInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') firstTimeTestBtn?.click();
-    });
-  }
-
-  // Step 2 — "跳过" 按钮
-  const firstTimeSkipStep2Btn = document.getElementById('firstTimeSkipStep2Btn');
-  if (firstTimeSkipStep2Btn) {
-    firstTimeSkipStep2Btn.addEventListener('click', async () => {
-      await ipc.authDismissPrompt();
-      const prompt = document.getElementById('firstTimeAuthPrompt');
-      if (prompt) prompt.style.display = 'none';
-    });
-  }
-
-  // Step 2 — "登录/注册" 按钮
-  const firstTimeLoginBtn = document.getElementById('firstTimeLoginBtn');
-  if (firstTimeLoginBtn) {
-    firstTimeLoginBtn.addEventListener('click', async () => {
-      await ipc.authDismissPrompt();
-      const prompt = document.getElementById('firstTimeAuthPrompt');
-      if (prompt) prompt.style.display = 'none';
-      openAuthModal('login');
-    });
-  }
-
-  // 启动时检查认证状态
-  checkFirstTimeAuthPrompt();
+  ensureAuthPage();
 
   addLogLine('INFO', 'UI 后端连接初始化完成，等待主进程推送...');
 });

@@ -58,8 +58,9 @@
     _currentPage = targetId;
 
     // 持久化最后访问页面
-    if (window.nekoIPC && RESTORABLE_PAGES.has(targetId)) {
-      window.nekoIPC.setConfig('lastPage', targetId);
+    if (RESTORABLE_PAGES.has(targetId)) {
+      const savePromise = window._nekoModules?.services?.ConfigClient?.set?.('lastPage', targetId);
+      if (savePromise?.catch) savePromise.catch(() => {});
     }
 
     // 隐藏所有区域

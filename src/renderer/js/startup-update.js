@@ -7,6 +7,20 @@
 
   const contracts = window.__NEKO_IPC_CONTRACTS__ || {};
   const events = contracts.IPC_EVENTS || {};
+  const textState = {
+    title: title?.textContent || '',
+    message: desc?.textContent || '',
+    detail: meta?.textContent || '',
+    phase: 'checking',
+  };
+
+  function setText(el, key, value) {
+    if (!el || value == null || value === '') return;
+    const next = String(value);
+    if (textState[key] === next) return;
+    textState[key] = next;
+    el.textContent = next;
+  }
 
   function setProgress(pct) {
     const numeric = Number(pct);
@@ -20,9 +34,10 @@
   }
 
   function applyStatus(payload = {}) {
-    if (payload.title) title.textContent = payload.title;
-    if (payload.message) desc.textContent = payload.message;
-    if (payload.detail) meta.textContent = payload.detail;
+    if (payload.phase) textState.phase = payload.phase;
+    setText(title, 'title', payload.title);
+    setText(desc, 'message', payload.message);
+    setText(meta, 'detail', payload.detail);
 
     if (payload.themeMode === 'light') {
       document.documentElement.setAttribute('data-theme', 'light');
@@ -39,14 +54,20 @@
 
   setProgress(-1);
 
-  window.nekoIPC?.on?.(events.STARTUP_UPDATE_STATUS || 'startup-update:status', applyStatus);
-  window.nekoIPC?.on?.(events.UPDATE_PROGRESS || 'update:progress', (payload = {}) => {
+  const eventClient = window._nekoModules?.services?.IpcClient;
+
+  eventClient?.on?.(events.STARTUP_UPDATE_STATUS || 'startup-update:status', applyStatus);
+  eventClient?.on?.(events.UPDATE_PROGRESS || 'update:progress', (payload = {}) => {
     const pct = Number(payload.pct);
-    applyStatus({
-      title: '正在下载更新',
-      message: '下载完成后将自动启动安装程序。',
+    const status = {
+      phase: 'downloading',
       detail: Number.isFinite(pct) && pct >= 0 ? `下载进度 ${pct}%` : '正在接收安装包...',
       pct,
-    });
+    };
+    if (textState.phase !== 'downloading') {
+      status.title = '正在下载更新';
+      status.message = '下载完成后将自动启动安装程序。';
+    }
+    applyStatus(status);
   });
 })();

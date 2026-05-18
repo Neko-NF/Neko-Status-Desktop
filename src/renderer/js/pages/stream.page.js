@@ -113,6 +113,7 @@
 
   const StreamPage = {
     init() {
+      streamClient()?.installMock?.();
       this.bindEvents();
       this.initData();
     },

@@ -1,160 +1,212 @@
-# IPC 契约说明
+# IPC 契约规范
 
-## 1. 单一来源
+本文定义 Neko Status Desktop 的 IPC 设计、命名、返回值、校验和变更流程。所有主进程与 renderer 的通信都必须遵守这里的约束。
 
-当前 IPC 常量统一维护在：
+## 单一事实来源
 
-- `src/shared/ipc-contracts.js`
+IPC 契约集中维护在：
 
-主进程、preload 和 renderer 都应引用这里的常量：
+```text
+src/shared/ipc-contracts.js
+src/shared/schemas.js
+```
 
-- 主进程注册：`ipcMain.handle(IPC_CHANNELS.X, handler)`
-- preload 暴露：`ipcRenderer.invoke(IPC_CHANNELS.X, payload)`
-- renderer 调用：只通过 `window.nekoIPC`，不直接拼 invoke channel 字符串
-- renderer 监听主进程事件：优先使用 preload 暴露的 `window.__NEKO_IPC_CONTRACTS__.IPC_EVENTS`，不要在 `app-ipc.js` 等文件中新增硬编码事件名
+职责：
 
-Renderer 访问方式统一通过：
+- `IPC_CHANNELS`：renderer 主动调用主进程的 invoke channel。
+- `IPC_EVENTS`：主进程推送给 renderer 的事件名。
+- `createIpcSuccess(data)` / `createIpcError(code, message, details)`：主进程统一响应 helper。
+- `schemas.js`：复杂 payload 的校验函数。
 
-- `window.nekoIPC`
-- 暴露来源：`src/preload/index.js`
+禁止在新代码中直接手写 channel 字符串。例外只允许存在于兼容层或明确的内部一次性通道，例如隐私窗口选择器的临时 token 事件。
 
-主进程发给 renderer 的事件名也统一来自 `IPC_EVENTS`，不要在新代码里继续散落硬编码字符串。`src/main/main.js` 中的主 IPC 注册已迁移到 `IPC_CHANNELS`，后续拆分到 `src/main/ipc/*` 时也必须沿用同一套常量。
+## 调用链路
 
-当前已拆分的主进程 IPC 模块：
+标准链路：
 
-- `config.ipc.js`：配置读写
-- `api.ipc.js`：API 连通性、设备配对、设备元数据同步与密钥校验
-- `auth.ipc.js`：用户认证与设备密钥生成
-- `stream.ipc.js`：推流与 OBS 集成
-- `system.ipc.js`：截图、窗口、系统信息、缓存、通知、字体、应用控制
-- `service.ipc.js`：上报服务控制、开机自启、进程信息、权限检测、一键体检
-- `update.ipc.js`：更新检查、通道管理、下载、安装、待安装管理、Changelog、完整性、版本回滚
+```text
+renderer page
+  -> renderer service
+  -> IpcClient
+  -> window.nekoIPC
+  -> preload/index.js
+  -> ipcRenderer.invoke(IPC_CHANNELS.X)
+  -> src/main/ipc/*.ipc.js
+  -> main service/system/store
+```
 
-主进程 IPC 拆分已全部完成。`main.js` 中不再保留任何内联 IPC handler。
+页面层只依赖 renderer service，不直接访问 `ipcRenderer`、`window.nekoIPC` 或 channel 字符串。
 
-## 2. 命名规则
+## 命名规则
 
-- invoke channel：`domain:action` 或 `domain:resource:action`
-- event channel：使用可读的领域事件名，例如 `service:tick`
+Invoke channel 使用以下形式：
+
+```text
+domain:action
+domain:resource:action
+```
 
 示例：
 
-- `config:get`
-- `service:start`
-- `update:download`
-- `system:metricsUpdate`
-
-## 3. 当前结果结构
-
-仓库仍处于迁移期，历史 handler 返回值并不完全统一。当前已收敛到标准结构的领域包括 `api`、`auth`、`config`、`stream`、`system`、`service` 和大部分 `update` handler。
-
-新接口或改造接口应尽量使用：
-
-```js
-{ ok: true, data: ... }
+```text
+config:get
+config:setMany
+service:start
+system:metrics
+stream:testObsWs
+update:download
 ```
 
-或：
+Event channel 使用领域前缀：
+
+```text
+service:tick
+service:statusChanged
+update:progress
+startup-update:status
+system:metricsUpdate
+```
+
+命名要求：
+
+- channel 必须表达业务语义，不使用 UI 控件名。
+- invoke channel 表达请求；event channel 表达状态变化或推送。
+- 删除或替换 channel 前必须先迁移调用方。
+
+## 返回结构
+
+主进程 handler 默认返回统一结构：
+
+```js
+{ ok: true, data: value }
+```
+
+失败返回：
 
 ```js
 {
   ok: false,
   error: {
     code: 'ERROR_CODE',
-    message: 'human readable message',
-  },
+    message: 'Human readable message',
+    details: {}
+  }
 }
 ```
 
-辅助函数位于：
+Preload 的 `invokeCompat()` 会对 `{ ok, data, error }` 做兼容解包，让已有 renderer 代码继续读取历史字段。新增 renderer service 应优先面向业务结果，而不是重复解析主进程包装结构。
 
-- `createIpcSuccess`
-- `createIpcError`
+## Payload 校验
 
-## 4. Payload 校验
+复杂 payload 必须在 `src/shared/schemas.js` 定义校验函数。当前已覆盖的领域包括：
 
-跨层 payload 校验集中放在：
+- update download / install
+- auth login / register / update profile
+- config get / set / setMany
+- stream save config / test SRS / test OBS / apply OBS
 
-- `src/shared/schemas.js`
+规则：
 
-当前已落地：
+- 标量参数可以直接校验类型。
+- 对象 payload 必须检查必填字段、枚举、端口、URL、文件路径等边界。
+- 校验失败应返回 `createIpcError()`，不要静默忽略。
+- schema 变更必须补测试。
 
-- `update:download`
-- `update:install`
-- `auth:login`
-- `auth:register`
-- `auth:updateProfile`
-- `config:get`
-- `config:set`
-- `config:setMany`
-- `stream:saveConfig`
-- `stream:testSrs`
-- `stream:testObsWs`
-- `stream:applyToObs`
+## 主进程注册规则
 
-规则是：
+所有 handler 放在 `src/main/ipc/*.ipc.js`：
 
-- 只要 payload 不是简单标量，就优先补 schema
-- 校验失败时，由主进程返回结构化错误，而不是静默吞掉
+```text
+config.ipc.js
+api.ipc.js
+auth.ipc.js
+stream.ipc.js
+system.ipc.js
+service.ipc.js
+update.ipc.js
+```
 
-## 5. 特殊通道说明
+统一由 `src/main/ipc/index.js` 注册。禁止在 `main.js` 新增内联 handler。
 
-### 隐私窗口选择器
+新增 handler 时应遵循：
 
-隐私窗口选择器使用临时 token 形成一次性事件通道：
+1. 在 `src/shared/ipc-contracts.js` 增加 `IPC_CHANNELS`。
+2. 必要时在 `schemas.js` 增加 payload 校验。
+3. 在对应 `src/main/ipc/*.ipc.js` 注册 handler。
+4. 在 `src/preload/index.js` 暴露最小 renderer API。
+5. 在 `src/renderer/js/services/*` 增加业务方法。
+6. 页面通过 service 调用。
+7. 补单测与文档。
 
-- `privacy-picker-result-${token}`
+## Renderer service 规则
 
-它不对 renderer 主页面开放，而是只由：
+Renderer services 是页面访问后端能力的唯一入口。
 
-- `src/main/app-shell.js`
-- `src/preload/privacy-picker.js`
+```text
+src/renderer/js/services/ipc-client.js
+src/renderer/js/services/api-client.js
+src/renderer/js/services/config-client.js
+src/renderer/js/services/auth-client.js
+src/renderer/js/services/service-client.js
+src/renderer/js/services/system-client.js
+src/renderer/js/services/stream-client.js
+src/renderer/js/services/update-client.js
+```
 
-这组主进程壳层逻辑内部消费。
+约束：
 
-### 更新事件
+- service 通过 `IpcClient.invoke()` 调用 preload 暴露方法。
+- service 可以做业务命名封装，例如 `ConfigClient.setDashboardLayout(layout)`。
+- page 不直接调用 `window.nekoIPC`。
+- `IpcClient` 是唯一允许读取 `window.nekoIPC` 的通用入口。
+- 显式 mock 应尽量放在对应 service 或 page 的测试入口中，不污染真实业务路径。
 
-更新相关事件现在应优先复用：
+## 事件监听规则
 
-- `IPC_EVENTS.UPDATE_PROGRESS`
-- `IPC_EVENTS.UPDATE_AVAILABLE`
-- `IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED`
-- `IPC_EVENTS.UPDATE_AUTO_DOWNLOADED`
-- `IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED`
-- `IPC_EVENTS.STARTUP_UPDATE_STATUS`
+Renderer 监听主进程事件时使用：
 
-`STARTUP_UPDATE_STATUS` 仅用于启动前更新窗口展示阶段状态；下载进度仍复用 `UPDATE_PROGRESS`，避免为同一进度语义新增第二套事件。
+```js
+IpcClient.on(IPC_EVENTS.UPDATE_PROGRESS, handler)
+```
 
-## 6. 新增 IPC 的步骤
+事件名从 `window.__NEKO_IPC_CONTRACTS__.IPC_EVENTS` 读取。新增事件必须同步：
 
-1. 在 `src/shared/ipc-contracts.js` 添加 channel 或 event 常量。
-2. 如有复杂 payload，在 `src/shared/schemas.js` 添加校验。
-3. 在 `src/preload/index.js` 暴露 renderer 可调用方法。
-4. 在 `src/main/ipc/*.ipc.js` 中使用 `IPC_CHANNELS` 注册 handler，并从 `src/main/ipc/index.js` 导出。
-5. 在 renderer 通过 `window.nekoIPC` 调用。
-6. 同步更新测试与文档。
+- `src/shared/ipc-contracts.js`
+- main 推送点
+- preload 暴露的 `IPC_EVENTS`
+- renderer 监听点
+- 测试或 smoke 验证
 
-## 7. 废弃 IPC 的步骤
+## 特殊通道
 
-1. 先替换调用方。
-2. 保留一段兼容窗口期。
-3. 删除 preload 暴露。
+隐私窗口选择器使用一次性 token 通道：
+
+```text
+privacy-picker-result-${token}
+```
+
+它只服务于 `src/main/app-shell.js` 与 `src/preload/privacy-picker.js`，不作为普通 renderer API 对外开放。
+
+## 废弃流程
+
+废弃 IPC 不能直接删除。流程：
+
+1. 在文档中标记废弃原因和替代接口。
+2. 替换 renderer service / page 调用方。
+3. 保留一个兼容窗口期，必要时保留 preload alias。
 4. 删除主进程 handler。
-5. 更新测试与文档。
+5. 删除 preload 暴露方法。
+6. 删除 `IPC_CHANNELS` 常量。
+7. 更新测试、文档和 PR 描述。
 
-## 8. 前后端桥接防错
+## 验收清单
 
-详见 [前后端桥接故障复盘与防错清单](./frontend-backend-integration-guardrails.md)。
+涉及 IPC 的 PR 至少确认：
 
-新增或修改 IPC 时，必须额外确认：
-
-- 主窗口 preload 没有进入降级 stub，启动日志不得出现 `preload bridge missing`。
-- renderer 只通过 `window.nekoIPC` 调用能力，不直接使用 `ipcRenderer`。
-- renderer 不直接使用 `process`、`require` 或 Node/Electron 全局对象；需要运行时信息时由 preload 暴露只读对象。
-- main handler 默认返回 `createIpcSuccess(data)` / `createIpcError(...)`，preload 负责解包兼容，renderer 不直接解析 main 层包装。
-- 页面字段和后端字段必须逐项对齐，尤其是 `ok`、`success`、`data`、`isRunning` 等易混字段。
-# Renderer service 约定
-
-- 新增 renderer IPC 调用时，优先在 `src/renderer/js/services/*` 新增业务 client，由 service 访问 `window.nekoIPC`。
-- `pages/*` 只调用 service，不直接拼 channel 字符串；迁移期保留的 `app-ipc.js` 调用点逐步收敛。
-- `scripts/verify.js` 会扫描整个 `src/renderer` 的 JS 文件，避免 `app-ipc.js`、`services`、`pages` 中重新出现硬编码 `ipc.on('...')` 事件名。
+- `npm run verify` 通过。
+- `npm run test:smoke` 通过。
+- 新 channel 在 `IPC_CHANNELS` 或 `IPC_EVENTS` 中定义。
+- 主进程 handler 使用统一响应结构。
+- 复杂 payload 有 schema。
+- Renderer 页面没有新增直接 `window.nekoIPC` 调用。
+- 文档说明了新增或废弃的接口。

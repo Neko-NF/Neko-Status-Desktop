@@ -2267,7 +2267,13 @@
     <!-- 1. IPC 桥接层（必须在 app.js 之前加载，挂载 window.nekoIPC） -->
     <script src="./js/ipc-bridge.js"></script>
     <script src="./js/services/ipc-client.js"></script>
+    <script src="./js/services/api-client.js"></script>
+    <script src="./js/services/config-client.js"></script>
+    <script src="./js/services/auth-client.js"></script>
+    <script src="./js/services/service-client.js"></script>
+    <script src="./js/services/system-client.js"></script>
     <script src="./js/services/stream-client.js"></script>
+    <script src="./js/services/update-client.js"></script>
     <script src="./js/components/ui-helpers.js"></script>
     <!-- 1.5 模块化基础设施（core → components → state，在 app.js 之前加载） -->
     <script src="./js/core/event-bus.js"></script>
@@ -2276,11 +2282,17 @@
     <script src="./js/components/neko-island.js"></script>
     <script src="./js/components/expandable-section.js"></script>
     <script src="./js/components/modal.js"></script>
+    <script src="./js/components/developer-console.js"></script>
     <script src="./js/state/app-state.js"></script>
     <!-- 1.8 页面组装（在 app.js 前加载，供后续全面替换） -->
     <script src="./js/pages/settings.page.js"></script>
+    <script src="./js/pages/config.page.js"></script>
     <script src="./js/pages/stream.page.js"></script>
     <script src="./js/pages/dashboard.page.js"></script>
+    <script src="./js/pages/device-status.page.js"></script>
+    <script src="./js/pages/screenshot.page.js"></script>
+    <script src="./js/pages/update.page.js"></script>
+    <script src="./js/pages/auth.page.js"></script>
     <!-- 2. 原有 UI 交互逻辑 -->
     <script src="./js/app.js"></script>
     <!-- 3. 后端功能接入层（覆盖模拟逻辑，绑定真实 IPC） -->

@@ -23,6 +23,24 @@
       }
       return method(...args);
     },
+
+    on(channel, callback) {
+      const bridge = getBridge();
+      if (typeof bridge?.on !== 'function') {
+        console.warn(`[IpcClient] event bridge missing: ${channel}`);
+        return () => {};
+      }
+      return bridge.on(channel, callback);
+    },
+
+    once(channel, callback) {
+      const bridge = getBridge();
+      if (typeof bridge?.once !== 'function') {
+        console.warn(`[IpcClient] one-time event bridge missing: ${channel}`);
+        return;
+      }
+      bridge.once(channel, callback);
+    },
   };
 
   window._nekoModules.services.IpcClient = IpcClient;

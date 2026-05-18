@@ -1,63 +1,172 @@
-# 前端开发规范
+# Renderer 前端开发规范
 
-## 当前原则
+本文说明 renderer 侧代码如何组织、如何访问 IPC、如何拆分页面与样式。目标是让前端改动可以多人并行，而不是继续把逻辑堆进 `app.js` 或 `app-ipc.js`。
 
-- 不引入新的大型前端框架
-- 继续使用原生 HTML/CSS/JS
-- 通过 preload 访问主进程，不直接访问 Electron API
+## 基本原则
 
-## 目录演进方向
+- 不引入新的大型前端框架，继续使用原生 HTML/CSS/JavaScript。
+- 页面层只处理 DOM、交互和渲染。
+- IPC 调用统一放在 `src/renderer/js/services`。
+- 可复用 UI 行为放在 `components`。
+- 跨页面基础能力放在 `core` 和 `state`。
+- 新功能不写回 `app.js`；旧兼容逻辑逐步迁出。
 
-当前仍以 `app.js` 和 `app-ipc.js` 为主，但新代码应优先向以下结构靠拢：
+## 目录职责
 
 ```text
 src/renderer/js/
-  pages/
+  app.js                 启动装配和历史兼容入口
+  app-ipc.js             主进程事件协调和迁移中的兼容绑定
+  ipc-bridge.js          preload 缺失时的降级兜底
+  core/
+    event-bus.js         轻量事件总线
+    router.js            页面路由和导航状态
+    theme.js             主题、色彩、字体 profile
   services/
-  state/
+    ipc-client.js        IPC 基础 client
+    *.js                 领域 client
   components/
+    *.js                 可复用 UI/命令组件
+  state/
+    app-state.js         全局状态容器
+  pages/
+    *.page.js            页面级 DOM 和交互
 ```
 
-当前已落地的第一阶段组件化文件：
+## 页面模块规则
 
-- `src/renderer/js/components/ui-helpers.js`：通用 UI helper，提供折叠动画、字体 profile 和服务体检文案标准化。
-- `app.js` 仍保留旧 helper 作为兜底，但新代码应优先复用 `window._nekoUIHelpers`，不要在页面脚本中再次复制同类 DOM 动画或字体 profile 逻辑。
-- `src/renderer/js/core/*`：承接 event bus、主题与路由基础设施；新入口优先复用这些模块，不再把全局流程继续写回 `app.js`。
-- `src/renderer/js/pages/*`：页面级迁移落点。`stream.page.js` 已经承接直播推流页的真实业务逻辑；`dashboard.page.js` 和 `settings.page.js` 仍是后续迁移骨架。
-- `src/renderer/js/state/app-state.js`：全局状态容器的迁移起点，新增跨页面状态时优先放这里或新增同级 state 文件。
+页面模块放在 `src/renderer/js/pages`，命名为 `<name>.page.js`。典型结构：
 
-## 页面规则
+```js
+(function () {
+  window._nekoModules = window._nekoModules || {};
+  window._nekoModules.pages = window._nekoModules.pages || {};
 
-- 页面负责 DOM 查询、事件绑定、渲染入口
-- 不在页面层直接写复杂 IPC 协议细节
-- 不在页面层维护多份来源不一致的状态
+  const PageName = {
+    init(deps = {}) {
+      if (this._inited) return;
+      this._inited = true;
+      this.bindEvents(deps);
+    },
 
-## 样式规则
+    bindEvents(deps) {},
+    render(data) {},
+  };
 
-- 样式按 `tokens.css -> base.css -> layout.css -> components.css -> pages.css -> legacy.css` 分层加载。
-- `main.css` 只作为兼容入口和路由文件，原则上不要继续把新样式堆回 `main.css`。
-- 通用控件、弹窗、按钮、通知等放入 `components.css`；页面专属的 dashboard/settings/stream/update/auth 等放入 `pages.css` 或后续更细的页面样式文件。
-- 避免继续扩散内联样式
+  window._nekoModules.pages.PageName = PageName;
+})();
+```
 
-## 侧边栏条件入口与动画规则
+要求：
 
-侧边栏入口如果只在特定配置、实验开关或权限状态下显示，必须按“条件型导航入口”实现：
+- `init()` 必须幂等，防止重复绑定事件。
+- 页面可以接收依赖注入，例如 `notify`、`addLogLine`、`showNotice`。
+- 页面不直接访问 Node/Electron 能力。
+- 页面不拼接 IPC channel 字符串。
+- 页面需要配置或系统能力时，调用 `services/*` 或由 `app-ipc.js` 注入回调。
 
-- 入口 DOM 可以常驻，但隐藏态不得占据导航列表间距；隐藏项要把 `max-height`、上下 `padding`、上下 `margin`、`opacity` 和 `visibility` 一起收起。
-- 导航列表不要依赖 `gap` 表达可见项间距；使用可动画的 `margin-bottom`，隐藏项收起时将 `margin-bottom` 归零，避免不可见入口留下空洞。
-- 不要用 `display:none` 作为默认隐藏方案，除非明确不需要展开/收起动画；需要动画时使用 `.show` 状态类控制显隐。
-- 条件入口展开或收起后，必须重新同步 `.nav-active-indicator` 的位置。当前兼容入口为 `window._nekoSyncNavIndicator?.()`，调用点应放在状态类切换之后。
-- 如果隐藏入口正处于 active 状态而即将被关闭，必须先导航到稳定页面，再收起入口，避免蓝色遮罩停在不可见项位置。
-- 新增侧边栏入口时，需要同时检查 hover 白色遮罩与 active 蓝色遮罩的 `min-height`、圆角和左右边界是否一致。
+## Renderer service 规则
 
-## 安全规则
+Service 放在 `src/renderer/js/services`。它们负责把 UI 语义映射到 preload 暴露方法。
 
-- 不新增 renderer 直接 `require('electron')`
-- 动态 HTML 尽量避免直接拼接 `innerHTML`
-- 涉及用户输入的内容需要显式转义或文本化插入
-# 2026-05 Renderer service 分层补充
+当前服务：
 
-- `src/renderer/js/services/ipc-client.js` 是 renderer IPC 调用基础封装，必须运行时读取 `window.nekoIPC`，不要缓存旧 bridge。
-- `src/renderer/js/services/stream-client.js` 已承接直播推流页 IPC 调用，`stream.page.js` 只负责 DOM、状态展示和用户事件。
-- `settings.page.js` 已承接设置页字体选择器；后续设置页区块迁移时沿用“一块 UI + 一个明确 service/client 依赖”的方式。
-- 新页面代码优先调用 `services/*`，不要在 page 中直接拼 IPC channel，也不要继续把新业务逻辑写回 `app.js`。
+```text
+ipc-client.js
+api-client.js
+config-client.js
+auth-client.js
+service-client.js
+system-client.js
+stream-client.js
+update-client.js
+```
+
+新增规则：
+
+- 页面需要新 IPC 能力时，先补 service 方法。
+- service 方法使用业务命名，例如 `setDashboardLayout()`，不要把 preload 方法名泄漏给页面。
+- service 不缓存旧 bridge；`IpcClient` 在调用时读取 `window.nekoIPC`。
+- service 变更必须补 VM 测试。
+
+## 组件规则
+
+组件放在 `src/renderer/js/components`。
+
+适合组件化的内容：
+
+- 通知、弹窗、折叠区、命令注册器。
+- 可复用 DOM 行为。
+- 页面间共享的 UI helper。
+
+不适合组件化的内容：
+
+- 只属于单个页面的一段表单逻辑。
+- 强依赖具体页面 ID 的大段业务流程。
+- 直接访问 IPC 的逻辑。
+
+## 样式分层
+
+样式加载顺序：
+
+```text
+tokens.css
+base.css
+layout.css
+components.css
+pages.css
+legacy.css
+```
+
+职责：
+
+- `tokens.css`：颜色、尺寸、阴影、字体变量。
+- `base.css`：全局 reset、body、基础元素。
+- `layout.css`：整体布局、侧边栏、主内容结构。
+- `components.css`：按钮、弹窗、开关、通知、可复用组件。
+- `pages.css`：页面专属区块，如 dashboard、settings、stream、update。
+- `legacy.css`：迁移期保留样式，后续逐步归并。
+- `main.css`：只作为入口，不再承接新样式。
+
+新增样式时先判断是组件还是页面。不要把新样式继续堆进 `main.css`。
+
+## 导航与条件入口
+
+侧边栏入口可能受配置、实验开关或权限控制。实现要求：
+
+- 隐藏状态不能留下空白间距。
+- 需要动画时使用状态类，不依赖 `display:none`。
+- 隐藏 active 页面前，先导航到稳定页面。
+- 状态变化后同步导航指示器。
+- 新入口必须在移动窗口、缩放、主题切换下检查布局。
+
+## 安全与 DOM
+
+- 不在 renderer 直接 `require('electron')`。
+- 不在 renderer 直接使用 `process`、`fs`、`ipcRenderer`。
+- 用户输入必须用 `textContent` 或统一 escape 后再插入。
+- 避免把用户输入拼入 `innerHTML`。
+- 外部链接通过 `SystemClient.openExternal()`，不直接调用 shell。
+
+## 当前已迁移页面
+
+| 模块 | 职责 |
+| --- | --- |
+| `auth.page.js` | 登录、注册、首次引导、个人资料、头像编辑 |
+| `config.page.js` | 服务器配置弹窗、连接测试、设备密钥校验 |
+| `dashboard.page.js` | 仪表盘布局编辑、卡片拖拽、尺寸调整 |
+| `device-status.page.js` | 设备状态 KPI、诊断、指标推送渲染 |
+| `screenshot.page.js` | 截图与活动页、隐私规则、窗口选择器 |
+| `settings.page.js` | 字体选择与设置页局部行为 |
+| `stream.page.js` | 推流配置、SRS/OBS 测试、直播状态 |
+| `update.page.js` | 更新弹窗、徽章、更新页面展示 |
+
+## 新页面验收清单
+
+- 已加入 `src/renderer/index.html`，加载顺序正确。
+- 已加入 `scripts/verify.js` 的结构和语法检查。
+- 页面 `init()` 幂等。
+- 页面不直接访问 `window.nekoIPC`。
+- IPC 调用通过 service。
+- 至少有 VM 单测或明确手工验收路径。
+- 样式放入正确 CSS 层。

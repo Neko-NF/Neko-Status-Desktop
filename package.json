@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -21,6 +21,7 @@
     "build:zip": "electron-builder --win zip --x64",
     "lint": "node scripts/verify.js",
     "test": "node --test \"tests/unit/*.test.js\"",
+    "test:smoke": "node --test \"tests/smoke/*.test.js\"",
     "test:watch": "node --test --watch \"tests/unit/*.test.js\"",
     "test:coverage": "node --test --experimental-test-coverage \"tests/unit/*.test.js\"",
     "verify": "npm run lint && npm run test"

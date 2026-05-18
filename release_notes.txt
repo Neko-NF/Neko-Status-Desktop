@@ -1,13 +1,5 @@
-## 工程化完善
+# Neko Status v1.2.8
 
-- 继续推进 renderer 模块化拆分，新增 `services/ipc-client.js` 和 `services/stream-client.js`，直播推流页通过 service 层访问 IPC。
-- 设置页字体选择器迁移到 `settings.page.js`，减少 `app.js` 中的集中式页面逻辑，并保留已保存字体的启动兼容。
-- `scripts/verify.js` 新增 renderer service 文件结构检查，并将 IPC 事件硬编码扫描扩展到整个 `src/renderer`。
-- 新增 renderer service 单元测试，覆盖 stream client 方法映射和运行时 mock 兼容。
-- 同步更新架构、前端规范、IPC 契约和测试规范，明确后续 page -> service -> preload -> main 的调用边界。
+本次更新优化了整体使用体验，让启动、页面切换、设置、更新和状态同步更顺滑稳定。
 
-## 验证
-
-- `npm run verify` 通过。
-- `npm run build:zip` 通过。
-- dev 后台 smoke test 可正常启动，未发现 preload bridge 缺失、renderer exception 或 GPU fatal。
+日常使用更轻快，提示更清晰，操作更安心。

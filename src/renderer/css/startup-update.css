@@ -34,6 +34,10 @@ body {
     gap: 20px;
     padding: 30px;
     overflow: hidden;
+    overflow: clip;
+    isolation: isolate;
+    contain: paint;
+    clip-path: inset(0 round 28px);
     border: 1px solid color-mix(in srgb, var(--theme-color, #06b6d4) 34%, rgba(255, 255, 255, 0.24));
     border-radius: 28px;
     background:
@@ -63,12 +67,14 @@ body {
         radial-gradient(circle at 88% 84%, color-mix(in srgb, var(--theme-color, #06b6d4) 20%, transparent), transparent 42%);
     filter: blur(18px);
     opacity: 0.72;
+    transform: translateZ(0);
 }
 
 .startup-panel::after {
     background:
         linear-gradient(145deg, rgba(255,255,255,0.13), transparent 34%, rgba(255,255,255,0.05) 74%, transparent);
     opacity: 0.64;
+    transform: translateZ(0);
 }
 
 .startup-panel > * {
