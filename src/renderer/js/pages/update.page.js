@@ -166,6 +166,30 @@
     return Array.from(byId.values()).sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
   }
 
+  function placeholderSourceFor(displayIndex) {
+    const number = displayIndex + 1;
+    return {
+      id: `placeholder-${number}`,
+      type: 'placeholder',
+      label: `示例源 ${number}`,
+      owner: 'team',
+      repo: `neko-status-${number}`,
+      baseUrl: 'https://example.com',
+      repoUrl: `https://example.com/team/neko-status-${number}`,
+      isPlaceholder: true,
+      enabled: true,
+      priority: number,
+    };
+  }
+
+  function buildDisplaySourceList(sources = []) {
+    const items = sources.slice();
+    while (items.length < 3) {
+      items.push(placeholderSourceFor(items.length));
+    }
+    return items;
+  }
+
   function sourcePayload(source, overrides = {}) {
     if (!source) return {};
     return {
@@ -313,6 +337,7 @@
     renderSources(cfg = {}) {
       this._lastSourceCfg = cfg;
       const sources = buildSourceList(cfg);
+      const displaySources = buildDisplaySourceList(sources);
       const selectedId = cfg.activeUpdateSourceId || (cfg.updateSourceType === 'personal' ? 'personal-default' : 'github-default');
       const selected = sources.find((source) => source.id === selectedId) || sources[0];
       const mode = cfg.updateSourceMode === 'smart' ? 'smart' : 'selected';
@@ -326,9 +351,12 @@
       const modeHint = $('updateSourceModeHint');
 
       if (currentUrlSpan) {
+        const carouselItem = displaySources[this._sourceCarouselIndex || 0];
         currentUrlSpan.textContent = mode === 'smart'
           ? `智能模式将检测 ${sources.length} 个已保存更新源`
-          : compactRepoUrl(selected?.repoUrl || 'github.com/Neko-NF/Neko-Status-Desktop');
+          : (carouselItem?.isPlaceholder
+            ? '占位槽：保存新源后自动替换'
+            : compactRepoUrl(selected?.repoUrl || 'github.com/Neko-NF/Neko-Status-Desktop'));
       }
 
       if (currentLabel) {
@@ -336,7 +364,7 @@
       }
 
       if (sourceCount) {
-        sourceCount.textContent = `${sources.length} 个源`;
+        sourceCount.textContent = `${sources.length} 个源 / ${displaySources.length} 个槽位`;
       }
 
       if (modeHint) {
@@ -355,47 +383,115 @@
       if (!rail) return;
       const activeIndex = Math.max(0, sources.findIndex((source) => source.id === selected?.id));
       if (!Number.isInteger(this._sourceCarouselIndex)) this._sourceCarouselIndex = activeIndex;
-      this._sourceCarouselIndex = Math.max(0, Math.min(this._sourceCarouselIndex, Math.max(0, sources.length - 1)));
-      rail.innerHTML = sources.map((source) => {
-        const icon = source.type === 'github' ? 'ph-github-logo' : 'ph-hard-drives';
-        const active = source.id === selected?.id && mode !== 'smart' ? ' active' : '';
+      this._sourceCarouselIndex = Math.max(0, Math.min(this._sourceCarouselIndex, Math.max(0, displaySources.length - 1)));
+      const currentIndex = this._sourceCarouselIndex;
+      const renderedIndex = Number.isInteger(this._renderedCarouselIndex) ? this._renderedCarouselIndex : currentIndex;
+      const stackClassFor = (index, baseIndex) => {
+        const nextIndex = displaySources.length > 1 ? (baseIndex + 1) % displaySources.length : -1;
+        const prevIndex = displaySources.length > 2 ? (baseIndex - 1 + displaySources.length) % displaySources.length : -1;
+        if (index === baseIndex) return 'is-current';
+        if (index === prevIndex) return 'is-prev';
+        if (index === nextIndex) return 'is-next';
+        return 'is-hidden';
+      };
+      const applyStackClasses = (baseIndex) => {
+        rail.querySelectorAll('.update-source-chip').forEach((chip) => {
+          chip.classList.remove('is-current', 'is-prev', 'is-next', 'is-hidden', 'is-preview-clone-visible');
+          const stackClass = stackClassFor(Number(chip.dataset.sourceIndex) || 0, baseIndex);
+          stackClass
+            .split(' ')
+            .filter(Boolean)
+            .forEach((className) => chip.classList.add(className));
+        });
+      };
+      const sourceCards = displaySources.map((source, index) => {
+        const isPlaceholder = !!source.isPlaceholder;
+        const icon = isPlaceholder ? 'ph-plus-circle' : (source.type === 'github' ? 'ph-github-logo' : 'ph-hard-drives');
+        const active = !isPlaceholder && source.id === selected?.id && mode !== 'smart' ? ' active' : '';
         const confirmingDelete = this._sourcePendingDeleteId === source.id;
+        const animateDeleteFlip = this._sourceFlipTargetId === source.id;
+        const stackClass = ` ${stackClassFor(index, renderedIndex)}`;
+        const sourceNumber = String(index + 1).padStart(2, '0');
         const modeLabel = mode === 'smart'
-          ? '参与智能检测'
-          : (source.id === selected?.id ? '当前使用' : '点击切换');
-        const host = compactRepoUrl(source.baseUrl);
-        return `<article class="update-source-chip${active}${confirmingDelete ? ' delete-confirm' : ''}" data-source-id="${escapeHtml(source.id)}">
-          <span class="update-source-chip-main">
-            <span class="update-source-chip-icon"><i class="ph ${icon}"></i></span>
-            <span class="update-source-chip-copy">
-              <span class="update-source-chip-title">${escapeHtml(source.label)}</span>
-              <span class="update-source-chip-url">${escapeHtml(compactRepoUrl(source.repoUrl))}</span>
+          ? (isPlaceholder ? '等待填写' : '参与智能检测')
+          : (isPlaceholder ? '填写此槽' : (source.id === selected?.id ? '当前使用' : '点击切换'));
+        const typeLabel = isPlaceholder
+          ? '占位槽'
+          : (source.type === 'github' ? 'GitHub' : '个人仓库');
+        const host = isPlaceholder ? compactRepoUrl(source.baseUrl) : compactRepoUrl(source.baseUrl);
+        const title = isPlaceholder ? '待添加更新源' : source.label;
+        const repoUrl = isPlaceholder ? '示例：example.com/team/neko-status' : compactRepoUrl(source.repoUrl);
+        const action = isPlaceholder ? 'placeholder-fill' : 'select';
+        return `<article class="update-source-chip${stackClass}${active}${isPlaceholder ? ' update-source-placeholder' : ''}${confirmingDelete && !animateDeleteFlip ? ' delete-confirm' : ''}" data-source-id="${escapeHtml(source.id)}" data-source-index="${index}" data-placeholder="${isPlaceholder ? 'true' : 'false'}">
+          <span class="update-source-card-inner">
+            <span class="update-source-card-face update-source-card-front">
+              <span class="update-source-card-number" aria-label="第 ${index + 1} 个更新源">${escapeHtml(sourceNumber)}</span>
+              <span class="update-source-chip-main">
+                <span class="update-source-chip-icon"><i class="ph ${icon}"></i></span>
+                <span class="update-source-chip-copy">
+                  <span class="update-source-chip-title">${escapeHtml(title)}</span>
+                  <span class="update-source-chip-url">${escapeHtml(repoUrl)}</span>
+                </span>
+              </span>
+              <span class="update-source-chip-status">
+                <span class="update-source-kind">${escapeHtml(typeLabel)}</span>
+                <button type="button" class="update-source-mini-btn update-source-select-btn" data-action="${escapeHtml(action)}" data-source-id="${escapeHtml(source.id)}">${escapeHtml(modeLabel)}</button>
+              </span>
+              <span class="update-source-chip-meta">
+                <span class="update-source-meta-item">
+                  <span>服务器</span>
+                  <strong title="${escapeHtml(host)}">${escapeHtml(host)}</strong>
+                </span>
+                <span class="update-source-meta-item">
+                  <span>仓库路径</span>
+                  <strong title="${escapeHtml(source.owner)}/${escapeHtml(source.repo)}">${escapeHtml(source.owner)}/${escapeHtml(source.repo)}</strong>
+                </span>
+              </span>
+              <span class="update-source-chip-footer">
+                <span class="update-source-chip-actions">
+                  <button type="button" class="update-source-icon-btn" data-action="${isPlaceholder ? 'placeholder-fill' : 'edit'}" data-source-id="${escapeHtml(source.id)}" title="${isPlaceholder ? '填写占位槽' : '修改更新源'}" aria-label="${isPlaceholder ? '填写占位槽' : '修改更新源'}"><i class="ph ${isPlaceholder ? 'ph-plus' : 'ph-pencil-simple'}"></i><span>${isPlaceholder ? '填写' : '修改'}</span></button>
+                  ${isPlaceholder ? '<button type="button" class="update-source-icon-btn disabled" disabled aria-disabled="true"><i class="ph ph-lock-simple"></i><span>保留</span></button>' : `<button type="button" class="update-source-icon-btn danger" data-action="delete" data-source-id="${escapeHtml(source.id)}" title="删除更新源" aria-label="删除更新源"><i class="ph ph-trash"></i><span>删除</span></button>`}
+                </span>
+              </span>
             </span>
+            ${isPlaceholder ? '' : `<span class="update-source-card-face update-source-card-back">
+              <span class="update-source-delete-message">
+                <strong>删除此更新源？</strong>
+                <small>删除后将自动切换到下一个可用源。</small>
+              </span>
+              <span class="update-source-delete-actions">
+                <button type="button" class="update-source-delete-choice danger" data-action="confirm-delete" data-source-id="${escapeHtml(source.id)}"><i class="ph ph-trash"></i><span>确认删除</span></button>
+                <button type="button" class="update-source-delete-choice" data-action="cancel-delete" data-source-id="${escapeHtml(source.id)}"><i class="ph ph-x"></i><span>取消</span></button>
+              </span>
+            </span>`}
           </span>
-          <span class="update-source-chip-meta">
-            <span>${escapeHtml(host)}</span>
-            <span>${escapeHtml(source.owner)}/${escapeHtml(source.repo)}</span>
-          </span>
-          <span class="update-source-chip-footer">
-            <button type="button" class="update-source-mini-btn update-source-select-btn" data-action="select" data-source-id="${escapeHtml(source.id)}">${escapeHtml(modeLabel)}</button>
-            <span class="update-source-chip-actions">
-              <button type="button" class="update-source-icon-btn" data-action="edit" data-source-id="${escapeHtml(source.id)}" title="修改更新源"><i class="ph ph-pencil-simple"></i></button>
-              <button type="button" class="update-source-icon-btn danger" data-action="delete" data-source-id="${escapeHtml(source.id)}" title="删除更新源"><i class="ph ph-trash"></i></button>
-            </span>
-          </span>
-          ${confirmingDelete ? `<span class="update-source-delete-panel">
-            <button type="button" class="update-source-delete-choice danger" data-action="confirm-delete" data-source-id="${escapeHtml(source.id)}"><i class="ph ph-trash"></i><span>删除</span></button>
-            <button type="button" class="update-source-delete-choice" data-action="cancel-delete" data-source-id="${escapeHtml(source.id)}"><i class="ph ph-x"></i><span>取消</span></button>
-          </span>` : ''}
         </article>`;
-      }).join('');
-      rail.style.transform = `translateX(${-100 * this._sourceCarouselIndex}%)`;
+      });
+      rail.innerHTML = sourceCards.join('');
+      rail.style.transform = 'translateX(0)';
+      const animateDeleteFlipId = this._sourceFlipTargetId;
+      if (animateDeleteFlipId) {
+        const scheduleFrame = window.requestAnimationFrame || ((fn) => setTimeout(fn, 0));
+        scheduleFrame(() => {
+          Array.from(rail.querySelectorAll('.update-source-chip'))
+            .find((chip) => chip.dataset.sourceId === animateDeleteFlipId)
+            ?.classList.add('delete-confirm');
+          this._sourceFlipTargetId = '';
+        });
+      }
+      if (renderedIndex !== currentIndex) {
+        const scheduleFrame = window.requestAnimationFrame || ((fn) => setTimeout(fn, 0));
+        scheduleFrame(() => applyStackClasses(currentIndex));
+      } else {
+        applyStackClasses(currentIndex);
+      }
+      this._renderedCarouselIndex = currentIndex;
 
       if (dots) {
-        dots.innerHTML = sources.map((source, index) => `<button type="button" class="update-source-dot${index === this._sourceCarouselIndex ? ' active' : ''}" data-source-index="${index}" aria-label="查看第 ${index + 1} 个更新源"></button>`).join('');
+        dots.innerHTML = displaySources.map((source, index) => `<button type="button" class="update-source-dot${index === this._sourceCarouselIndex ? ' active' : ''}" data-source-index="${index}" aria-label="查看第 ${index + 1} 个${source.isPlaceholder ? '占位槽' : '更新源'}"></button>`).join('');
       }
-      if (prevBtn) prevBtn.disabled = sources.length <= 1;
-      if (nextBtn) nextBtn.disabled = sources.length <= 1;
+      if (prevBtn) prevBtn.disabled = displaySources.length <= 1;
+      if (nextBtn) nextBtn.disabled = displaySources.length <= 1;
       this.renderSourceDiagnostics(this._sourceDiagnostics || {}, { cfg, selected, mode });
     },
 
@@ -524,8 +620,33 @@
           const chip = event.target?.closest?.('.update-source-chip');
           if (!chip) return;
           const cfg = await getAllConfig?.() || {};
-          const source = buildSourceList(cfg).find((item) => item.id === chip.dataset.sourceId);
+          const sources = buildSourceList(cfg);
+          const displaySources = buildDisplaySourceList(sources);
+          const hasSourceIndex = Object.prototype.hasOwnProperty.call(chip.dataset || {}, 'sourceIndex');
+          const chipIndex = hasSourceIndex
+            ? Math.max(0, Math.min(Number(chip.dataset.sourceIndex) || 0, displaySources.length - 1))
+            : Math.max(0, displaySources.findIndex((item) => item.id === chip.dataset.sourceId));
+          const source = displaySources[chipIndex] || displaySources.find((item) => item.id === chip.dataset.sourceId);
           if (!source) return;
+          const isPlaceholder = !!source.isPlaceholder;
+
+          if (isPlaceholder) {
+            this._sourceCarouselIndex = chipIndex;
+            if (actionEl?.dataset.action === 'placeholder-fill' || actionEl?.dataset.action === 'select' || !actionEl) {
+              const input = $('updateSourceInput');
+              const saveBtn = $('saveUpdateSourceBtn');
+              if (saveBtn) {
+                delete saveBtn.dataset.editSourceId;
+                saveBtn.dataset.placeholderIndex = String(chipIndex);
+                saveBtn.innerHTML = '<i class="ph ph-plus-circle"></i> 填充占位槽';
+              }
+              input?.focus?.();
+              input?.select?.();
+              this.renderSources(cfg);
+              addLogLine('INFO', `正在填写第 ${chipIndex + 1} 个更新源槽位`);
+            }
+            return;
+          }
 
           if (actionEl?.dataset.action === 'edit') {
             const input = $('updateSourceInput');
@@ -533,6 +654,7 @@
             if (input) input.value = source.repoUrl;
             if (saveBtn) {
               saveBtn.dataset.editSourceId = source.id;
+              delete saveBtn.dataset.placeholderIndex;
               saveBtn.innerHTML = '<i class="ph ph-pencil-simple"></i> 更新当前源';
             }
             const inputWrap = input?.closest?.('.update-source-input-wrap') || input?.parentElement;
@@ -548,14 +670,21 @@
 
           if (actionEl?.dataset.action === 'delete') {
             this._sourcePendingDeleteId = source.id;
+            this._sourceFlipTargetId = source.id;
             this.renderSources(cfg);
             addLogLine('WARN', `请确认是否删除更新源：${source.label}`);
             return;
           }
 
           if (actionEl?.dataset.action === 'cancel-delete') {
-            this._sourcePendingDeleteId = '';
-            this.renderSources(cfg);
+            const cancelId = source.id;
+            chip.classList.remove('delete-confirm');
+            if (this._sourceFlipBackTimerId) clearTimeout(this._sourceFlipBackTimerId);
+            this._sourceFlipBackTimerId = setTimeout(() => {
+              if (this._sourcePendingDeleteId === cancelId) this._sourcePendingDeleteId = '';
+              this._sourceFlipBackTimerId = null;
+              this.renderSources(cfg);
+            }, 820);
             return;
           }
 
@@ -595,8 +724,13 @@
 
       const activateCarouselSource = async (cfg, sources, nextIndex) => {
         this._sourceCarouselIndex = nextIndex;
+        const nextSource = sources[nextIndex];
+        if (nextSource?.isPlaceholder) {
+          this.renderSources(cfg);
+          addLogLine('INFO', `已切换到第 ${nextIndex + 1} 个占位槽，保存新源后会自动替换`);
+          return;
+        }
         if (cfg.updateSourceMode !== 'smart') {
-          const nextSource = sources[nextIndex];
           const payload = {
             updateSourceMode: 'selected',
             ...sourcePayload(nextSource),
@@ -612,7 +746,7 @@
 
       const moveCarousel = async (delta) => {
         const cfg = await getAllConfig?.() || {};
-        const sources = buildSourceList(cfg);
+        const sources = buildDisplaySourceList(buildSourceList(cfg));
         if (sources.length <= 1) return;
         const nextIndex = ((this._sourceCarouselIndex || 0) + delta + sources.length) % sources.length;
         await activateCarouselSource(cfg, sources, nextIndex);
@@ -623,7 +757,7 @@
         const dot = event.target?.closest?.('.update-source-dot');
         if (!dot) return;
         const cfg = await getAllConfig?.() || {};
-        const sources = buildSourceList(cfg);
+        const sources = buildDisplaySourceList(buildSourceList(cfg));
         const nextIndex = Math.max(0, Math.min(Number(dot.dataset.sourceIndex) || 0, sources.length - 1));
         await activateCarouselSource(cfg, sources, nextIndex);
       });
@@ -656,6 +790,12 @@
         try {
           const existingCfg = await getAllConfig?.() || {};
           const editSourceId = btn.dataset.editSourceId || '';
+          const placeholderIndex = Number(btn.dataset.placeholderIndex);
+          const currentDisplaySources = buildDisplaySourceList(buildSourceList(existingCfg));
+          const currentCarouselIndex = Number.isInteger(this._sourceCarouselIndex) ? this._sourceCarouselIndex : -1;
+          const targetSlotIndex = Number.isInteger(placeholderIndex) && placeholderIndex >= 0
+            ? placeholderIndex
+            : (currentDisplaySources[currentCarouselIndex]?.isPlaceholder ? currentCarouselIndex : -1);
           const editingSource = editSourceId ? buildSourceList(existingCfg).find((source) => source.id === editSourceId) : null;
           const savedSources = visibleSourcesFromExplicit(explicitSources(existingCfg))
             .filter((source) => source.id !== editSourceId && !['github-default', 'personal-default'].includes(source.id));
@@ -667,7 +807,7 @@
             owner: parsed.owner,
             repo: parsed.repo,
             repoUrl: parsed.repoUrl,
-            priority: editingSource?.priority || savedSources.length + 10,
+            priority: editingSource?.priority || (targetSlotIndex >= 0 ? targetSlotIndex + 1 : savedSources.length + 10),
           });
           const nextUpdateSources = ['github-default', 'personal-default'].includes(savedSource.id)
             ? explicitSources(existingCfg).filter((source) => source.id !== savedSource.id)
@@ -678,13 +818,15 @@
             ...sourcePayload(savedSource),
           };
           await setManyConfig?.(payload);
+          this._sourceCarouselIndex = targetSlotIndex >= 0 ? targetSlotIndex : Math.max(0, buildSourceList({ ...existingCfg, ...payload }).findIndex((source) => source.id === savedSource.id));
           this.renderSources({ ...existingCfg, ...payload });
           btn.innerHTML = '<i class="ph ph-check-circle"></i> 已保存';
           addLogLine('SUCCESS', `${editSourceId ? '已修改' : '已保存'}更新源：${sourceTypeLabel(parsed.type)} - ${parsed.repoUrl}`);
           input.value = '';
           delete btn.dataset.editSourceId;
+          delete btn.dataset.placeholderIndex;
           triggerSilentCheck();
-          setTimeout(() => { btn.innerHTML = editSourceId ? defaultSaveHtml : origHtml; btn.disabled = false; }, 1500);
+          setTimeout(() => { btn.innerHTML = defaultSaveHtml || origHtml; btn.disabled = false; }, 1500);
         } catch (error) {
           addLogLine('ERROR', `更新源保存失败：${error.message}`);
           btn.innerHTML = origHtml;

@@ -170,3 +170,4 @@ legacy.css
 - IPC 调用通过 service。
 - 至少有 VM 单测或明确手工验收路径。
 - 样式放入正确 CSS 层。
+- 涉及 UI 文案、按钮尺寸、卡片信息层级或昼夜主题时，同步遵循 [uiux-copywriting-guideline.md](./uiux-copywriting-guideline.md)。

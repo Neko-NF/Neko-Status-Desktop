@@ -1,5 +1,7 @@
 # Contributing
 
+UI 文案、文本层级、按钮触达尺寸、卡片布局和昼夜主题适配必须遵循 [docs/uiux-copywriting-guideline.md](docs/uiux-copywriting-guideline.md)。
+
 ## 本地开发
 
 ```bash

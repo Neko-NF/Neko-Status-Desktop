@@ -8,6 +8,12 @@ const {
 } = require('./update-source');
 
 const DEFAULT_STARTUP_CHECK_TIMEOUT_MS = 12000;
+const DEFAULT_STARTUP_CHECK_OPTIONS = {
+  estimateSpeed: false,
+  releaseFetchTimeoutMs: 4000,
+  parallelSources: true,
+  reason: 'startup',
+};
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 300000;
 const DEV_STARTUP_UPDATE_SCENARIOS = new Set([
   'checking',
@@ -308,6 +314,7 @@ async function runStartupUpdateGate(deps) {
     checkForUpdates,
     sendToRenderer = () => {},
     startupCheckTimeoutMs = DEFAULT_STARTUP_CHECK_TIMEOUT_MS,
+    startupCheckOptions = DEFAULT_STARTUP_CHECK_OPTIONS,
     isPackaged = true,
     logger = console,
     onStatus = () => {},
@@ -350,7 +357,7 @@ async function runStartupUpdateGate(deps) {
 
   let result;
   try {
-    result = await withTimeout(checkForUpdates(), startupCheckTimeoutMs, 'startup update check');
+    result = await withTimeout(checkForUpdates(startupCheckOptions), startupCheckTimeoutMs, 'startup update check');
   } catch (err) {
     logger.warn?.('[StartupUpdate] update check failed before window open:', err.message);
     onStatus({
@@ -477,6 +484,7 @@ async function runBackgroundUpdateCheck(deps) {
 
 module.exports = {
   DEFAULT_STARTUP_CHECK_TIMEOUT_MS,
+  DEFAULT_STARTUP_CHECK_OPTIONS,
   DEV_STARTUP_UPDATE_SCENARIOS,
   downloadInstaller,
   normalizeDevStartupUpdateScenario,

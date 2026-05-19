@@ -853,7 +853,7 @@ function synthesizeReleasesFromFiles(files, source, releaseNotes = '') {
   return releases.sort((a, b) => compareVersionsFull(b.tag_name, a.tag_name));
 }
 
-async function fetchPersonalReleaseNotesFromFiles(files, source) {
+async function fetchPersonalReleaseNotesFromFiles(files, source, options = {}) {
   const notesFile = (files || []).find((file) => {
     const name = String(file.name || file.path || '').split(/[\\/]/).pop().toLowerCase();
     return name === 'release_notes.txt';
@@ -867,7 +867,7 @@ async function fetchPersonalReleaseNotesFromFiles(files, source) {
   try {
     const res = await fetch(url, {
       headers: buildReleaseHeaders(source),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(options.releaseFetchTimeoutMs || 10000),
     });
     if (!res.ok) return '';
     return await res.text();
@@ -876,16 +876,16 @@ async function fetchPersonalReleaseNotesFromFiles(files, source) {
   }
 }
 
-async function fetchPersonalFileReleases(source) {
+async function fetchPersonalFileReleases(source, options = {}) {
   if (source.type !== 'personal' || !source.contentsUrl) return [];
   const res = await fetch(source.contentsUrl, {
     headers: buildReleaseHeaders(source),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(options.releaseFetchTimeoutMs || 10000),
   });
   if (!res.ok) throw new Error(`Personal update file listing returned HTTP ${res.status}`);
   const files = await res.json();
   const fileList = Array.isArray(files) ? files : [];
-  const releaseNotes = await fetchPersonalReleaseNotesFromFiles(fileList, source);
+  const releaseNotes = await fetchPersonalReleaseNotesFromFiles(fileList, source, options);
   return synthesizeReleasesFromFiles(fileList, source, releaseNotes);
 }
 
@@ -971,7 +971,11 @@ async function buildUpdateResultFromReleaseList(all, source, channel) {
   };
 }
 
-async function checkSourceForUpdates(source, channel) {
+async function checkSourceForUpdates(source, channel, options = {}) {
+  const {
+    estimateSpeed: shouldEstimateSpeed = true,
+    releaseFetchTimeoutMs = 10000,
+  } = options || {};
   if (!source.owner || !source.repo || !source.releasesUrl) {
     return {
       hasUpdate: false,
@@ -991,18 +995,18 @@ async function checkSourceForUpdates(source, channel) {
   try {
     const res = await fetch(`${source.releasesUrl}?per_page=30`, {
       headers: buildReleaseHeaders(source),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(releaseFetchTimeoutMs),
     });
     if (!res.ok) {
       const prefix = source.type === 'personal' ? 'Personal update source' : 'GitHub API';
       if (source.type === 'personal' && res.status === 404) {
-        const fallback = await fetchPersonalFileReleases(source);
+          const fallback = await fetchPersonalFileReleases(source, options);
         if (fallback.length) {
           const result = await buildUpdateResultFromReleaseList(fallback, source, channel);
           
           const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
           let speedEstimate = { bytesPerSecond: 0 };
-          if (downloadUrl) {
+          if (downloadUrl && shouldEstimateSpeed) {
             speedEstimate = await estimateDownloadSpeed(downloadUrl, configStore);
           }
 
@@ -1030,14 +1034,14 @@ async function checkSourceForUpdates(source, channel) {
     }
 
     if (source.type === 'personal' && (!Array.isArray(all) || all.length === 0)) {
-      all = await fetchPersonalFileReleases(source);
+      all = await fetchPersonalFileReleases(source, options);
     }
     const result = await buildUpdateResultFromReleaseList(all, source, channel);
 
     // 进行高精度的实际包采样测速
     const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
     let speedEstimate = { bytesPerSecond: 0 };
-    if (downloadUrl) {
+    if (downloadUrl && shouldEstimateSpeed) {
       speedEstimate = await estimateDownloadSpeed(downloadUrl, configStore);
     }
 
@@ -1076,7 +1080,7 @@ function scoreUpdateSourceResult(result) {
   return latency + installerPenalty + updateBonus;
 }
 
-async function checkForUpdates() {
+async function checkForUpdates(options = {}) {
   const channel = configStore.get('updateChannel') || 'stable';
   const mode = getUpdateSourceMode(configStore);
 
@@ -1093,10 +1097,17 @@ async function checkForUpdates() {
       };
     }
 
-    const results = [];
-    for (const source of sources) {
-      const result = await checkSourceForUpdates(source, channel);
-      results.push({ ...result, sourceMode: 'smart' });
+    const results = options.parallelSources === false
+      ? []
+      : await Promise.all(sources.map(async (source) => ({
+        ...(await checkSourceForUpdates(source, channel, options)),
+        sourceMode: 'smart',
+      })));
+    if (options.parallelSources === false) {
+      for (const source of sources) {
+        const result = await checkSourceForUpdates(source, channel, options);
+        results.push({ ...result, sourceMode: 'smart' });
+      }
     }
 
     const healthy = results.filter((result) => !result.error);
@@ -1125,7 +1136,7 @@ async function checkForUpdates() {
   }
 
   const source = getActiveUpdateSource(configStore);
-  return await checkSourceForUpdates(source, channel);
+  return await checkSourceForUpdates(source, channel, options);
 }
 
 const dns = require('dns');

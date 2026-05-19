@@ -75,6 +75,23 @@ describe('startup update gate', () => {
     assert.equal(deps.launchInstaller.mock.callCount(), 0);
   });
 
+  it('uses fast update checks before opening the window', async () => {
+    const deps = createDeps({
+      startupCheckOptions: {
+        estimateSpeed: false,
+        releaseFetchTimeoutMs: 4000,
+        parallelSources: true,
+        reason: 'startup',
+      },
+    });
+
+    const result = await runStartupUpdateGate(deps);
+
+    assert.equal(result.action, 'open');
+    assert.equal(deps.checkForUpdates.mock.callCount(), 1);
+    assert.deepEqual(deps.checkForUpdates.mock.calls[0].arguments[0], deps.startupCheckOptions);
+  });
+
   it('downloads and launches an installer before opening when an update exists', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neko-update-test-'));
     const body = Buffer.from('installer-binary');
