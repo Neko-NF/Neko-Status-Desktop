@@ -103,7 +103,14 @@ function ensureSha256Sums(files) {
 async function requestJson(url, options = {}) {
   const res = await fetch(url, options);
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
   if (!res.ok) {
     const message = body?.message || body?.errors?.[0]?.message || text || res.statusText;
     const error = new Error(`HTTP ${res.status}: ${message}`);
@@ -128,6 +135,22 @@ function authHeaders(token, extra = {}) {
     Authorization: `token ${token}`,
     ...extra,
   };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return 'unknown size';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 async function findRelease(baseUrl, owner, repo, tag, token) {
@@ -191,6 +214,45 @@ async function uploadAsset(baseUrl, owner, repo, release, filePath, token) {
   });
 }
 
+async function findUploadedAsset(baseUrl, owner, repo, tag, token, filePath) {
+  const latestRelease = await findRelease(baseUrl, owner, repo, tag, token);
+  const fileName = path.basename(filePath);
+  return latestRelease?.assets?.find((asset) => (
+    asset.name === fileName
+    && (!asset.size || asset.size === fs.statSync(filePath).size)
+  ));
+}
+
+async function uploadAssetWithRetry(baseUrl, owner, repo, tag, release, filePath, token) {
+  const fileName = path.basename(filePath);
+  const size = fs.statSync(filePath).size;
+  const retries = Number.parseInt(process.env.GITEA_UPLOAD_RETRIES || '2', 10);
+  const maxAttempts = Math.max(1, retries + 1);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      console.log(`Uploading: ${fileName} (${formatBytes(size)}), attempt ${attempt}/${maxAttempts}`);
+      return await uploadAsset(baseUrl, owner, repo, release, filePath, token);
+    } catch (error) {
+      const uploaded = await findUploadedAsset(baseUrl, owner, repo, tag, token, filePath).catch(() => null);
+      if (uploaded) {
+        console.log(`Upload confirmed after interrupted response: ${fileName}`);
+        return uploaded;
+      }
+
+      if (attempt >= maxAttempts) {
+        throw new Error(`Upload failed for ${fileName}: ${error.message}`);
+      }
+
+      const delayMs = 5000 * attempt;
+      console.warn(`Upload failed for ${fileName}: ${error.message}. Retrying in ${delayMs / 1000}s...`);
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`Upload failed for ${fileName}`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const version = args.version || process.env.VERSION || readPackageVersion();
@@ -221,11 +283,12 @@ async function main() {
     throw new Error('Missing Gitea token. Set GITEA_TOKEN in CI secrets or the local shell environment.');
   }
 
-  const release = await createOrUpdateRelease({ baseUrl, owner, repo, token, tag, notes, prerelease });
+  let release = await createOrUpdateRelease({ baseUrl, owner, repo, token, tag, notes, prerelease });
   console.log(`Release ready: ${release.html_url || `${baseUrl}/${owner}/${repo}/releases/tag/${tag}`}`);
 
   for (const file of files) {
-    const asset = await uploadAsset(baseUrl, owner, repo, release, file, token);
+    release = await findRelease(baseUrl, owner, repo, tag, token) || release;
+    const asset = await uploadAssetWithRetry(baseUrl, owner, repo, tag, release, file, token);
     console.log(`Uploaded: ${asset.name || path.basename(file)}`);
   }
 }
