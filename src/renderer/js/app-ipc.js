@@ -695,11 +695,14 @@ document.addEventListener('DOMContentLoaded', () => {
     getLastResult: () => callService('getLastResult', 'getLastResult'),
     getAllConfig: () => callConfig('getAll', 'getAllConfig'),
     getConfig: (key) => callConfig('get', 'getConfig', key),
+    setConfig: (key, value) => callConfig('set', 'setConfig', key, value),
+    testConnection: (serverUrl) => callConfig('testConnection', 'testConnection', serverUrl),
     startService: () => callService('start', 'startService'),
     stopService: () => callService('stop', 'stopService'),
     restartService: () => callService('restart', 'restartService'),
     isRunning: () => callService('isRunning', 'isRunning'),
     checkUpdate: () => callUpdate('check', 'checkUpdate'),
+    installUpdate: (filePath, expectedSha256, options) => callUpdate('install', 'installUpdate', filePath, expectedSha256, options),
     getPendingInstall: () => callUpdate('getPendingInstall', 'getPendingInstall'),
     checkIntegrity: () => callUpdate('checkIntegrity', 'checkIntegrity'),
   };
@@ -1697,6 +1700,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn._updateMode = 'check';
     if (icon)  { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
     if (label) label.textContent = '检查中...';
+    updatePage()?.startSourceDiagnosticsCheck?.();
 
     function _hideProgress() {
       if (progressBar) { progressBar.style.display = 'none'; progressBar.classList.remove('indeterminate'); }
@@ -1706,6 +1710,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const result = await callUpdate('check', 'checkUpdate');
       _lastUpdateResult = result;
+      updatePage()?.finishSourceDiagnosticsCheck?.(result);
       btn.disabled = false;
       _hideProgress();
 
@@ -1774,6 +1779,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (icon)  { icon.className = 'ph ph-arrows-clockwise'; icon.style.animation = ''; }
       if (label) label.textContent = '检查更新';
       _hideProgress();
+      updatePage()?.failSourceDiagnosticsCheck?.(e);
       addLogLine('ERROR', `检查更新异常: ${e.message}`);
     }
   });
@@ -1854,6 +1860,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!result || !result.hasUpdate) {
         result = await callUpdate('check', 'checkUpdate');
         _lastUpdateResult = result;
+        updatePage()?.renderSourceDiagnostics?.(result);
       }
 
       if (result.error) {
@@ -1993,60 +2000,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  //  保存更新源（GitHub 仓库地址）
-  // ══════════════════════════════════════════════════════════════
-  replaceHandler('saveUpdateSourceBtn', async () => {
-    const btn = document.getElementById('saveUpdateSourceBtn');
-    const input = document.getElementById('updateSourceInput');
-    const currentWrap = document.getElementById('updateSourceCurrent');
-    if (!btn || !input) return;
-
-    const raw = input.value.trim();
-    if (!raw) { addLogLine('WARN', '请输入 GitHub 仓库地址'); return; }
-
-    const origHtml = btn.innerHTML;
-    btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 0.8s linear infinite"></i> 验证中...';
-    btn.disabled = true;
-
-    try {
-      // 解析 owner/repo，支持完整 URL 或 owner/repo 格式
-      let owner, repo;
-      try {
-        const url = new URL(raw);
-        const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
-        owner = parts[0]; repo = parts[1];
-      } catch {
-        const parts = raw.split('/');
-        owner = parts[0]; repo = parts[1];
-      }
-
-      if (!owner || !repo) {
-        addLogLine('ERROR', '无法识别仓库信息，请输入 https://github.com/owner/repo 或 owner/repo');
-        btn.innerHTML = origHtml;
-        btn.disabled = false;
-        return;
-      }
-
-      await callUpdate('saveSource', 'setManyConfig', { githubOwner: owner, githubRepo: repo });
-
-      const currentUrlSpan = currentWrap?.querySelector('.update-source-current-url');
-      if (currentUrlSpan) currentUrlSpan.textContent = `github.com/${owner}/${repo}`;
-
-      btn.innerHTML = '<i class="ph ph-check-circle"></i> 已保存';
-      addLogLine('SUCCESS', `更新源已保存: ${owner}/${repo}`);
-      input.value = '';
-
-      setTimeout(() => { btn.innerHTML = origHtml; btn.disabled = false; }, 1500);
-    } catch (e) {
-      addLogLine('ERROR', `更新源保存失败: ${e.message}`);
-      btn.innerHTML = origHtml;
-      btn.disabled = false;
-    }
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  //  更新下载进度事件
-  // ══════════════════════════════════════════════════════════════
+  // Update download progress events
   ipcClient.on(IPC_EVENTS.UPDATE_PROGRESS, (data) => {
     const progressRow   = document.getElementById('updateProgressRow');
     const progressBar   = document.getElementById('updateProgressBar');
@@ -2058,7 +2012,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.pct >= 0) {
       if (progressPct)   progressPct.textContent   = `${data.pct}%`;
       if (progressFill)  progressFill.style.width  = `${data.pct}%`;
-      if (progressLabel) progressLabel.textContent = '下载中...';
+      if (progressLabel) {
+        if (data.speed > 0 && data.received > 0 && data.total > 0) {
+          const speedStr = formatFileSize(data.speed);
+          const receivedStr = formatFileSize(data.received);
+          const totalStr = formatFileSize(data.total);
+          progressLabel.textContent = `下载中... (${receivedStr} / ${totalStr}, ${speedStr}/s)`;
+        } else if (data.received > 0) {
+          const receivedStr = formatFileSize(data.received);
+          const totalStr = data.total > 0 ? ` / ${formatFileSize(data.total)}` : '';
+          progressLabel.textContent = `下载中... (${receivedStr}${totalStr})`;
+        } else {
+          progressLabel.textContent = '下载中...';
+        }
+      }
     }
   });
 
@@ -2479,6 +2446,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始化开关状态
     const cfg = data.config;
+    updatePage()?.bindSourceControls?.({
+      getAllConfig: () => callConfig('getAll', 'getAllConfig'),
+      setConfig: (key, value) => callConfig('set', 'setConfig', key, value),
+      setManyConfig: (payload) => callConfig('setMany', 'setManyConfig', payload),
+      addLogLine,
+      checkUpdate: () => callUpdate('check', 'checkUpdate'),
+    });
+    updatePage()?.renderSources?.(cfg || {});
     const autoStartEnabled = await callService('isAutoStartEnabled', 'isAutoStartEnabled');
     syncAutoStartToggles(autoStartEnabled);
 
@@ -2790,10 +2765,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navUpdateItem) {
       navUpdateItem.addEventListener('click', () => navUpdateItem.classList.remove('has-update'));
     }
-    const currentUrlSpan = document.querySelector('#updateSourceCurrent .update-source-current-url');
-    if (currentUrlSpan && cfg.githubOwner && cfg.githubRepo) {
-      currentUrlSpan.textContent = `github.com/${cfg.githubOwner}/${cfg.githubRepo}`;
-    }
+    updatePage()?.renderSources?.(cfg || {});
 
     // ── 在线获取更新日志（异步，不阻塞 init）──────────────────────────
     callUpdate('getChangelog', 'getChangelog').then((entries) => {
@@ -3690,7 +3662,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (!filePath) return;
       addLogLine('INFO', `选择本地安装包: ${filePath}`);
-      const result = await callUpdate('install', 'installUpdate', filePath);
+      const result = await callUpdate('install', 'installUpdate', filePath, null, { manual: true });
       if (result.success) {
         addLogLine('SUCCESS', '安装程序已启动');
       } else {

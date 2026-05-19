@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -19,6 +19,8 @@
     "build": "electron-builder --win --x64",
     "build:nsis": "electron-builder --win nsis --x64",
     "build:zip": "electron-builder --win zip --x64",
+    "release:gitea": "node scripts/publish-gitea-release.js",
+    "release:gitea:dry-run": "node scripts/publish-gitea-release.js --dry-run",
     "lint": "node scripts/verify.js",
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:smoke": "node --test \"tests/smoke/*.test.js\"",

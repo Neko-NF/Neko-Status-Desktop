@@ -1,7 +1,7 @@
 # Neko Status Desktop 发布工作流
 
 > 适用范围：当前 Electron 桌面端仓库
-> 最后更新：2026-05-17
+> 最后更新：2026-05-19
 
 ## 1. 目标
 
@@ -9,7 +9,10 @@
 
 - 日常开发通过 `main` 分支和 PR 流转
 - 正式发布通过 Git tag 触发 GitHub Actions
-- 产物由 `electron-builder` 生成并上传到 GitHub Release
+- 产物由 `electron-builder` 生成后同步上传到 GitHub Release 和个人 Gitea Release
+- GitHub 和个人仓库使用同一版本、同一 tag、同一份 `release_notes.txt`
+- 两个发布目标的资产清单独立配置，允许上传文件数量不同
+- 个人仓库写入密钥必须配置在发布环境中，不能写入源码、客户端配置、安装包或 Release 资产
 - 更新说明优先读取仓库根目录的 `release_notes.txt`
 
 如果其他历史文档与本文冲突，以本文和仓库中的实际脚本、工作流为准。
@@ -22,6 +25,8 @@
 npm run verify
 npm run build
 npm run build:zip
+npm run release:gitea:dry-run
+npm run release:gitea
 ```
 
 当前 GitHub Actions：
@@ -105,7 +110,7 @@ npm run build:zip
 
 当前 Electron 客户端会基于该标记决定是否显示强制更新行为。
 
-## 6. 正式发布步骤
+## 6. 同步发布步骤
 
 ### Stable 版本
 
@@ -134,6 +139,21 @@ git push origin main --tags
 
 6. 到 GitHub Actions 检查 `Release` 工作流是否成功。
 
+`release.yml` 会先创建 GitHub Release，再调用 `scripts/publish-gitea-release.js` 同步创建或更新个人 Gitea Release。个人仓库同步需要在 GitHub 仓库配置以下 Secret / Variables。这里的密钥跟随版本发布流程使用，但绝不能跟随版本产物一起发布。
+
+```text
+Secret:
+  GITEA_TOKEN               必填，用于写入个人 Gitea Release，只存在于 GitHub Actions Secrets
+
+Variables:
+  GITEA_BASE_URL            可选，默认 https://git.koirin.com:39520
+  GITEA_OWNER               可选，默认 NF
+  GITEA_REPO                可选，默认 Neko
+  GITEA_RELEASE_FILES       可选，个人仓库上传文件清单，逗号分隔
+```
+
+如果没有配置 `GITEA_TOKEN`，GitHub Release 仍会正常发布，个人仓库同步会跳过。正式发版前应把这个 Secret 配好，确保两个仓库同步发布。不要把 `GITEA_TOKEN` 写入 `package.json`、`release_notes.txt`、`neko-config.json`、`.env`、文档示例或任何打包文件。
+
 ### Beta 版本
 
 流程相同，只是版本号和 tag 使用 beta 形式，例如：
@@ -149,7 +169,7 @@ git push origin main --tags
 
 ## 7. Release 工作流产物
 
-`release.yml` 生成并上传以下产物：
+`release.yml` 默认上传到 GitHub Release 的产物：
 
 - `NekoStatus-Setup-{version}.exe`
 - `NekoStatus-{version}-win.zip`
@@ -161,7 +181,77 @@ git push origin main --tags
 - `.zip` 适合便携或快速验证
 - `SHA256SUMS.txt` 用于校验下载一致性
 
-## 8. 回滚与撤包
+个人 Gitea Release 的默认上传清单与 GitHub 相同，但它是独立配置项。需要减少或增加个人仓库文件时，只改 GitHub Variables 中的 `GITEA_RELEASE_FILES`，例如：
+
+```text
+dist/NekoStatus-Setup-${VERSION}.exe,dist/SHA256SUMS.txt
+```
+
+没有配置 `GITEA_RELEASE_FILES` 时，脚本会上传默认三件套。
+
+## 8. 个人仓库发布
+
+个人更新源仓库为：
+
+```text
+https://git.koirin.com:39520/NF/Neko
+```
+
+这个仓库不是源码主发布链路，只作为客户端个人更新源。发布新版本时必须跟 GitHub Release 同步：同一个 tag、同一个版本、同一份发布说明。它不需要同步完整源码、不需要创建 release 分支，也不需要在该仓库执行构建。
+
+### 默认方式：CI 同步 Gitea Release
+
+1. 在源码仓库推送 `v*` tag。
+2. GitHub Actions 构建 Windows 产物。
+3. 工作流先上传 GitHub Release。
+4. 工作流再使用 `GITEA_TOKEN` 调用 Gitea API 创建或更新 `https://git.koirin.com:39520/NF/Neko` 的同名 Release。
+5. Gitea Release Body 使用同一份 `release_notes.txt`。
+
+个人仓库默认上传：
+
+```text
+NekoStatus-Setup-1.2.8.exe
+NekoStatus-1.2.8-win.zip
+SHA256SUMS.txt
+```
+
+其中 `.exe` 是自动更新首选资产，`.zip` 是备用资产，`SHA256SUMS.txt` 用于完整性校验。客户端会通过 Gitea 兼容接口读取 release、更新说明和资产下载地址。
+
+### 本地补发或旧版本测试
+
+如果需要把本地已有旧版本补发到个人仓库，例如 `v1.2.2`，优先使用同一个脚本创建 Gitea Release。密钥只放在当前 shell 环境变量里，命令执行后关闭终端即可清掉当前会话：
+
+```powershell
+$env:GITEA_TOKEN = "<从团队密钥库临时取用的 Gitea Token>"
+npm run release:gitea -- --version 1.2.2 --tag v1.2.2 --files "releases/v1.2.2/NekoStatus-Setup-1.2.2.exe,releases/v1.2.2/NekoStatus-1.2.2-win.zip,releases/v1.2.2/SHA256SUMS.txt"
+```
+
+正式发布不再推荐把安装包直接提交到个人仓库根目录。根目录模式仅作为 Gitea Release API 不可用时的兜底：
+
+```text
+NekoStatus-Setup-1.2.8.exe
+NekoStatus-1.2.8-win.zip
+SHA256SUMS.txt
+release_notes.txt
+```
+
+客户端在 release 为空时会读取仓库根目录文件列表，根据文件名中的版本号合成更新结果，并读取 `release_notes.txt` 作为更新说明。文件名必须保留版本号；没有版本号的安装包不会被识别为可更新版本。
+
+然后执行一次“检查更新”。如仓库需要登录访问，必须在个人仓库 token 中填写可读取 release / contents / raw 文件的令牌。
+
+### 本地脚本约定
+
+本地只保留 `scripts/publish-gitea-release.js` 作为个人仓库 Release 上传入口。根目录旧脚本 `publish.ps1`、`publish_node.js`、`create_gitea_release.js` 已废弃并移除，不再作为新版本发布流程依据。
+
+常用命令：
+
+```powershell
+npm run release:gitea:dry-run
+$env:GITEA_TOKEN = "<从团队密钥库临时取用的 Gitea Token>"
+npm run release:gitea
+```
+
+## 9. 回滚与撤包
 
 如果发布后发现严重问题，按以下原则处理：
 
@@ -177,16 +267,19 @@ gh release delete v1.2.4 --yes
 
 只有在 tag 本身打错、且必须重用同一个 tag 名称时，才考虑连 tag 一起清理。
 
-## 9. 与仓库现状一致的说明
+个人仓库发布错误时，优先替换 `https://git.koirin.com:39520/NF/Neko` 中对应 release 的资产或根目录文件；如果版本号已经被客户端识别且资产不可用，建议发布更高补丁版本，不要长期复用同一个坏版本号。
+
+## 10. 与仓库现状一致的说明
 
 为避免误解，这里明确当前事实：
 
 - 仓库已经有自动发布工作流，但不是全自动发版
 - 发版时机、版本号判断、更新说明仍需要人工负责
 - 当前没有 Nightly 定时任务
-- 当前发布主链路是 GitHub Actions，不再推荐维护单独的手工上传主流程
+- 当前发布主链路是 GitHub Actions；GitHub Release 和个人 Gitea Release 应在同一条 workflow 中同步完成
+- 个人仓库 `https://git.koirin.com:39520/NF/Neko` 只保存发布资产和更新说明，不作为源码协作入口
 
-## 10. 相关文档
+## 11. 相关文档
 
 - [release-process.md](/D:/VScode%20project/Neko_Status/docs/release-process.md)
 - [testing-guideline.md](/D:/VScode%20project/Neko_Status/docs/testing-guideline.md)

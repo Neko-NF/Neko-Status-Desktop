@@ -15,6 +15,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
 
     steps:
       - name: Checkout
@@ -115,3 +117,12 @@ jobs:
             dist/NekoStatus-Setup-${{ env.VERSION }}.exe
             dist/NekoStatus-${{ env.VERSION }}-win.zip
             dist/SHA256SUMS.txt
+
+      - name: Sync personal Gitea Release
+        if: env.GITEA_TOKEN != ''
+        run: npm run release:gitea -- --version "${{ env.VERSION }}" --tag "${{ github.ref_name }}"
+        env:
+          GITEA_BASE_URL: ${{ vars.GITEA_BASE_URL || 'https://git.koirin.com:39520' }}
+          GITEA_OWNER: ${{ vars.GITEA_OWNER || 'NF' }}
+          GITEA_REPO: ${{ vars.GITEA_REPO || 'Neko' }}
+          GITEA_RELEASE_FILES: ${{ vars.GITEA_RELEASE_FILES }}

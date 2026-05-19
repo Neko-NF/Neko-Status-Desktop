@@ -27,6 +27,12 @@ npm-debug.log*
 temp.css
 split_css.js
 test.js
+tmp-*.log
+tmp-*.pid
+
+# Local-only workspace/archive files
+_archive_local/
+.secrets/
 
 # Android sub-project (tracked separately)
 neko-status-android/
@@ -36,3 +42,7 @@ neko-status-android/
 
 # Local release archives
 releases/
+
+# Publishing Environment Credentials
+gitea_token.txt
+token.txt

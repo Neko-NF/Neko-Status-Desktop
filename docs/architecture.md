@@ -189,6 +189,7 @@ npm run build:zip
 ## 后续演进原则
 
 - 新页面放入 `src/renderer/js/pages`，不要写回 `app.js`。
+- 新页面 DOM 状态、事件绑定、输入解析和渲染逻辑必须优先放入 `pages/*` 或 `components/*`；`app-ipc.js` 只做跨模块装配、主进程事件转发和依赖注入。
 - 新 IPC 调用放入 `src/renderer/js/services`，页面不直接调用 `window.nekoIPC`。
 - 新主进程 handler 放入对应 `src/main/ipc/*.ipc.js`，不要写回 `main.js`。
 - 新配置项必须同步默认值、schema、测试、文档。

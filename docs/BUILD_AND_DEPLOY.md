@@ -404,3 +404,69 @@ git push origin v1.0.1
   □ 客户端「检查更新」能发现新版本
   □ 下载 → SHA256 校验通过 → 安装成功
 ```
+## 更新源与智能模式
+
+客户端支持隔离的 GitHub 更新源和个人 Gitea 兼容更新源。
+
+| 更新源 | 关键配置 | 查询入口 |
+| --- | --- | --- |
+| GitHub | `updateSourceType=github`、`githubOwner`、`githubRepo`、`githubToken` | `https://api.github.com/repos/{owner}/{repo}/releases?per_page=30` |
+| 个人仓库 | `updateSourceType=personal`、`personalUpdateBaseUrl`、`personalUpdateRepo`、`personalUpdateOwner`、`personalUpdateRepoName`、`personalUpdateToken` | `{baseUrl}/api/v1/repos/{owner}/{repo}/releases?per_page=30` |
+
+个人仓库必须填写完整仓库 URL，例如：
+
+```text
+https://git.koirin.com:39520/{owner}/{repo}
+```
+
+Release 或仓库根目录至少应提供一个 Windows 安装资产：
+
+- 推荐：`NekoStatus-Setup-{version}.exe`
+- 备用：`NekoStatus-{version}-win.zip`
+- 可选校验：`SHA256SUMS.txt`
+
+个人仓库可以使用正常 release，也可以只在仓库根目录存放安装资产。release 为空或不可用时，后端会读取仓库文件列表，并根据 `NekoStatus-Setup-<version>.exe`、`NekoStatus-<version>-win.zip` 和 `SHA256SUMS.txt` 合成更新结果。
+
+自动更新优先使用 `.exe`；`.zip` 作为备用和手动测试路径，客户端会解压后寻找安装程序或 NekoStatus 可执行文件。生产发布仍应优先上传 NSIS `.exe`，以保证安装覆盖和安装后自动重启链路稳定。
+
+### 个人仓库 `NF/Neko` 发版最简流程
+
+个人仓库地址：
+
+```text
+https://git.koirin.com:39520/NF/Neko
+```
+
+该仓库只需要发布新版本文件和更新说明。推荐使用 Gitea Release：创建与主版本一致的 tag，例如 `v1.2.8`，Release Body 填写本次 `release_notes.txt`，然后上传：
+
+```text
+NekoStatus-Setup-1.2.8.exe
+NekoStatus-1.2.8-win.zip
+SHA256SUMS.txt
+```
+
+如果不创建 Release，也可以把以下文件直接放到仓库根目录：
+
+```text
+NekoStatus-Setup-1.2.8.exe
+NekoStatus-1.2.8-win.zip
+SHA256SUMS.txt
+release_notes.txt
+```
+
+根目录模式下，客户端会从文件名解析版本，并读取 `release_notes.txt` 作为更新说明。不要上传没有版本号的安装包文件名，否则无法参与版本比较。
+
+更新源选择规则：
+
+1. 手动选择模式写入 `updateSourceMode=selected` 和 `activeUpdateSourceId=<source id>`。
+2. 智能模式写入 `updateSourceMode=smart`，后端会探测所有启用的已保存更新源，并按延迟和安装包可用性选择结果。
+3. 下载阶段根据实际下载 URL 匹配鉴权头，避免 GitHub token 和个人仓库 token 串用。
+4. 启动自动检查、后台检查、手动检查、强制更新、手动下载和本地安装必须共享同一套更新源规则。
+
+手动安装测试：
+
+1. 打开更新中心。
+2. 选择本地 `.exe`、`.zip` 或 `.7z`。
+3. `.exe` 直接交给安装器；`.zip` 由主进程解压后拉起内部可执行文件；`.7z` 交给系统打开。
+
+安装交接后当前应用会退出。NSIS `.exe` 自动更新安装时，主进程会启动隐藏重启 watcher，等待安装器退出后再打开新版本 `NekoStatus.exe`。

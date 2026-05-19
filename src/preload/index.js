@@ -87,7 +87,7 @@ function createRendererBridge() {
     getUpdateChannel: () => invokeCompat(IPC_CHANNELS.UPDATE_GET_CHANNEL),
     setUpdateChannel: (channel) => invokeCompat(IPC_CHANNELS.UPDATE_SET_CHANNEL, channel),
     downloadUpdate: (url) => invokeCompat(IPC_CHANNELS.UPDATE_DOWNLOAD, { url }),
-    installUpdate: (filePath, expectedSha256) => invokeCompat(IPC_CHANNELS.UPDATE_INSTALL, { filePath, expectedSha256 }),
+    installUpdate: (filePath, expectedSha256, options = {}) => invokeCompat(IPC_CHANNELS.UPDATE_INSTALL, { filePath, expectedSha256, ...options }),
     getPendingInstall: () => invokeCompat(IPC_CHANNELS.UPDATE_GET_PENDING_INSTALL),
     installPendingUpdate: () => invokeCompat(IPC_CHANNELS.UPDATE_INSTALL_PENDING),
 

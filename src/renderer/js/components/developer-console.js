@@ -9,13 +9,14 @@
     let quote = '';
     let escaping = false;
 
-    for (const ch of source) {
+    for (let i = 0; i < source.length; i += 1) {
+      const ch = source[i];
       if (escaping) {
         current += ch;
         escaping = false;
         continue;
       }
-      if (ch === '\\') {
+      if (quote && ch === '\\' && (source[i + 1] === quote || source[i + 1] === '\\')) {
         escaping = true;
         continue;
       }
@@ -45,7 +46,7 @@
     if (!tokens.length) return '';
     const head = tokens[0].toLowerCase();
     const second = tokens[1]?.toLowerCase();
-    if (['service', 'cache', 'config', 'update'].includes(head) && second) {
+    if (['service', 'cache', 'config', 'update', 'api'].includes(head) && second) {
       return `${head}:${second}`;
     }
     return head;
@@ -232,6 +233,36 @@
     });
 
     register({
+      name: 'config:set',
+      aliases: ['set'],
+      usage: 'config set <key> <json|string>',
+      description: 'set one config value for real-device integration testing',
+      run: async ({ args }) => {
+        const key = args[0];
+        if (!key || args.length < 2) {
+          addLogLine('WARN', 'Usage: config set <key> <json|string>');
+          return;
+        }
+        const raw = args.slice(1).join(' ');
+        let value = raw;
+        try { value = JSON.parse(raw); } catch { /* keep string */ }
+        await requireMethod('setConfig')(key, value);
+        addLogLine('SUCCESS', `${key}=${stringify(value)}`);
+      },
+    });
+
+    register({
+      name: 'api:test',
+      aliases: ['ping-api'],
+      usage: 'api test [serverUrl]',
+      description: 'test backend connectivity through the main process',
+      run: async ({ args }) => {
+        const result = normalizeResult(await requireMethod('testConnection')(args[0]));
+        addLogLine(result?.ok === false ? 'ERROR' : 'SUCCESS', stringify(result));
+      },
+    });
+
+    register({
       name: 'service:start',
       aliases: ['start'],
       usage: 'service start',
@@ -302,6 +333,45 @@
         addLogLine(result?.hasUpdate ? 'WARN' : 'INFO', result?.hasUpdate
           ? `update available: v${result.latestVersion || result.version || '?'}`
           : `already latest: v${result?.currentVersion || '?'}`);
+      },
+    });
+
+    register({
+      name: 'update:source',
+      usage: 'update source',
+      description: 'print active update source configuration',
+      run: async () => {
+        const config = normalizeResult(await requireMethod('getAllConfig')()) || {};
+        const mode = config.updateSourceMode === 'smart' ? 'smart' : 'selected';
+        const sources = Array.isArray(config.updateSources) ? config.updateSources : [];
+        const legacyPersonal = config.personalUpdateRepo
+          ? [{ id: 'personal-default', type: 'personal', repoUrl: config.personalUpdateRepo }]
+          : [];
+        const legacyGithub = [{
+          id: 'github-default',
+          type: 'github',
+          repoUrl: `https://github.com/${config.githubOwner || 'Neko-NF'}/${config.githubRepo || 'Neko-Status-Desktop'}`,
+        }];
+        const allSources = [...legacyGithub, ...legacyPersonal, ...sources];
+        addLogLine('INFO', `sourceMode=${mode} active=${config.activeUpdateSourceId || config.updateSourceType || 'github-default'}`);
+        allSources.forEach((source) => {
+          addLogLine('INFO', `- ${source.id || source.type}: ${source.type || 'github'} ${source.repoUrl || source.url || ''}`);
+        });
+      },
+    });
+
+    register({
+      name: 'update:install',
+      usage: 'update install <filePath>',
+      description: 'launch a local .exe/.zip update package',
+      run: async ({ args }) => {
+        const filePath = args.join(' ');
+        if (!filePath) {
+          addLogLine('WARN', 'Usage: update install <filePath>');
+          return;
+        }
+        const result = normalizeResult(await requireMethod('installUpdate')(filePath, null, { manual: true }));
+        addLogLine(result?.success ? 'SUCCESS' : 'ERROR', stringify(result));
       },
     });
 

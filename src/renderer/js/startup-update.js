@@ -57,11 +57,28 @@
   const eventClient = window._nekoModules?.services?.IpcClient;
 
   eventClient?.on?.(events.STARTUP_UPDATE_STATUS || 'startup-update:status', applyStatus);
+  function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return '--';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
   eventClient?.on?.(events.UPDATE_PROGRESS || 'update:progress', (payload = {}) => {
     const pct = Number(payload.pct);
+    let detail = Number.isFinite(pct) && pct >= 0 ? `下载进度 ${pct}%` : '正在接收安装包...';
+    if (payload.speed > 0 && payload.received > 0 && payload.total > 0) {
+      const speedStr = formatFileSize(payload.speed);
+      const receivedStr = formatFileSize(payload.received);
+      const totalStr = formatFileSize(payload.total);
+      detail = `下载进度 ${pct}% (${receivedStr} / ${totalStr}, ${speedStr}/s)`;
+    } else if (payload.received > 0) {
+      const receivedStr = formatFileSize(payload.received);
+      const totalStr = payload.total > 0 ? ` / ${formatFileSize(payload.total)}` : '';
+      detail = `下载进度 ${pct}% (${receivedStr}${totalStr})`;
+    }
     const status = {
       phase: 'downloading',
-      detail: Number.isFinite(pct) && pct >= 0 ? `下载进度 ${pct}%` : '正在接收安装包...',
+      detail,
       pct,
     };
     if (textState.phase !== 'downloading') {

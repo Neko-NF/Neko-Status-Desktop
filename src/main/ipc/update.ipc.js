@@ -17,6 +17,11 @@ const {
   validateUpdateDownloadPayload,
   validateUpdateInstallPayload,
 } = require('../../shared/schemas');
+const {
+  buildDownloadHeadersForUrl,
+} = require('../update-source');
+
+const INSTALLABLE_EXTENSIONS = new Set(['.exe', '.zip', '.7z']);
 
 /**
  * @param {Object} deps
@@ -129,14 +134,7 @@ function registerUpdateIpc({
       fs.mkdirSync(tmpDir, { recursive: true });
 
       // 私有仓库支持
-      const headers = {};
-      const isGhApi = url.includes('api.github.com');
-      if (isGhApi) {
-        const token = configStore.get('githubToken') || '';
-        if (token) headers['Authorization'] = `token ${token}`;
-        headers['Accept'] = 'application/octet-stream';
-      }
-
+      const headers = buildDownloadHeadersForUrl(url, configStore);
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(300000), redirect: 'follow' });
       if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`);
 
@@ -155,14 +153,18 @@ function registerUpdateIpc({
       let received = 0;
       const chunks = [];
       const reader = res.body.getReader();
+      const startedAt = Date.now();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(Buffer.from(value));
         received += value.length;
+        const elapsed = (Date.now() - startedAt) / 1000;
+        const speed = elapsed > 0 ? Math.round(received / elapsed) : 0;
         sendToRenderer(IPC_EVENTS.UPDATE_PROGRESS, {
           received, total,
           pct: total > 0 ? Math.round(received / total * 100) : -1,
+          speed,
         });
       }
 
@@ -181,12 +183,11 @@ function registerUpdateIpc({
     if (!validation.ok) {
       return createIpcError('INVALID_INSTALL_PAYLOAD', validation.reason);
     }
-    const { filePath, expectedSha256 } = payload;
+    const { filePath, expectedSha256, manual } = payload;
     const resolvedPath = path.resolve(filePath);
-    const tmpDir = path.resolve(os.tmpdir());
-    // 安全校验：安装包必须在系统临时目录下
-    if (!resolvedPath.startsWith(tmpDir)) {
-      return createIpcError('INVALID_INSTALL_PATH', '非法文件路径，拒绝执行');
+    const ext = path.extname(resolvedPath).toLowerCase();
+    if (!INSTALLABLE_EXTENSIONS.has(ext)) {
+      return createIpcError('UNSUPPORTED_INSTALLER_TYPE', 'Only .exe, .zip and .7z update packages are supported');
     }
     if (!fs.existsSync(resolvedPath)) {
       return createIpcError('INSTALLER_MISSING', '安装文件不存在');
@@ -200,7 +201,7 @@ function registerUpdateIpc({
       }
     }
     // 启动安装程序，1s 后退出当前应用
-    launchInstaller(resolvedPath, { silent: true }).then((error) => {
+    launchInstaller(resolvedPath, { silent: !manual }).then((error) => {
       if (error) console.error('[Update] installer launch failed:', error);
       setTimeout(() => { setIsQuitting(true); app.quit(); }, 1000);
     });

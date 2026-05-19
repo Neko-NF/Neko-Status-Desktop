@@ -323,6 +323,7 @@
                                 window._updatePageInited = true;
                                 window._nekoModules.pages.UpdatePage.init();
                             }
+                            window._nekoModules?.pages?.UpdatePage?.requestSourceDiagnosticsCheck?.({ reason: 'enter-update-page' });
                         } else if (targetAreaId === 'page-settings') {
                             if (topNavEditBtn) topNavEditBtn.classList.add('hidden-action');
                             if (headerTitleText) {
@@ -654,37 +655,6 @@
                         if (configApiKeyGroup) configApiKeyGroup.style.opacity = '1';
                         if (configHint) configHint.innerHTML = '<i class="ph ph-info"></i> 保存后服务可能需要重启以应用新的网络连接。';
                     }
-                });
-            }
-
-            // ======== 更新源保存 ======== //
-            const saveUpdateSourceBtn = document.getElementById('saveUpdateSourceBtn');
-            const updateSourceInput = document.getElementById('updateSourceInput');
-            const updateSourceCurrentWrap = document.getElementById('updateSourceCurrent');
-
-            if (saveUpdateSourceBtn && updateSourceInput) {
-                saveUpdateSourceBtn.addEventListener('click', () => {
-                    const url = updateSourceInput.value.trim();
-                    if (!url) return;
-                    const btn = saveUpdateSourceBtn;
-                    const originalHtml = btn.innerHTML;
-                    btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 0.8s linear infinite"></i> 验证中...';
-                    btn.disabled = true;
-                    setTimeout(() => {
-                        const currentUrlSpan = updateSourceCurrentWrap?.querySelector('.update-source-current-url');
-                        if (currentUrlSpan) {
-                            try {
-                                const u = new URL(url);
-                                currentUrlSpan.textContent = u.hostname + u.pathname.replace(/\/+$/, '').substring(0, 30);
-                            } catch { currentUrlSpan.textContent = url.substring(0, 40); }
-                        }
-                        btn.innerHTML = '<i class="ph ph-check-circle"></i> 已保存';
-                        setTimeout(() => {
-                            btn.innerHTML = originalHtml;
-                            btn.disabled = false;
-                            updateSourceInput.value = '';
-                        }, 1500);
-                    }, 800);
                 });
             }
 

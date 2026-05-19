@@ -210,3 +210,98 @@ privacy-picker-result-${token}
 - 复杂 payload 有 schema。
 - Renderer 页面没有新增直接 `window.nekoIPC` 调用。
 - 文档说明了新增或废弃的接口。
+## 更新 IPC 说明
+
+更新模块继续复用现有 channel：
+
+- `update:check`
+- `update:download`
+- `update:install`
+- `update:getPendingInstall`
+- `update:installPending`
+- `update:integrity`
+- `update:rollback`
+
+`update:check` 除版本信息外，还返回更新源信息：
+
+```js
+{
+  hasUpdate: boolean,
+  channel: 'stable' | 'beta' | 'nightly',
+  sourceType: 'github' | 'personal',
+  sourceLabel: string,
+  releasePageUrl: string,
+  currentVersion: string,
+  latestVersion: string,
+  exeDownloadUrl?: string,
+  zipDownloadUrl?: string,
+  sha256sumsUrl?: string,
+  error?: string
+}
+```
+
+`update:install` 接收：
+
+```js
+{
+  filePath: string,
+  expectedSha256?: string,
+  manual?: boolean
+}
+```
+
+规则：
+
+- 主进程必须校验安装包扩展名：`.exe`、`.zip`、`.7z`。
+- 已下载安装包可以在交接前进行 SHA256 校验。
+- 用户通过文件选择器手动选择的安装包允许位于临时目录之外，但仍必须通过扩展名校验。
+- Renderer 必须调用 `UpdateClient.install()`，不要直接调用 `window.nekoIPC.installUpdate()`。
+
+## 更新源返回字段与诊断测速规约
+
+`update:check` 在常规更新结果之外返回更新源诊断字段：
+
+- `sourceMode`：`selected` 或 `smart`。
+- `sourceId`：本次结果使用的已保存更新源 id。
+- `sourceType`：`github` 或 `personal`。
+- `sourceLabel`：用于展示和日志的更新源名称。
+- `sourceLatencyMs`：该更新源探测耗时。
+- `downloadSpeedBytesPerSecond`：当前更新源安装资产的下载速度预估，单位为字节每秒。该值只能来自真实资产采样，不能用 Release API JSON 响应速度代替。
+- `downloadSpeedSampleBytes`：本次测速实际采样字节数。
+- `downloadSpeedSampleMs`：本次测速有效传输时长，按首个数据块到采样结束计算，不包含 Release API 请求耗时。
+- `downloadSpeedProbeMethod`：`range`、`full-sample`、`failed` 或 `none`。
+- `smartSources`：仅智能模式返回，包含每个更新源的延迟 `sourceLatencyMs`、是否有更新 `hasUpdate`、最新版本 `latestVersion`、是否有安装资产 `hasAsset`、预估下载速度和错误信息 `error`。
+
+### 下载速度预估机制
+
+预估下载速度必须使用真实安装资产采样：
+
+1. 优先选择本次更新结果中的 `.exe` 资产，缺失时使用 Windows `.zip` 资产。
+2. 先带鉴权头和 `Range: bytes=0-1048575` 请求真实资产，只读取最多 1 MB。
+3. 计时从首个数据块到达开始，到采样达到 1 MB、持续 2.5 秒或流结束为止。
+4. 如果服务端拒绝 Range 请求，例如返回 400、416 或不返回有效数据，立即去掉 Range 头重试一次普通流式请求，并仍然只在内存中截取采样窗口。
+5. 如果没有安装资产、资产请求失败或采样没有拿到数据，`downloadSpeedBytesPerSecond` 返回 `0`，前端展示“待检测”。
+6. 禁止把 Release API 响应体大小、JSON 请求耗时或仓库列表请求速度当作安装包下载速度。
+
+### 前端实时自适应诊断刷新机制
+为了保障诊断界面的卡片状态与用户操作完全联动，渲染进程在执行以下 **5 个主要更新操作**时，前端将立即展示精美加载态，并在后台发起静默的 `update:check`，实时将高精度的延迟与带宽数据写回 DOM 界面：
+* 切换“智能择优”与“手动选择”模式时；
+* 切换源卡片芯片（Chip）时；
+* 在手动模式卡片轮播中翻页改变手动源时；
+* 成功新增或修改保存更新源时；
+* 成功删除更新源时。
+
+## 历史更新源返回字段（参考）
+
+`update:check` 在常规更新结果之外返回更新源诊断字段：
+
+- `sourceMode`：`selected` 或 `smart`。
+- `sourceId`：本次结果使用的已保存更新源 id。
+- `sourceType`：`github` 或 `personal`。
+- `sourceLabel`：用于展示和日志的更新源名称。
+- `sourceLatencyMs`：该更新源探测耗时。
+- `smartSources`：仅智能模式返回，包含每个更新源的延迟、是否有更新、最新版本、是否有安装资产和错误信息。
+
+`update:download` 只接收资产 URL，主进程按 URL 解析鉴权头，renderer 不需要额外传 source id。
+
+`update:install` 支持 `.exe`、`.zip` 和 `.7z`。本地手动安装调用必须传 `manual=true`，以便安装器用交互模式拉起。

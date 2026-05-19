@@ -3,6 +3,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
 const { IPC_EVENTS } = require('../shared/ipc-contracts');
+const {
+  buildDownloadHeadersForUrl,
+} = require('./update-source');
 
 const DEFAULT_STARTUP_CHECK_TIMEOUT_MS = 12000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 300000;
@@ -151,13 +154,7 @@ async function runDevStartupUpdateScenario(scenario, deps) {
 }
 
 function buildDownloadHeaders(url, configStore) {
-  const headers = {};
-  if (String(url || '').includes('api.github.com')) {
-    const token = configStore.get('githubToken') || '';
-    if (token) headers.Authorization = `token ${token}`;
-    headers.Accept = 'application/octet-stream';
-  }
-  return headers;
+  return buildDownloadHeadersForUrl(url, configStore);
 }
 
 function inferFileName(response, fallbackUrl) {
@@ -205,21 +202,26 @@ async function downloadInstaller(result, deps) {
 
   if (response.body && typeof response.body.getReader === 'function') {
     const reader = response.body.getReader();
+    const startedAt = Date.now();
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       chunks.push(Buffer.from(value));
       received += value.length;
+      const elapsed = (Date.now() - startedAt) / 1000;
+      const speed = elapsed > 0 ? Math.round(received / elapsed) : 0;
       sendToRenderer(IPC_EVENTS.UPDATE_PROGRESS, {
         received,
         total,
         pct: total > 0 ? Math.round((received / total) * 100) : -1,
+        speed,
       });
       onStatus({
         title: '正在下载更新',
         message: `Neko Status v${result.latestVersion} 下载完成后将自动安装。`,
         detail: total > 0 ? `下载进度 ${Math.round((received / total) * 100)}%` : '正在接收安装包...',
         pct: total > 0 ? Math.round((received / total) * 100) : -1,
+        speed,
       });
     }
   } else {
@@ -230,12 +232,14 @@ async function downloadInstaller(result, deps) {
       received,
       total: total || received,
       pct: 100,
+      speed: 0,
     });
     onStatus({
       title: '正在下载更新',
       message: `Neko Status v${result.latestVersion} 下载完成后将自动安装。`,
       detail: '下载进度 100%',
       pct: 100,
+      speed: 0,
     });
   }
 

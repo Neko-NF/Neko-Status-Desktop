@@ -87,8 +87,8 @@ test('renderer update client delegates update IPC methods through the shared cli
           calls.push(['downloadUpdate', url]);
           return { filePath: 'C:\\tmp\\NekoStatus.exe' };
         },
-        installUpdate: async (filePath, sha256) => {
-          calls.push(['installUpdate', filePath, sha256]);
+        installUpdate: async (filePath, sha256, options) => {
+          calls.push(['installUpdate', filePath, sha256, options]);
           return { ok: true };
         },
         setUpdateChannel: async (channel) => {
@@ -133,7 +133,7 @@ test('renderer update client delegates update IPC methods through the shared cli
   assert.deepEqual(await client.download('https://example.com/NekoStatus.exe'), {
     filePath: 'C:\\tmp\\NekoStatus.exe',
   });
-  assert.deepEqual(await client.install('C:\\tmp\\NekoStatus.exe', 'abc123'), { ok: true });
+  assert.deepEqual(await client.install('C:\\tmp\\NekoStatus.exe', 'abc123', { manual: true }), { ok: true });
   assert.equal(await client.setChannel('beta'), true);
   assert.equal(await client.setSkippedVersion('1.2.8'), true);
   assert.equal(await client.saveSource({ githubOwner: 'Neko-NF', githubRepo: 'Neko-Status-Desktop' }), true);
@@ -144,7 +144,7 @@ test('renderer update client delegates update IPC methods through the shared cli
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
     'checkUpdate',
     ['downloadUpdate', 'https://example.com/NekoStatus.exe'],
-    ['installUpdate', 'C:\\tmp\\NekoStatus.exe', 'abc123'],
+    ['installUpdate', 'C:\\tmp\\NekoStatus.exe', 'abc123', { manual: true }],
     ['setUpdateChannel', 'beta'],
     ['setConfig', 'skippedVersion', '1.2.8'],
     ['setManyConfig', { githubOwner: 'Neko-NF', githubRepo: 'Neko-Status-Desktop' }],
@@ -448,6 +448,198 @@ test('update page renders update dialog state without direct IPC access', () => 
     ['install', '1.2.9'],
     'close',
   ]);
+});
+
+test('update page owns update source controls and persists through injected config client', async () => {
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    return {
+      id,
+      value: extra.value || '',
+      innerHTML: extra.innerHTML || '',
+      textContent: extra.textContent || '',
+      disabled: false,
+      dataset: extra.dataset || {},
+      style: {},
+      scrollLeft: 0,
+      classList: {
+        values: new Set(),
+        add(value) { this.values.add(value); },
+        remove(value) { this.values.delete(value); },
+        toggle(value, enabled) {
+          const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+          if (shouldAdd) this.values.add(value);
+          else this.values.delete(value);
+        },
+        contains(value) { return this.values.has(value); },
+      },
+      addEventListener(type, handler) { listeners[type] = handler; },
+      dispatch(type, event = {}) { return listeners[type]?.({ target: this, currentTarget: this, ...event }); },
+      querySelectorAll() { return []; },
+      setPointerCapture() {},
+      ...extra,
+    };
+  }
+
+  const currentUrl = makeElement('currentUrl');
+  const modeSelected = makeElement('modeSelected', { dataset: { mode: 'selected' } });
+  const modeSmart = makeElement('modeSmart', { dataset: { mode: 'smart' } });
+  const elements = new Map([
+    ['updateSourceRail', makeElement('updateSourceRail')],
+    ['updateSourceDots', makeElement('updateSourceDots')],
+    ['updateSourcePrevBtn', makeElement('updateSourcePrevBtn')],
+    ['updateSourceNextBtn', makeElement('updateSourceNextBtn')],
+    ['updateSourceInput', makeElement('updateSourceInput', { value: 'https://git.koirin.com:39520/NF/Neko.git' })],
+    ['saveUpdateSourceBtn', makeElement('saveUpdateSourceBtn', { innerHTML: 'Save' })],
+  ]);
+  const calls = [];
+  const logs = [];
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) { return elements.get(id) || null; },
+      querySelector(selector) {
+        if (selector === '#updateSourceCurrent .update-source-current-url') return currentUrl;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '#updateSourceModeGroup .update-source-mode-btn') return [modeSelected, modeSmart];
+        return [];
+      },
+    },
+    setTimeout(fn) { fn(); return 1; },
+    URL,
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+  const page = context.window._nekoModules.pages.UpdatePage;
+  const cfg = {
+    githubOwner: 'Neko-NF',
+    githubRepo: 'Neko-Status-Desktop',
+    updateSourceMode: 'selected',
+  };
+
+  page.bindSourceControls({
+    getAllConfig: async () => cfg,
+    setConfig: async (key, value) => {
+      calls.push(['setConfig', key, value]);
+      cfg[key] = value;
+      return true;
+    },
+    setManyConfig: async (payload) => {
+      calls.push(['setManyConfig', payload]);
+      Object.assign(cfg, payload);
+      return true;
+    },
+    addLogLine: (level, message) => logs.push([level, message]),
+  });
+
+  page.renderSources(cfg);
+  assert.match(elements.get('updateSourceRail').innerHTML, /github.com\/Neko-NF\/Neko-Status-Desktop/);
+  assert.equal(currentUrl.textContent, 'github.com/Neko-NF/Neko-Status-Desktop');
+
+  await elements.get('saveUpdateSourceBtn').dispatch('click');
+  assert.equal(calls[0][0], 'setManyConfig');
+  assert.equal(calls[0][1].activeUpdateSourceId, 'personal-nf-neko');
+  assert.equal(calls[0][1].personalUpdateRepo, 'https://git.koirin.com:39520/NF/Neko');
+  assert.equal(calls[0][1].updateSources[0].type, 'personal');
+  assert.equal(logs.at(-1)[0], 'SUCCESS');
+
+  await elements.get('updateSourceRail').dispatch('click', {
+    target: {
+      closest(selector) {
+        if (selector === '[data-action]') return { dataset: { action: 'edit' } };
+        if (selector === '.update-source-chip') return { dataset: { sourceId: 'personal-nf-neko' } };
+        return null;
+      },
+    },
+  });
+  assert.equal(elements.get('updateSourceInput').value, 'https://git.koirin.com:39520/NF/Neko');
+  assert.equal(elements.get('saveUpdateSourceBtn').dataset.editSourceId, 'personal-nf-neko');
+
+  await elements.get('updateSourceRail').dispatch('click', {
+    target: {
+      closest(selector) {
+        if (selector === '[data-action]') return { dataset: { action: 'delete' } };
+        if (selector === '.update-source-chip') return { dataset: { sourceId: 'personal-nf-neko' } };
+        return null;
+      },
+    },
+  });
+  assert.equal(calls.at(-1)[0], 'setManyConfig');
+  assert.equal(logs.at(-1)[0], 'WARN');
+
+  await elements.get('updateSourceRail').dispatch('click', {
+    target: {
+      closest(selector) {
+        if (selector === '[data-action]') return { dataset: { action: 'confirm-delete' } };
+        if (selector === '.update-source-chip') return { dataset: { sourceId: 'personal-nf-neko' } };
+        return null;
+      },
+    },
+  });
+  assert.equal(calls.at(-1)[0], 'setManyConfig');
+  assert.equal(calls.at(-1)[1].updateSources.some((source) => source.id === 'personal-nf-neko'), false);
+  assert.equal(logs.at(-1)[0], 'SUCCESS');
+
+  await modeSmart.dispatch('click');
+  assert.deepEqual(calls.at(-1), ['setConfig', 'updateSourceMode', 'smart']);
+});
+
+test('update page renders animated and tiered update source diagnostics', () => {
+  const panel = {
+    className: '',
+    innerHTML: '',
+  };
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) {
+        return id === 'updateSourceDiagnostics' ? panel : null;
+      },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+    },
+    URL,
+    setInterval() { return 1; },
+    clearInterval() {},
+    Date,
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+  const page = context.window._nekoModules.pages.UpdatePage;
+  const cfg = {
+    updateSourceType: 'personal',
+    activeUpdateSourceId: 'personal-default',
+    personalUpdateRepo: 'https://git.koirin.com:39520/NF/Neko',
+  };
+
+  page.renderSourceDiagnostics({}, { cfg, checking: true, elapsedMs: 1234 });
+  assert.match(panel.className, /is-checking/);
+  assert.match(panel.innerHTML, /检测中/);
+  assert.match(panel.innerHTML, /1\.2 s/);
+  assert.match(panel.innerHTML, /采样中/);
+
+  page.renderSourceDiagnostics({
+    sourceId: 'personal-default',
+    sourceType: 'personal',
+    sourceLabel: 'Personal',
+    sourceLatencyMs: 640,
+    downloadSpeedBytesPerSecond: 3 * 1024 * 1024,
+    hasInstaller: true,
+  }, { cfg });
+
+  assert.match(panel.className, /success/);
+  assert.match(panel.innerHTML, /已检测/);
+  assert.match(panel.innerHTML, /640 ms/);
+  assert.match(panel.innerHTML, /3\.0 MB\/s/);
+  assert.match(panel.innerHTML, /is-good/);
 });
 
 test('screenshot page exposes activity helpers after page initialization', () => {
@@ -908,7 +1100,31 @@ test('developer console registry parses aliases and delegates commands', async (
       getVersion: async () => '1.2.7',
       isRunning: async () => true,
       getConfig: async (key) => ({ key, value: 10 }),
+      getAllConfig: async () => ({
+        updateSourceMode: 'smart',
+        activeUpdateSourceId: 'personal-default',
+        githubOwner: 'Neko-NF',
+        githubRepo: 'Neko-Status-Desktop',
+        personalUpdateRepo: 'https://git.koirin.com:39520/NF/Neko',
+        updateSources: [{
+          id: 'personal-default',
+          type: 'personal',
+          repoUrl: 'https://git.koirin.com:39520/NF/Neko',
+        }],
+      }),
+      setConfig: async (key, value) => {
+        calls.push(['setConfig', key, value]);
+        return true;
+      },
+      testConnection: async (serverUrl) => {
+        calls.push(['testConnection', serverUrl]);
+        return { ok: true, serverUrl };
+      },
       checkUpdate: async () => ({ hasUpdate: false, currentVersion: '1.2.7' }),
+      installUpdate: async (filePath, expectedSha256, options) => {
+        calls.push(['installUpdate', filePath, expectedSha256, options]);
+        return { success: true, filePath };
+      },
     },
     helpers: {
       applyServiceState: (running) => calls.push(['serviceState', running]),
@@ -926,19 +1142,35 @@ test('developer console registry parses aliases and delegates commands', async (
   await registry.execute('ver');
   await registry.execute('service status');
   await registry.execute('config get reportInterval');
+  await registry.execute('config set updateSourceMode "smart"');
+  await registry.execute('api test http://127.0.0.1:3000');
+  await registry.execute('update source');
   await registry.execute('update check');
+  await registry.execute('update install "C:\\tmp\\NekoStatus-Setup-1.2.7.exe"');
   await registry.execute('status');
   await registry.execute('clear');
 
-  assert.deepEqual(logs, [
+  assert.deepEqual(logs.slice(0, 11), [
     ['INFO', 'Neko Status v1.2.7'],
     ['INFO', 'service=running'],
     ['INFO', 'reportInterval={\n  "key": "reportInterval",\n  "value": 10\n}'],
+    ['SUCCESS', 'updateSourceMode=smart'],
+    ['SUCCESS', '{\n  "ok": true,\n  "serverUrl": "http://127.0.0.1:3000"\n}'],
+    ['INFO', 'sourceMode=smart active=personal-default'],
+    ['INFO', '- github-default: github https://github.com/Neko-NF/Neko-Status-Desktop'],
+    ['INFO', '- personal-default: personal https://git.koirin.com:39520/NF/Neko'],
+    ['INFO', '- personal-default: personal https://git.koirin.com:39520/NF/Neko'],
     ['INFO', 'already latest: v1.2.7'],
+    ['SUCCESS', '{\n  "success": true,\n  "filePath": "C:\\\\tmp\\\\NekoStatus-Setup-1.2.7.exe"\n}'],
+  ]);
+  assert.deepEqual(logs.slice(11), [
     ['INFO', 'runtime=PID 1 service=Running cache=0 B'],
   ]);
-  assert.deepEqual(calls, [
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
     ['serviceState', true],
+    ['setConfig', 'updateSourceMode', 'smart'],
+    ['testConnection', 'http://127.0.0.1:3000'],
+    ['installUpdate', 'C:\\tmp\\NekoStatus-Setup-1.2.7.exe', null, { manual: true }],
     'refreshStatus',
     'clearOutput',
   ]);

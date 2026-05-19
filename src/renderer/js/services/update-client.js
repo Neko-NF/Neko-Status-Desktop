@@ -16,7 +16,7 @@
     isReady,
     check: () => invoke('checkUpdate'),
     download: (downloadUrl) => invoke('downloadUpdate', downloadUrl),
-    install: (filePath, sha256) => invoke('installUpdate', filePath, sha256),
+    install: (filePath, sha256, options) => invoke('installUpdate', filePath, sha256, options),
     installPending: () => invoke('installPendingUpdate'),
     getPendingInstall: () => invoke('getPendingInstall'),
     checkIntegrity: () => invoke('checkIntegrity'),

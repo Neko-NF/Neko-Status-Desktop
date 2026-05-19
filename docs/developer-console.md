@@ -63,3 +63,26 @@
 - `ERROR`：命令失败、IPC 缺失、主进程返回错误。
 
 控制台最多保留 500 行日志，导出由主进程 `dialog:saveTextFile` 能力完成。
+## 开发联调命令
+
+开发者控制台可以用于实机前后端联调，但仍然必须保持白名单命令模型。
+
+| 命令 | 别名 | 用途 |
+| --- | --- | --- |
+| `config set <key> <json|string>` | `set` | 通过 preload/main IPC 写入单个配置项；参数会优先按 JSON 解析。 |
+| `api test [serverUrl]` | `ping-api` | 通过主进程测试后端连通性。 |
+| `update source` |  | 输出 `updateSourceMode`、当前源 id 和已保存更新源列表。 |
+| `update check` | `update` | 执行与更新页、后台自动检查一致的后端更新检查。 |
+| `update pending` |  | 查看已下载但尚未安装的更新包状态。 |
+| `update integrity` |  | 运行更新系统完整性检查。 |
+| `update install <filePath>` |  | 以手动模式拉起本地 `.exe`、`.zip` 或 `.7z` 更新包。 |
+
+实机测试建议流程：
+
+1. 运行 `status`、`health` 和 `api test`，确认本机运行环境与后端连通性。
+2. 使用 `config set serverUrlLocal "http://127.0.0.1:3000"` 或目标测试地址切换后端，再运行 `api test`。
+3. 使用 `update source`、`update check`、`update pending`、`update integrity` 验证更新链路。
+4. 使用 `config set updateSourceMode "smart"` 验证智能源选择；使用 `config set updateSourceMode "selected"` 回到手动选择。
+5. 个人更新源联调仓库使用 `https://git.koirin.com:39520/NF/Neko`，该仓库发布时只需要新版本安装资产和 `release_notes.txt` / Release Body 更新说明。
+
+控制台命令只能调用已注入的 preload 安全 IPC 方法，不允许拼接 Shell、PowerShell、JavaScript 或动态 IPC channel。

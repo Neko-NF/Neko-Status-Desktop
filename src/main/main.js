@@ -51,6 +51,17 @@ const {
   runStartupUpdateGate,
   runBackgroundUpdateCheck,
 } = require('./startup-update-gate');
+const {
+  getActiveUpdateSource,
+  getSavedUpdateSources,
+  getUpdateSourceMode,
+  buildReleaseHeaders,
+  buildDownloadHeadersForUrl,
+  pickAssetDownloadUrl,
+} = require('./update-source');
+const {
+  estimateDownloadSpeed,
+} = require('./update-speed');
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
 const APP_NAME    = 'Neko Status';
@@ -245,23 +256,86 @@ function scheduleRelaunchAfterInstaller(installerPid) {
   }
 }
 
-function launchInstaller(filePath, { silent = true, relaunchAfterInstall = true } = {}) {
+function findExecutableRecursive(rootDir) {
+  const matches = [];
+  const walk = (dir) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.exe') {
+        matches.push(fullPath);
+      }
+    }
+  };
+  walk(rootDir);
+  return matches.sort((a, b) => {
+    const an = path.basename(a).toLowerCase();
+    const bn = path.basename(b).toLowerCase();
+    const score = (name) => (name.includes('setup') || name.includes('installer') ? 0 : name.includes('neko') ? 1 : 2);
+    return score(an) - score(bn) || an.localeCompare(bn);
+  })[0] || null;
+}
+
+async function expandZipPackage(zipPath) {
+  if (process.platform !== 'win32') {
+    throw new Error('ZIP update packages can only be prepared automatically on Windows');
+  }
+  const extractRoot = path.join(os.tmpdir(), 'neko-update', `zip-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(extractRoot, { recursive: true });
+  await new Promise((resolve, reject) => {
+    const script = [
+      '$ErrorActionPreference = "Stop"',
+      `Expand-Archive -LiteralPath ${quotePowerShellString(zipPath)} -DestinationPath ${quotePowerShellString(extractRoot)} -Force`,
+    ].join('; ');
+    const child = require('child_process').spawn('powershell.exe', [
+      '-NoProfile',
+      '-WindowStyle', 'Hidden',
+      '-ExecutionPolicy', 'Bypass',
+      '-Command', script,
+    ], { stdio: 'ignore', windowsHide: true });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Expand-Archive exited with code ${code}`));
+    });
+  });
+  const exePath = findExecutableRecursive(extractRoot);
+  if (!exePath) throw new Error('No executable file was found in the ZIP update package');
+  return exePath;
+}
+
+async function resolveLaunchTarget(filePath) {
   const resolvedPath = path.resolve(filePath);
+  const ext = path.extname(resolvedPath).toLowerCase();
+  if (ext === '.zip') return { filePath: await expandZipPackage(resolvedPath), fromArchive: true };
+  return { filePath: resolvedPath, fromArchive: false };
+}
+
+function launchInstaller(filePath, { silent = true, relaunchAfterInstall = true } = {}) {
+  return resolveLaunchTarget(filePath).then(({ filePath: resolvedPath, fromArchive }) => {
   const ext = path.extname(resolvedPath).toLowerCase();
 
   if (process.platform === 'win32' && ext === '.exe') {
-    const args = silent ? ['/S'] : [];
+    const args = silent && !fromArchive ? ['/S'] : [];
     const child = require('child_process').spawn(resolvedPath, args, {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
     });
-    if (relaunchAfterInstall) scheduleRelaunchAfterInstaller(child.pid);
+    if (relaunchAfterInstall && !fromArchive) scheduleRelaunchAfterInstaller(child.pid);
     child.unref();
-    return Promise.resolve('');
+    return '';
   }
 
   return shell.openPath(resolvedPath);
+  });
 }
 
 /**
@@ -602,14 +676,7 @@ async function autoDownloadUpdate(result) {
   console.log(`[AutoDL] 开始后台下载 v${result.latestVersion}...`);
 
   try {
-    const token = configStore.get('githubToken') || '';
-    const headers = {};
-    const isGhApi = downloadUrl.includes('api.github.com');
-    if (isGhApi) {
-      if (token) headers['Authorization'] = `token ${token}`;
-      headers['Accept'] = 'application/octet-stream';
-    }
-
+    const headers = buildDownloadHeadersForUrl(downloadUrl, configStore);
     const res = await fetch(downloadUrl, { headers, signal: AbortSignal.timeout(300000), redirect: 'follow' });
     if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`);
 
@@ -630,15 +697,19 @@ async function autoDownloadUpdate(result) {
     let received = 0;
     const chunks = [];
     const reader = res.body.getReader();
+    const startedAt = Date.now();
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       chunks.push(Buffer.from(value));
       received += value.length;
+      const elapsed = (Date.now() - startedAt) / 1000;
+      const speed = elapsed > 0 ? Math.round(received / elapsed) : 0;
       // 后台下载也推送进度（渲染进程可选择展示）
       sendToRenderer(IPC_EVENTS.UPDATE_PROGRESS, {
         received, total,
         pct: total > 0 ? Math.round(received / total * 100) : -1,
+        speed,
       });
     }
 
@@ -722,106 +793,341 @@ function compareVersions(a, b) {
   return compareVersionsFull(a, b);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  GitHub 三 通 道 更 新 检 查
-// ═══════════════════════════════════════════════════════════════════════
-async function checkForUpdates() {
-  const owner   = configStore.get('githubOwner') || 'Neko-NF';
-  const repo    = configStore.get('githubRepo') || 'Neko-Status-Desktop';
-  const channel = configStore.get('updateChannel') || 'stable';
+function extractVersionFromAssetName(name) {
+  const text = String(name || '');
+  const match = text.match(/(?:NekoStatus(?:-Setup)?-)?v?(\d+\.\d+\.\d+(?:-(?:beta|nightly)[\w.-]*)?)/i);
+  return match ? match[1] : '';
+}
 
-  if (!owner || !repo) {
-    return { hasUpdate: false, channel, error: '未配置 GitHub 仓库（githubOwner / githubRepo）' };
+function buildPersonalRawUrl(source, name) {
+  if (!source || source.type !== 'personal' || !source.owner || !source.repo || !source.baseUrl || !name) return null;
+  return `${source.baseUrl}/${source.owner}/${source.repo}/raw/branch/main/${encodeURIComponent(name)}`;
+}
+
+function normalizeReleaseAsset(asset, source) {
+  const name = String(asset.name || asset.path || '').split(/[\\/]/).pop();
+  const rawDownloadUrl = asset.browser_download_url || asset.download_url || asset.url || null;
+  const isPersonalContentApi = source?.type === 'personal' && /\/api\/v1\/repos\/.+\/contents\//i.test(rawDownloadUrl || '');
+  const downloadUrl = source?.type === 'personal' && (!rawDownloadUrl || isPersonalContentApi || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(rawDownloadUrl))
+    ? buildPersonalRawUrl(source, name)
+    : rawDownloadUrl;
+  return {
+    ...asset,
+    name,
+    size: Number(asset.size) || 0,
+    browser_download_url: downloadUrl,
+  };
+}
+
+function synthesizeReleasesFromFiles(files, source, releaseNotes = '') {
+  const releasesByVersion = new Map();
+  for (const file of files || []) {
+    if (file.type && file.type !== 'file') continue;
+    const asset = normalizeReleaseAsset(file, source);
+    if (!/\.(exe|zip|txt)$/i.test(asset.name)) continue;
+    const version = extractVersionFromAssetName(asset.name);
+    if (!version && asset.name !== 'SHA256SUMS.txt') continue;
+    const key = version || 'checksums';
+    if (!releasesByVersion.has(key)) {
+      releasesByVersion.set(key, {
+        tag_name: version ? `v${version}` : key,
+        prerelease: /-(beta|nightly)/i.test(version),
+        published_at: new Date().toISOString(),
+        body: releaseNotes || 'Synthesized from personal update repository files.',
+        assets: [],
+      });
+    }
+    releasesByVersion.get(key).assets.push(asset);
   }
 
-  const token   = configStore.get('githubToken') || '';
-  const headers = { Accept: 'application/vnd.github.v3+json' };
-  if (token) headers['Authorization'] = `token ${token}`;
+  const checksumRelease = releasesByVersion.get('checksums');
+  const checksumAsset = checksumRelease?.assets?.find((asset) => asset.name === 'SHA256SUMS.txt');
+  const releases = Array.from(releasesByVersion.entries())
+    .filter(([version]) => version !== 'checksums')
+    .map(([, release]) => {
+      if (checksumAsset && !release.assets.some((asset) => asset.name === 'SHA256SUMS.txt')) {
+        release.assets.push(checksumAsset);
+      }
+      return release;
+    });
+  return releases.sort((a, b) => compareVersionsFull(b.tag_name, a.tag_name));
+}
+
+async function fetchPersonalReleaseNotesFromFiles(files, source) {
+  const notesFile = (files || []).find((file) => {
+    const name = String(file.name || file.path || '').split(/[\\/]/).pop().toLowerCase();
+    return name === 'release_notes.txt';
+  });
+  if (!notesFile) return '';
+
+  const asset = normalizeReleaseAsset(notesFile, source);
+  const url = asset.browser_download_url;
+  if (!url) return '';
 
   try {
-    let release;
-
-    // 统一使用列表 API，按通道过滤
-    // （/releases/latest 不返回 pre-release，仓库只有 beta 时会 404）
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/releases?per_page=30`,
-      { headers, signal: AbortSignal.timeout(10000) }
-    );
-    if (!res.ok) {
-      if (res.status === 404) throw new Error(`仓库 ${owner}/${repo} 不存在`);
-      throw new Error(`GitHub API 返回 ${res.status}`);
-    }
-    const all = await res.json();
-    if (!all.length) {
-      return { hasUpdate: false, channel, currentVersion: APP_VERSION, latestVersion: APP_VERSION,
-               error: '仓库尚无已发布的 Release' };
-    }
-
-    if (channel === 'stable') {
-      // 稳定版：仅匹配非 pre-release
-      const stableReleases = all.filter((r) => !r.prerelease);
-      if (stableReleases.length === 0) {
-        return { hasUpdate: false, channel, currentVersion: APP_VERSION, latestVersion: APP_VERSION,
-                 error: '当前无正式版 Release，请切换至 Beta 通道获取最新版本' };
-      }
-      release = stableReleases[0]; // GitHub API 默认按时间倒序
-    } else {
-      // beta / nightly：按通道过滤后取 semver 最高
-      const filtered = all.filter((r) => isTagInChannel(r.tag_name, channel));
-      if (filtered.length === 0) {
-        return { hasUpdate: false, channel, currentVersion: APP_VERSION, latestVersion: APP_VERSION };
-      }
-      release = filtered.reduce((best, cur) =>
-        compareVersionsFull(cur.tag_name, best.tag_name) > 0 ? cur : best
-      );
-    }
-
-    const latestVersion = (release.tag_name || '').replace(/^v/, '');
-    const hasUpdate = compareVersionsFull(latestVersion, APP_VERSION) > 0;
-
-    const assets     = release.assets || [];
-    const exeAsset   = assets.find((a) => a.name.endsWith('.exe'));
-    const zipAsset   = assets.find(
-      (a) => a.name.endsWith('.zip') &&
-        (a.name.toLowerCase().includes('win') || a.name.toLowerCase().includes('windows'))
-    );
-    const sumsAsset  = assets.find((a) => a.name === 'SHA256SUMS.txt');
-
-    // 私有仓库使用 asset API URL （配合 Accept: application/octet-stream 下载）
-    // 公开仓库使用 browser_download_url（直接下载）
-    const pickUrl = (a) => a ? (token ? a.url : a.browser_download_url) : null;
-
-    configStore.set('lastUpdateCheck', Date.now());
-
-    // 解析强制更新标记
-    const releaseBody = release.body || '';
-    const forceUpdate = releaseBody.includes('<!-- FORCE_UPDATE -->');
-
-    // 获取下载文件大小（优先 exe，否则 zip）
-    const primaryAsset = exeAsset || zipAsset;
-    const downloadSize = primaryAsset ? primaryAsset.size : 0;
-
-    return {
-      hasUpdate,
-      channel,
-      latestVersion,
-      currentVersion: APP_VERSION,
-      releaseNotes:   releaseBody,
-      forceUpdate,
-      exeDownloadUrl: pickUrl(exeAsset),
-      zipDownloadUrl: pickUrl(zipAsset),
-      sha256sumsUrl:  pickUrl(sumsAsset),
-      publishedAt:    release.published_at,
-      downloadSize,
-    };
-  } catch (err) {
-    return { hasUpdate: false, channel, error: err.message };
+    const res = await fetch(url, {
+      headers: buildReleaseHeaders(source),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return '';
+    return await res.text();
+  } catch {
+    return '';
   }
 }
 
+async function fetchPersonalFileReleases(source) {
+  if (source.type !== 'personal' || !source.contentsUrl) return [];
+  const res = await fetch(source.contentsUrl, {
+    headers: buildReleaseHeaders(source),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Personal update file listing returned HTTP ${res.status}`);
+  const files = await res.json();
+  const fileList = Array.isArray(files) ? files : [];
+  const releaseNotes = await fetchPersonalReleaseNotesFromFiles(fileList, source);
+  return synthesizeReleasesFromFiles(fileList, source, releaseNotes);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
-//  网 络 等 待（开机自启动时使用）
+//  GitHub 三 通 道 更 新 检 查
 // ═══════════════════════════════════════════════════════════════════════
+async function buildUpdateResultFromReleaseList(all, source, channel) {
+  if (!Array.isArray(all) || !all.length) {
+    return {
+      hasUpdate: false,
+      channel,
+      sourceType: source.type,
+      sourceId: source.id,
+      sourceLabel: source.label,
+      currentVersion: APP_VERSION,
+      latestVersion: APP_VERSION,
+      error: 'No releases or update files were found in the active update source.',
+    };
+  }
+
+  let release;
+  if (channel === 'stable') {
+    const stableReleases = all.filter((r) => !r.prerelease);
+    if (stableReleases.length === 0) {
+      return {
+        hasUpdate: false,
+        channel,
+        sourceType: source.type,
+        sourceId: source.id,
+        sourceLabel: source.label,
+        currentVersion: APP_VERSION,
+        latestVersion: APP_VERSION,
+        error: 'No stable release exists in the active update source. Switch to beta or nightly if needed.',
+      };
+    }
+    release = stableReleases[0];
+  } else {
+    const filtered = all.filter((r) => isTagInChannel(r.tag_name, channel));
+    if (filtered.length === 0) {
+      return {
+        hasUpdate: false,
+        channel,
+        sourceType: source.type,
+        sourceId: source.id,
+        sourceLabel: source.label,
+        currentVersion: APP_VERSION,
+        latestVersion: APP_VERSION,
+      };
+    }
+    release = filtered.reduce((best, cur) =>
+      compareVersionsFull(cur.tag_name, best.tag_name) > 0 ? cur : best
+    );
+  }
+
+  const latestVersion = (release.tag_name || '').replace(/^v/, '');
+  const hasUpdate = compareVersionsFull(latestVersion, APP_VERSION) > 0;
+  const assets = release.assets || [];
+  const exeAsset = assets.find((a) => String(a.name || '').toLowerCase().endsWith('.exe'));
+  const zipAsset = assets.find((a) => {
+    const name = String(a.name || '').toLowerCase();
+    return name.endsWith('.zip') && (name.includes('win') || name.includes('windows'));
+  });
+  const sumsAsset = assets.find((a) => a.name === 'SHA256SUMS.txt');
+  const releaseBody = release.body || '';
+  const primaryAsset = exeAsset || zipAsset;
+
+  return {
+    hasUpdate,
+    channel,
+    sourceType: source.type,
+    sourceId: source.id,
+    sourceLabel: source.label,
+    releasePageUrl: source.releasePageUrl,
+    latestVersion,
+    currentVersion: APP_VERSION,
+    releaseNotes: releaseBody,
+    forceUpdate: releaseBody.includes('<!-- FORCE_UPDATE -->'),
+    exeDownloadUrl: pickAssetDownloadUrl(exeAsset, source),
+    zipDownloadUrl: pickAssetDownloadUrl(zipAsset, source),
+    sha256sumsUrl: pickAssetDownloadUrl(sumsAsset, source),
+    publishedAt: release.published_at,
+    downloadSize: primaryAsset ? primaryAsset.size : 0,
+  };
+}
+
+async function checkSourceForUpdates(source, channel) {
+  if (!source.owner || !source.repo || !source.releasesUrl) {
+    return {
+      hasUpdate: false,
+      channel,
+      sourceType: source.type,
+      sourceId: source.id,
+      sourceLabel: source.label,
+      currentVersion: APP_VERSION,
+      latestVersion: APP_VERSION,
+      error: source.type === 'personal'
+        ? 'Personal update source is missing owner/repo. Use a repository URL such as https://git.koirin.com:39520/owner/repo.'
+        : 'GitHub update source is missing owner/repo.',
+    };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(`${source.releasesUrl}?per_page=30`, {
+      headers: buildReleaseHeaders(source),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      const prefix = source.type === 'personal' ? 'Personal update source' : 'GitHub API';
+      if (source.type === 'personal' && res.status === 404) {
+        const fallback = await fetchPersonalFileReleases(source);
+        if (fallback.length) {
+          const result = await buildUpdateResultFromReleaseList(fallback, source, channel);
+          
+          const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
+          let speedEstimate = { bytesPerSecond: 0 };
+          if (downloadUrl) {
+            speedEstimate = await estimateDownloadSpeed(downloadUrl, configStore);
+          }
+
+          return {
+            ...result,
+            sourceLatencyMs: Date.now() - startedAt,
+            downloadSpeedBytesPerSecond: speedEstimate.bytesPerSecond || 0,
+            downloadSpeedSampleBytes: speedEstimate.sampledBytes || 0,
+            downloadSpeedSampleMs: speedEstimate.durationMs || 0,
+            downloadSpeedProbeMethod: speedEstimate.method || 'failed',
+            sourceMode: 'selected'
+          };
+        }
+      }
+      if (res.status === 404) throw new Error(`${prefix} repository not found: ${source.label}`);
+      throw new Error(`${prefix} returned HTTP ${res.status}`);
+    }
+
+    const text = await res.text();
+    let all;
+    try {
+      all = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse release JSON: ${parseErr.message}`);
+    }
+
+    if (source.type === 'personal' && (!Array.isArray(all) || all.length === 0)) {
+      all = await fetchPersonalFileReleases(source);
+    }
+    const result = await buildUpdateResultFromReleaseList(all, source, channel);
+
+    // 进行高精度的实际包采样测速
+    const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
+    let speedEstimate = { bytesPerSecond: 0 };
+    if (downloadUrl) {
+      speedEstimate = await estimateDownloadSpeed(downloadUrl, configStore);
+    }
+
+    return {
+      ...result,
+      sourceLatencyMs: Date.now() - startedAt,
+      downloadSpeedBytesPerSecond: speedEstimate.bytesPerSecond || 0,
+      downloadSpeedSampleBytes: speedEstimate.sampledBytes || 0,
+      downloadSpeedSampleMs: speedEstimate.durationMs || 0,
+      downloadSpeedProbeMethod: speedEstimate.method || 'failed',
+      sourceMode: 'selected'
+    };
+  } catch (err) {
+    return {
+      hasUpdate: false,
+      channel,
+      sourceType: source.type,
+      sourceId: source.id,
+      sourceLabel: source.label,
+      currentVersion: APP_VERSION,
+      latestVersion: APP_VERSION,
+      error: err.message,
+      sourceLatencyMs: Date.now() - startedAt,
+      downloadSpeedBytesPerSecond: 0,
+      sourceMode: 'selected',
+    };
+  }
+}
+
+function scoreUpdateSourceResult(result) {
+  if (!result || result.error) return Number.POSITIVE_INFINITY;
+  const latency = Number(result.sourceLatencyMs) || 999999;
+  const hasInstaller = result.exeDownloadUrl || result.zipDownloadUrl;
+  const updateBonus = result.hasUpdate ? -100000 : 0;
+  const installerPenalty = hasInstaller ? 0 : 50000;
+  return latency + installerPenalty + updateBonus;
+}
+
+async function checkForUpdates() {
+  const channel = configStore.get('updateChannel') || 'stable';
+  const mode = getUpdateSourceMode(configStore);
+
+  if (mode === 'smart') {
+    const sources = getSavedUpdateSources(configStore);
+    if (!sources.length) {
+      return {
+        hasUpdate: false,
+        channel,
+        sourceMode: 'smart',
+        currentVersion: APP_VERSION,
+        latestVersion: APP_VERSION,
+        error: 'No update sources are configured.',
+      };
+    }
+
+    const results = [];
+    for (const source of sources) {
+      const result = await checkSourceForUpdates(source, channel);
+      results.push({ ...result, sourceMode: 'smart' });
+    }
+
+    const healthy = results.filter((result) => !result.error);
+    const best = (healthy.length ? healthy : results)
+      .slice()
+      .sort((a, b) => scoreUpdateSourceResult(a) - scoreUpdateSourceResult(b))[0];
+
+    return {
+      ...best,
+      sourceMode: 'smart',
+      smartSources: results.map((result) => ({
+        sourceId: result.sourceId,
+        sourceType: result.sourceType,
+        sourceLabel: result.sourceLabel,
+        latencyMs: result.sourceLatencyMs,
+        downloadSpeedBytesPerSecond: result.downloadSpeedBytesPerSecond || 0,
+        downloadSpeedSampleBytes: result.downloadSpeedSampleBytes || 0,
+        downloadSpeedSampleMs: result.downloadSpeedSampleMs || 0,
+        downloadSpeedProbeMethod: result.downloadSpeedProbeMethod || '',
+        hasUpdate: !!result.hasUpdate,
+        latestVersion: result.latestVersion,
+        hasInstaller: !!(result.exeDownloadUrl || result.zipDownloadUrl),
+        error: result.error || '',
+      })),
+    };
+  }
+
+  const source = getActiveUpdateSource(configStore);
+  return await checkSourceForUpdates(source, channel);
+}
+
 const dns = require('dns');
 const { promisify } = require('util');
 const dnsLookup = promisify(dns.lookup);

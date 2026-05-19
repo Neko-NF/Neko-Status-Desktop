@@ -134,3 +134,37 @@ node --test --test-concurrency=1 "tests/unit/*.test.js"
 ```
 
 如果 Windows 上 `npm test` 并发模式偶发 `VirtualAlloc failed`，需要用串行模式复核。串行通过且单文件通过时，优先判断为本机并发资源问题，而不是业务断言失败。
+## 更新源与安装器边界
+
+更新源 UI 与后端逻辑必须保持同步：
+
+- 前端允许保存 GitHub 仓库 URL 和个人服务器仓库 URL。
+- 前端更新源控件必须通过 `updateSources`、`activeUpdateSourceId` 和 `updateSourceMode` 持久化状态。
+- GitHub 配置和个人仓库配置必须隔离保存。切换个人仓库不能覆盖 `githubOwner` / `githubRepo`；切回 GitHub 也不能删除个人仓库配置。
+- `updateSourceMode=selected` 表示检查更新时使用用户选中的更新源。
+- `updateSourceMode=smart` 表示后端检查所有启用的已保存更新源，并返回健康且更快的结果。
+- renderer 必须使用后端返回的下载 URL，不能在前端重新推导下载源。
+- 自动更新开启、自动更新关闭、启动检查、后台检查、手动检查、强制更新、手动下载和本地安装必须共享后端更新源 helper。
+- GitHub token 和个人仓库 token 必须按 URL / source type 隔离，不能交叉使用。
+- 更新源“预估下载速度”只能由主进程对真实安装资产做流式采样得出；不得在 renderer 侧估算，也不得用 Release API JSON 响应速度代替。
+- 资产测速必须优先使用 Range 小样本请求；Range 不可用时只能降级到普通流式采样并主动截断，不能完整下载大安装包。
+- 个人 Gitea 仓库可以使用 release，也可以只在仓库根目录存放 `.exe`、`.zip`、`.7z`、`.blockmap` 和校验文件。
+- 个人仓库根目录兜底模式必须支持 `release_notes.txt`；`https://git.koirin.com:39520/NF/Neko` 发版只需要新版本文件和更新说明。
+
+安装器交接规则：
+
+- 手动安装必须支持用户选择 `.exe`、`.zip` 和 `.7z`。
+- 手动 `.exe` 应交互式启动；自动下载的 `.exe` 可以静默启动。
+- `.zip` 必须由主进程解压，然后拉起内部安装器或 NekoStatus 可执行文件。
+- NSIS 自动安装后的重启 watcher 必须在当前应用退出前启动。
+
+发布前至少使用以下开发者控制台命令验证一次 GitHub 源和个人仓库源：
+
+```text
+update source
+update check
+update pending
+update integrity
+api test [serverUrl]
+config set <key> <json|string>
+```
