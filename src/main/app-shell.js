@@ -58,6 +58,20 @@ function createAppShell(deps) {
     return getAssetPath('app_icon.ico', 'app_icon.png', 'assets/app_icon.ico', 'assets/app_icon.png');
   }
 
+  function createIconImage(...relativePaths) {
+    for (const rel of relativePaths) {
+      const iconPath = getAssetPath(rel);
+      if (!iconPath) continue;
+      const image = nativeImage.createFromPath(iconPath);
+      if (image && !image.isEmpty()) return image;
+    }
+    return null;
+  }
+
+  function createAppIconImage() {
+    return createIconImage('app_icon.ico', 'app_icon.png', 'assets/app_icon.ico', 'assets/app_icon.png');
+  }
+
   function sendToRenderer(channel, data) {
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
@@ -83,14 +97,14 @@ function createAppShell(deps) {
     const savedScale = configStore.get('uiScale') || 100;
     const zoomFactor = Math.max(0.5, Math.min(3.0, savedScale / 100));
 
-    const iconPath = getTrayIconPath();
+    const icon = createAppIconImage();
     const mainWindow = new BrowserWindow({
       width: 1280,
       height: 840,
       minWidth: 1180,
       minHeight: 700,
       show: false,
-      icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
+      ...(icon ? { icon } : {}),
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         nodeIntegration: false,
@@ -99,6 +113,10 @@ function createAppShell(deps) {
         zoomFactor,
       },
     });
+
+    if (icon && typeof mainWindow.setIcon === 'function') {
+      mainWindow.setIcon(icon);
+    }
 
     setMainWindow(mainWindow);
     mainWindow.setMenuBarVisibility(false);
@@ -222,10 +240,7 @@ function createAppShell(deps) {
   }
 
   function createTray() {
-    const iconPath = getTrayIconPath();
-    const icon = iconPath
-      ? nativeImage.createFromPath(iconPath)
-      : nativeImage.createEmpty();
+    const icon = createAppIconImage() || nativeImage.createEmpty();
 
     const tray = new Tray(icon);
     setTray(tray);
@@ -453,6 +468,7 @@ function createAppShell(deps) {
     sendToRenderer,
     pushInitialState,
     getTrayIconPath,
+    createAppIconImage,
     pickPrivacyWindow,
   };
 }

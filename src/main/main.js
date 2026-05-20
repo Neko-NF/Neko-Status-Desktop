@@ -6,7 +6,15 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { IPC_CHANNELS, IPC_EVENTS } = require('../shared/ipc-contracts');
+
+// ─── 应用身份（必须尽早设置，影响 Windows 任务栏/任务管理器展示）─────────
+const IS_DEV_RUNTIME = !!process.env.NEKO_DEV_RUNTIME_EXE;
+const APP_NAME = IS_DEV_RUNTIME ? 'Neko Status Dev' : 'Neko Status';
+const APP_USER_MODEL_ID = IS_DEV_RUNTIME ? 'com.koirin.neko-status.dev' : 'com.koirin.neko-status';
+app.setName(APP_NAME);
+app.setAppUserModelId(APP_USER_MODEL_ID);
 
 if (process.env.NEKO_DISABLE_HW_ACCEL === '1') {
   app.disableHardwareAcceleration();
@@ -26,10 +34,6 @@ if (!app.isPackaged) {
     });
   } catch (_) {}
 }
-
-// ─── Windows 通知通道身份标识（必须在 app.whenReady 前设置）─────────
-const APP_USER_MODEL_ID = 'com.koirin.neko-status';
-app.setAppUserModelId(APP_USER_MODEL_ID);
 
 // ─── 核心服务 ────────────────────────────────────────────────────────
 const configStore   = require('./config-store');
@@ -62,9 +66,16 @@ const {
 const {
   estimateDownloadSpeed,
 } = require('./update-speed');
+const {
+  launchInstaller: launchUpdateInstaller,
+} = require('./update-installer');
+const {
+  getAssetPath: resolveAppAssetPath,
+  getAppIconPath: resolveAppIconPath,
+  ensureWindowsAppIdentityShortcuts,
+} = require('./windows-app-identity');
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
-const APP_NAME    = 'Neko Status';
 const APP_VERSION = app.getVersion();
 
 function writeStartupDiagnostic(label, error) {
@@ -211,130 +222,12 @@ async function removeCacheTargets(sessionRef) {
   return { removed, failed };
 }
 
-function quotePowerShellString(value) {
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function scheduleRelaunchAfterInstaller(installerPid) {
-  if (!installerPid || process.platform !== 'win32') return;
-  const exePath = process.execPath;
-  const currentVersion = APP_VERSION;
-  const script = [
-    `$pidToWait = ${Number(installerPid)}`,
-    `$exePath = ${quotePowerShellString(exePath)}`,
-    `$currentVersion = ${quotePowerShellString(currentVersion)}`,
-    'try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}',
-    '$deadline = (Get-Date).AddMinutes(3)',
-    'do {',
-    '  Start-Sleep -Seconds 2',
-    '  if (-not (Test-Path -LiteralPath $exePath)) { continue }',
-    '  try {',
-    '    $candidateVersion = (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion',
-    '    if ($candidateVersion -and $candidateVersion -ne $currentVersion) {',
-    '      Start-Process -FilePath $exePath',
-    '      exit 0',
-    '    }',
-    '  } catch {}',
-    '} while ((Get-Date) -lt $deadline)',
-    'if (Test-Path -LiteralPath $exePath) { Start-Process -FilePath $exePath }',
-  ].join('; ');
-
-  try {
-    const helper = require('child_process').spawn('powershell.exe', [
-      '-NoProfile',
-      '-WindowStyle', 'Hidden',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', script,
-    ], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    helper.unref();
-  } catch (err) {
-    console.error('[Update] failed to schedule relaunch:', err.message);
-  }
-}
-
-function findExecutableRecursive(rootDir) {
-  const matches = [];
-  const walk = (dir) => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(fullPath);
-      } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.exe') {
-        matches.push(fullPath);
-      }
-    }
-  };
-  walk(rootDir);
-  return matches.sort((a, b) => {
-    const an = path.basename(a).toLowerCase();
-    const bn = path.basename(b).toLowerCase();
-    const score = (name) => (name.includes('setup') || name.includes('installer') ? 0 : name.includes('neko') ? 1 : 2);
-    return score(an) - score(bn) || an.localeCompare(bn);
-  })[0] || null;
-}
-
-async function expandZipPackage(zipPath) {
-  if (process.platform !== 'win32') {
-    throw new Error('ZIP update packages can only be prepared automatically on Windows');
-  }
-  const extractRoot = path.join(os.tmpdir(), 'neko-update', `zip-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
-  fs.mkdirSync(extractRoot, { recursive: true });
-  await new Promise((resolve, reject) => {
-    const script = [
-      '$ErrorActionPreference = "Stop"',
-      `Expand-Archive -LiteralPath ${quotePowerShellString(zipPath)} -DestinationPath ${quotePowerShellString(extractRoot)} -Force`,
-    ].join('; ');
-    const child = require('child_process').spawn('powershell.exe', [
-      '-NoProfile',
-      '-WindowStyle', 'Hidden',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', script,
-    ], { stdio: 'ignore', windowsHide: true });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`Expand-Archive exited with code ${code}`));
-    });
-  });
-  const exePath = findExecutableRecursive(extractRoot);
-  if (!exePath) throw new Error('No executable file was found in the ZIP update package');
-  return exePath;
-}
-
-async function resolveLaunchTarget(filePath) {
-  const resolvedPath = path.resolve(filePath);
-  const ext = path.extname(resolvedPath).toLowerCase();
-  if (ext === '.zip') return { filePath: await expandZipPackage(resolvedPath), fromArchive: true };
-  return { filePath: resolvedPath, fromArchive: false };
-}
-
 function launchInstaller(filePath, { silent = true, relaunchAfterInstall = true } = {}) {
-  return resolveLaunchTarget(filePath).then(({ filePath: resolvedPath, fromArchive }) => {
-  const ext = path.extname(resolvedPath).toLowerCase();
-
-  if (process.platform === 'win32' && ext === '.exe') {
-    const args = silent && !fromArchive ? ['/S'] : [];
-    const child = require('child_process').spawn(resolvedPath, args, {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    if (relaunchAfterInstall && !fromArchive) scheduleRelaunchAfterInstaller(child.pid);
-    child.unref();
-    return '';
-  }
-
-  return shell.openPath(resolvedPath);
+  return launchUpdateInstaller(filePath, {
+    silent,
+    relaunchAfterInstall,
+    shell,
+    platform: process.platform,
   });
 }
 
@@ -388,12 +281,13 @@ const {
   sendToRenderer,
   pushInitialState,
   getTrayIconPath,
+  createAppIconImage,
   pickPrivacyWindow,
 } = appShell;
 
 function createStartupUpdateWindow() {
   if (startupUpdateWindow && !startupUpdateWindow.isDestroyed()) return startupUpdateWindow;
-  const iconPath = getTrayIconPath();
+  const icon = createAppIconImage();
   startupUpdateWindow = new BrowserWindow({
     width: 460,
     height: 330,
@@ -405,7 +299,7 @@ function createStartupUpdateWindow() {
     backgroundColor: '#00000000',
     show: false,
     title: `${APP_NAME} Update`,
-    icon: iconPath ? nativeImage.createFromPath(iconPath) : undefined,
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
@@ -413,6 +307,10 @@ function createStartupUpdateWindow() {
       sandbox: false,
     },
   });
+
+  if (icon && typeof startupUpdateWindow.setIcon === 'function') {
+    startupUpdateWindow.setIcon(icon);
+  }
 
   startupUpdateWindow.setMenuBarVisibility(false);
   startupUpdateWindow.loadFile(path.join(__dirname, '../renderer/startup-update.html'));
@@ -482,101 +380,47 @@ if (!gotTheLock) {
 //  系 统 通 知（受 enableNotification + doNotDisturb 控制）
 // ═══════════════════════════════════════════════════════════════════════
 function getAssetPath(...relativePaths) {
-  const roots = [
-    process.resourcesPath,
-    path.dirname(process.execPath),
-    app.getAppPath(),
-    path.join(__dirname, '../..'),
-  ].filter(Boolean);
-  const candidates = [];
-  for (const root of roots) {
-    for (const rel of relativePaths) {
-      candidates.push(path.join(root, rel));
-    }
-  }
-  return candidates.find((candidate) => {
-    try {
-      fs.accessSync(candidate);
-      return true;
-    } catch {
-      return false;
-    }
-  }) || null;
-}
-
-function getAppIconPath() {
-  return getAssetPath('app_icon.ico', 'assets/app_icon.ico', 'app_icon.png', 'assets/app_icon.png');
-}
-
-function writeShortcutIfNeeded(shortcutPath, target, args, cwd, icon) {
-  let shouldWrite = true;
-  try {
-    const current = shell.readShortcutLink(shortcutPath);
-    shouldWrite = current.target !== target
-      || (current.args || '') !== args
-      || current.appUserModelId !== APP_USER_MODEL_ID
-      || (current.icon || '') !== (icon || '');
-  } catch { /* shortcut does not exist yet */ }
-
-  if (!shouldWrite) return true;
-
-  const operation = fs.existsSync(shortcutPath) ? 'replace' : 'create';
-  return shell.writeShortcutLink(shortcutPath, operation, {
-    target,
-    args,
-    cwd,
-    description: APP_NAME,
-    icon: icon && fs.existsSync(icon) ? icon : target,
-    iconIndex: 0,
-    appUserModelId: APP_USER_MODEL_ID,
+  const appExePath = process.env.NEKO_DEV_RUNTIME_EXE || app.getPath('exe') || process.execPath;
+  return resolveAppAssetPath({
+    app,
+    fs,
+    relativePaths,
+    dirname: __dirname,
+    execPath: appExePath,
   });
 }
 
-function ensureWindowsNotificationShortcut() {
-  if (process.platform !== 'win32' || !app.isPackaged) return { ok: true, skipped: true };
-  try {
-    const programsDir = path.join(
-      app.getPath('appData'),
-      'Microsoft',
-      'Windows',
-      'Start Menu',
-      'Programs'
-    );
-    const desktopDir = app.getPath('desktop');
-    const target = process.execPath;
-    const args = app.isPackaged ? '' : `"${app.getAppPath()}"`;
-    const cwd = app.getAppPath();
-    const icon = getAppIconPath();
-    const primaryShortcut = path.join(programsDir, 'NekoStatus.lnk');
-    const legacyShortcuts = [
-      path.join(programsDir, 'Neko Status.lnk'),
-      desktopDir ? path.join(desktopDir, 'Neko Status.lnk') : null,
-    ].filter(Boolean);
+function getAppIconPath() {
+  const appExePath = process.env.NEKO_DEV_RUNTIME_EXE || app.getPath('exe') || process.execPath;
+  return resolveAppIconPath({
+    app,
+    fs,
+    dirname: __dirname,
+    execPath: appExePath,
+  });
+}
 
-    fs.mkdirSync(programsDir, { recursive: true });
-
-    // 清理旧的带空格快捷方式
-    for (const legacy of legacyShortcuts) {
-      if (fs.existsSync(legacy)) {
-        try { fs.unlinkSync(legacy); } catch {}
-      }
-    }
-
-    const written = writeShortcutIfNeeded(primaryShortcut, target, args, cwd, icon);
-    if (!written) return { ok: false, error: 'shortcut-write-failed', shortcutPath: primaryShortcut };
-    
-    return { ok: true, shortcutPath: primaryShortcut };
-  } catch (err) {
-    console.warn('[Notification] Failed to prepare Windows shortcut:', err.message);
-    return { ok: false, error: err.message };
-  }
+function ensureWindowsAppIdentity() {
+  const appExePath = process.env.NEKO_DEV_RUNTIME_EXE || app.getPath('exe') || process.execPath;
+  const isDevRuntime = !!process.env.NEKO_DEV_RUNTIME_EXE;
+  return ensureWindowsAppIdentityShortcuts({
+    app,
+    shell,
+    fs,
+    appName: 'NekoStatus',
+    appUserModelId: APP_USER_MODEL_ID,
+    dirname: __dirname,
+    execPath: appExePath,
+    isPackaged: app.isPackaged && !isDevRuntime,
+    spawnImpl: spawn,
+  });
 }
 
 function showNotification(title, body) {
   if (!configStore.get('enableNotification')) return { shown: false, reason: 'disabled' };
   if (configStore.get('doNotDisturb')) return { shown: false, reason: 'do-not-disturb' };
   if (!Notification.isSupported()) return { shown: false, reason: 'unsupported' };
-  const shortcut = ensureWindowsNotificationShortcut();
+  const shortcut = ensureWindowsAppIdentity();
   const notification = new Notification({
     title: title || APP_NAME,
     body,
@@ -1161,7 +1005,7 @@ async function waitForNetwork(timeoutMs = 30000) {
 // ═══════════════════════════════════════════════════════════════════════
 app.whenReady().then(async () => {
   traceStartup('whenReady entered', `packaged=${app.isPackaged}`);
-  ensureWindowsNotificationShortcut();
+  ensureWindowsAppIdentity();
   setupIPC();
   const shouldAutoDownload = configStore.get('autoDownload') === true;
   const pendingInstall = configStore.get('pendingInstall');

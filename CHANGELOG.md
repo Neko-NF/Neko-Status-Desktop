@@ -2,6 +2,11 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## 1.2.11 - 2026-05-20
+
+- Fixed update installer relaunch after installing a new version.
+- Fixed Windows taskbar identity and icon handling for dev and packaged builds.
+
 ## 1.2.9 - 2026-05-19
 
 - Added personal repository update source support and synchronized GitHub/Gitea release publishing.
