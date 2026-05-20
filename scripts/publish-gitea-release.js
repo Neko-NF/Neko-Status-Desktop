@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 
 const DEFAULT_BASE_URL = 'https://git.koirin.com:39520';
 const DEFAULT_OWNER = 'NF';
@@ -153,6 +155,15 @@ function formatBytes(bytes) {
   return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function parseUploadTimeout() {
+  const timeout = Number.parseInt(process.env.GITEA_UPLOAD_TIMEOUT_MS || '900000', 10);
+  return Number.isFinite(timeout) && timeout > 0 ? timeout : 900000;
+}
+
+function escapeMultipartValue(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 async function findRelease(baseUrl, owner, repo, tag, token) {
   const url = `${baseUrl}/api/v1/repos/${owner}/${repo}/releases?limit=50`;
   const releases = await requestJson(url, { headers: authHeaders(token) });
@@ -199,19 +210,78 @@ async function deleteExistingAsset(baseUrl, owner, repo, release, fileName, toke
   });
 }
 
+async function uploadMultipartFile(url, filePath, fileName, token) {
+  const boundary = `----neko-status-${crypto.randomBytes(12).toString('hex')}`;
+  const fileSize = fs.statSync(filePath).size;
+  const header = Buffer.from([
+    `--${boundary}`,
+    `Content-Disposition: form-data; name="attachment"; filename="${escapeMultipartValue(fileName)}"`,
+    'Content-Type: application/octet-stream',
+    '',
+    '',
+  ].join('\r\n'));
+  const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const target = new URL(url);
+  const transport = target.protocol === 'http:' ? http : https;
+  const timeoutMs = parseUploadTimeout();
+
+  return await new Promise((resolve, reject) => {
+    const req = transport.request(target, {
+      method: 'POST',
+      headers: authHeaders(token, {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': header.length + fileSize + footer.length,
+      }),
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let body = null;
+        if (text) {
+          try {
+            body = JSON.parse(text);
+          } catch {
+            body = text;
+          }
+        }
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const message = body?.message || body?.errors?.[0]?.message || text || res.statusMessage;
+          const error = new Error(`HTTP ${res.statusCode}: ${message}`);
+          error.status = res.statusCode;
+          error.body = body;
+          reject(error);
+          return;
+        }
+
+        resolve(body);
+      });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Upload timed out after ${Math.round(timeoutMs / 1000)}s`));
+    });
+    req.on('error', reject);
+    req.write(header);
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.on('error', (error) => req.destroy(error));
+    fileStream.on('end', () => req.end(footer));
+    fileStream.pipe(req, { end: false });
+  });
+}
+
 async function uploadAsset(baseUrl, owner, repo, release, filePath, token) {
   const fileName = path.basename(filePath);
   await deleteExistingAsset(baseUrl, owner, repo, release, fileName, token);
 
-  const form = new FormData();
-  const bytes = fs.readFileSync(filePath);
-  form.append('attachment', new Blob([bytes]), fileName);
-
-  return await requestJson(`${baseUrl}/api/v1/repos/${owner}/${repo}/releases/${release.id}/assets?name=${encodeURIComponent(fileName)}`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: form,
-  });
+  return await uploadMultipartFile(
+    `${baseUrl}/api/v1/repos/${owner}/${repo}/releases/${release.id}/assets?name=${encodeURIComponent(fileName)}`,
+    filePath,
+    fileName,
+    token
+  );
 }
 
 async function findUploadedAsset(baseUrl, owner, repo, tag, token, filePath) {
