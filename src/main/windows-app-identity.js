@@ -169,13 +169,14 @@ function ensureWindowsAppIdentityShortcuts({
   if (platform !== 'win32') return { ok: true, skipped: true };
 
   try {
-    const targets = getShortcutTargets({ app, appName, isPackaged });
+    const pathModule = path.win32;
+    const targets = getShortcutTargets({ app, appName, isPackaged, pathModule });
     fs.mkdirSync(targets.programsDir, { recursive: true });
 
     const icon = getAppIconPath({ app, fs, dirname, resourcesPath, execPath });
     const target = execPath;
     const args = isPackaged ? '' : `"${app.getAppPath()}"`;
-    const cwd = isPackaged ? path.dirname(execPath) : app.getAppPath();
+    const cwd = isPackaged ? pathModule.dirname(execPath) : app.getAppPath();
     const description = appName;
 
     const removedLegacy = [];
