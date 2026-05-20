@@ -8,6 +8,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { IPC_CHANNELS, IPC_EVENTS } = require('../shared/ipc-contracts');
+const { configureUserDataPath } = require('./user-data-path');
 
 // ─── 应用身份（必须尽早设置，影响 Windows 任务栏/任务管理器展示）─────────
 const IS_DEV_RUNTIME = !!process.env.NEKO_DEV_RUNTIME_EXE;
@@ -15,6 +16,7 @@ const APP_NAME = IS_DEV_RUNTIME ? 'Neko Status Dev' : 'Neko Status';
 const APP_USER_MODEL_ID = IS_DEV_RUNTIME ? 'com.koirin.neko-status.dev' : 'com.koirin.neko-status';
 app.setName(APP_NAME);
 app.setAppUserModelId(APP_USER_MODEL_ID);
+configureUserDataPath({ app, isDevRuntime: IS_DEV_RUNTIME, displayName: APP_NAME });
 
 if (process.env.NEKO_DISABLE_HW_ACCEL === '1') {
   app.disableHardwareAcceleration();

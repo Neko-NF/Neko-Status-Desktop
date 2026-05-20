@@ -2,16 +2,11 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
-## 1.2.12 - 2026-05-20
-
-- Fixed update installer relaunch after installing a new version.
-- Fixed Windows taskbar identity and icon handling for dev and packaged builds.
-- Improved Gitea release asset upload reliability for large Windows packages.
-
 ## 1.2.11 - 2026-05-20
 
 - Fixed update installer relaunch after installing a new version.
 - Fixed Windows taskbar identity and icon handling for dev and packaged builds.
+- Fixed config loading for users upgrading from older app-name storage paths.
 
 ## 1.2.9 - 2026-05-19
 

@@ -437,7 +437,14 @@ Release 或仓库根目录至少应提供一个 Windows 安装资产：
 https://git.koirin.com:39520/NF/Neko
 ```
 
-该仓库只需要发布新版本文件和更新说明。推荐使用 Gitea Release：创建与主版本一致的 tag，例如 `v1.2.8`，Release Body 填写本次 `release_notes.txt`，然后上传：
+该仓库只需要发布新版本文件和更新说明。推荐使用本地脚本创建 Gitea Release：本地 token 放在 `.secrets/gitea-token.txt`，然后执行：
+
+```powershell
+gh release download v1.2.8 --repo Neko-NF/Neko-Status-Desktop --dir releases/v1.2.8 --clobber
+npm run release:gitea:local -- --version 1.2.8 --tag v1.2.8 --files "releases/v1.2.8/NekoStatus-Setup-1.2.8.exe,releases/v1.2.8/NekoStatus-1.2.8-win.zip,releases/v1.2.8/SHA256SUMS.txt"
+```
+
+脚本会创建与主版本一致的 tag，例如 `v1.2.8`，Release Body 使用本次 `release_notes.txt`，然后上传：
 
 ```text
 NekoStatus-Setup-1.2.8.exe

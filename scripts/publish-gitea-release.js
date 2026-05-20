@@ -7,6 +7,7 @@ const https = require('https');
 const DEFAULT_BASE_URL = 'https://git.koirin.com:39520';
 const DEFAULT_OWNER = 'NF';
 const DEFAULT_REPO = 'Neko';
+const DEFAULT_TOKEN_FILE = '.secrets/gitea-token.txt';
 
 function parseArgs(argv) {
   const args = {};
@@ -43,8 +44,16 @@ function readPackageVersion() {
   return pkg.version;
 }
 
+function readTokenFile(filePath) {
+  if (!filePath) return '';
+  const resolved = path.resolve(process.cwd(), filePath);
+  if (!fs.existsSync(resolved)) return '';
+  return fs.readFileSync(resolved, 'utf8').trim();
+}
+
 function resolveToken(args) {
   return args.token
+    || readTokenFile(args['token-file'] || process.env.GITEA_TOKEN_FILE || DEFAULT_TOKEN_FILE)
     || process.env.GITEA_TOKEN
     || process.env.PERSONAL_UPDATE_TOKEN;
 }
@@ -350,7 +359,7 @@ async function main() {
   }
 
   if (!token) {
-    throw new Error('Missing Gitea token. Set GITEA_TOKEN in CI secrets or the local shell environment.');
+    throw new Error(`Missing Gitea token. Put it in ${DEFAULT_TOKEN_FILE}, pass --token-file, or set GITEA_TOKEN.`);
   }
 
   let release = await createOrUpdateRelease({ baseUrl, owner, repo, token, tag, notes, prerelease });

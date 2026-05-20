@@ -85,6 +85,7 @@ function checkFileStructure() {
     'package.json',
     'src/main/main.js',
     'src/main/config-store.js',
+    'src/main/user-data-path.js',
     'src/main/status-service.js',
     'src/main/system-utils.js',
     'src/main/api-service.js',

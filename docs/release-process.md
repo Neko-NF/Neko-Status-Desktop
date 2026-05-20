@@ -89,8 +89,9 @@ npm run build:zip
 5. 合并 release PR。
 6. 创建并推送 `v*` tag。
 7. GitHub Actions 执行 `.github/workflows/release.yml`。
-8. 工作流创建 GitHub Release，并同步创建或更新个人 Gitea Release。
-9. 检查两个仓库的产物、SHA256、Release notes。
+8. 工作流创建 GitHub Release。
+9. 本地用 `gh release download` 下载 GitHub 服务器构建出的同版本资产，再运行 `npm run release:gitea:local -- --version <version> --tag v<version> --files "<资产清单>"` 创建或更新个人 Gitea Release。
+10. 检查两个仓库的产物、SHA256、Release notes。
 
 ## 个人仓库发布流程
 
@@ -100,14 +101,16 @@ npm run build:zip
 https://git.koirin.com:39520/NF/Neko
 ```
 
-这个仓库只承担分发职责。发布新版本时必须与 GitHub Release 同步，同一个 tag、同一个版本、同一份发布说明。它不需要同步源码、不需要 release 分支、不需要在个人仓库重新构建。个人仓库写入密钥跟随版本发布流程使用，但不能跟随版本产物一起发布，不能进入源码、客户端配置、安装包或 Release 资产。
+这个仓库只承担分发职责。发布新版本时必须与 GitHub Release 同步，同一个 tag、同一个版本、同一份发布说明。它不需要同步源码、不需要 release 分支、不需要在个人仓库重新构建。个人仓库写入密钥只保存在本地 `.secrets/gitea-token.txt` 或临时环境变量中，不能跟随版本产物一起发布，不能进入源码、客户端配置、安装包或 Release 资产。
 
-默认由 GitHub Actions 同步创建 Gitea Release：
+默认由本地脚本同步创建 Gitea Release：
 
-1. 仓库配置 Secret `GITEA_TOKEN`，只允许存在于 GitHub Actions Secrets 或团队密钥库。
-2. 可选配置 Variables：`GITEA_BASE_URL`、`GITEA_OWNER`、`GITEA_REPO`、`GITEA_RELEASE_FILES`。
-3. 推送 `v*` tag 后，工作流先发布 GitHub Release，再调用 `npm run release:gitea` 发布个人仓库。
-4. 客户端选择个人仓库更新源后执行一次“检查更新”验证。
+1. 本地准备 `.secrets/gitea-token.txt`，该目录已被 `.gitignore` 排除。
+2. 可选设置环境变量：`GITEA_BASE_URL`、`GITEA_OWNER`、`GITEA_REPO`、`GITEA_RELEASE_FILES`。
+3. 推送 `v*` tag 后，工作流先发布 GitHub Release。
+4. 本地调用 `gh release download v<version> --repo Neko-NF/Neko-Status-Desktop --dir releases/v<version> --clobber` 下载 GitHub Release 资产。
+5. 本地调用 `npm run release:gitea:local -- --version <version> --tag v<version> --files "<下载后的资产清单>"` 发布个人仓库。
+6. 客户端选择个人仓库更新源后执行一次“检查更新”验证。
 
 默认上传清单：
 
@@ -117,13 +120,12 @@ NekoStatus-1.2.8-win.zip
 SHA256SUMS.txt
 ```
 
-如果个人仓库和 GitHub 需要不同文件数量，只修改 `GITEA_RELEASE_FILES`。GitHub Release 的文件清单仍由 `.github/workflows/release.yml` 中的 `files` 控制。
+如果个人仓库和 GitHub 需要不同文件数量，只修改本地 `GITEA_RELEASE_FILES` 或命令中的 `--files`。GitHub Release 的文件清单仍由 `.github/workflows/release.yml` 中的 `files` 控制。
 
 本地补发旧版本测试：
 
 ```powershell
-$env:GITEA_TOKEN = "<从团队密钥库临时取用的 Gitea Token>"
-npm run release:gitea -- --version 1.2.2 --tag v1.2.2 --files "releases/v1.2.2/NekoStatus-Setup-1.2.2.exe,releases/v1.2.2/NekoStatus-1.2.2-win.zip,releases/v1.2.2/SHA256SUMS.txt"
+npm run release:gitea:local -- --version 1.2.2 --tag v1.2.2 --files "releases/v1.2.2/NekoStatus-Setup-1.2.2.exe,releases/v1.2.2/NekoStatus-1.2.2-win.zip,releases/v1.2.2/SHA256SUMS.txt"
 ```
 
 如果 Gitea Release API 不可用，也可以临时将以下文件直接放在仓库根目录：
