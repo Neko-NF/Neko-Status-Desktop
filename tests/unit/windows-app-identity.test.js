@@ -8,6 +8,10 @@ const {
   shortcutNeedsWrite,
 } = require('../../src/main/windows-app-identity');
 
+function normalizePathForAssert(value) {
+  return String(value || '').replace(/[\\/]+/g, '\\');
+}
+
 function createFs(existing = new Set()) {
   const removed = [];
   const madeDirs = [];
@@ -95,8 +99,8 @@ describe('Windows app identity shortcuts', () => {
 
     assert.equal(result.ok, true);
     assert.equal(writes.length, 2);
-    assert.equal(writes[0].shortcutPath, 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus.lnk');
-    assert.equal(writes[1].shortcutPath, 'C:\\Users\\qwe\\Desktop\\NekoStatus.lnk');
+    assert.equal(normalizePathForAssert(writes[0].shortcutPath), 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus.lnk');
+    assert.equal(normalizePathForAssert(writes[1].shortcutPath), 'C:\\Users\\qwe\\Desktop\\NekoStatus.lnk');
     assert.equal(writes[0].options.icon, icon);
     assert.equal(writes[0].options.appUserModelId, 'com.koirin.neko-status');
     assert.equal(writes[0].options.cwd, 'C:\\Program Files\\NekoStatus');
@@ -133,7 +137,7 @@ describe('Windows app identity shortcuts', () => {
 
     assert.equal(result.ok, true);
     assert.equal(writes.length, 1);
-    assert.equal(writes[0].shortcutPath, 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus Dev.lnk');
+    assert.equal(normalizePathForAssert(writes[0].shortcutPath), 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus Dev.lnk');
     assert.equal(writes[0].options.target, 'D:\\VScode project\\Neko_Status\\node_modules\\electron\\dist\\electron.exe');
     assert.equal(writes[0].options.args, `"${appPath}"`);
     assert.equal(writes[0].options.icon, icon);
@@ -173,7 +177,7 @@ describe('Windows app identity shortcuts', () => {
 
     assert.equal(result.ok, true);
     assert.equal(writes.length, 1);
-    assert.equal(writes[0].shortcutPath, 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus Dev.lnk');
+    assert.equal(normalizePathForAssert(writes[0].shortcutPath), 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus Dev.lnk');
     assert.equal(writes[0].options.target, 'D:\\VScode project\\Neko_Status\\node_modules\\electron\\dist\\NekoStatusDev.exe');
     assert.equal(writes[0].options.args, `"${appPath}"`);
     assert.ok(fs.removed.includes('C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus.lnk'));
