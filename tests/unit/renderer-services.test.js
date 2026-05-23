@@ -725,6 +725,92 @@ test('update source diagnostics runs once on entry and reruns from explicit cont
   assert.equal(checks, 2);
 });
 
+test('update source diagnostics drains latest queued switch without leaking the timer', async () => {
+  function makeElement(id) {
+    return {
+      id,
+      innerHTML: '',
+      disabled: false,
+      dataset: {},
+      className: '',
+      title: '',
+      setAttribute(name, value) { this[name] = value; },
+      addEventListener() {},
+    };
+  }
+
+  let nextTimerId = 0;
+  const clearedTimers = [];
+  let checks = 0;
+  let resolveFirst;
+  const panel = makeElement('updateSourceDiagnostics');
+  const probeBtn = makeElement('updateSourceProbeBtn');
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) {
+        if (id === 'updateSourceDiagnostics') return panel;
+        if (id === 'updateSourceProbeBtn') return probeBtn;
+        return null;
+      },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+    },
+    URL,
+    Date,
+    console,
+    setTimeout(fn) { fn(); return 1; },
+    clearTimeout() {},
+    setInterval() { nextTimerId += 1; return nextTimerId; },
+    clearInterval(id) { clearedTimers.push(id); },
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+  const page = context.window._nekoModules.pages.UpdatePage;
+  page.bindSourceControls({
+    checkUpdate: async () => {
+      checks += 1;
+      if (checks === 1) {
+        return new Promise((resolve) => {
+          resolveFirst = () => resolve({
+            sourceId: 'github-default',
+            sourceType: 'github',
+            sourceLabel: 'GitHub',
+            sourceLatencyMs: 120,
+            hasInstaller: true,
+          });
+        });
+      }
+      return {
+        sourceId: 'personal-default',
+        sourceType: 'personal',
+        sourceLabel: 'Personal',
+        sourceLatencyMs: 160,
+        hasInstaller: true,
+      };
+    },
+  });
+
+  assert.equal(page.requestSourceDiagnosticsCheck({ force: true, latestWins: true }), true);
+  page.scheduleSourceDiagnosticsCheck({ reason: 'manual-source-carousel' }, 0);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(checks, 1);
+  assert.equal(page._sourceDiagnosticsRequestRunning, true);
+  assert.equal(page._sourceDiagnosticTimerId, 1);
+
+  resolveFirst();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(checks, 2);
+  assert.deepEqual(clearedTimers, [1, 2]);
+  assert.equal(page._sourceDiagnosticsRequestRunning, false);
+  assert.equal(page._sourceDiagnosticTimerId, 0);
+});
+
 test('screenshot page exposes activity helpers after page initialization', () => {
   const storage = new Map([
     ['neko_privacy_rules', JSON.stringify(['Code.exe', 'chrome'])],

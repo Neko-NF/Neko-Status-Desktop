@@ -363,9 +363,13 @@
         this._pendingSourceDiagnosticsOnEnter = true;
         return false;
       }
-      if (this._sourceDiagnosticsRequestRunning || this._sourceDiagnosticTimerId) {
+      if (this._sourceDiagnosticsRequestRunning) {
         if (options.latestWins) this._queuedSourceDiagnosticsOptions = { ...options, force: true };
         return false;
+      }
+      if (this._sourceDiagnosticTimerId) {
+        this.stopSourceDiagnosticsTimer();
+        this._sourceDiagnosticStartedAt = 0;
       }
       const now = Date.now();
       if (!options.force && this._lastSourceDiagnosticsRequestedAt && now - this._lastSourceDiagnosticsRequestedAt < 3000) {
@@ -381,9 +385,6 @@
 
     scheduleSourceDiagnosticsCheck(options = {}, delayMs = 320) {
       if (this._sourceDiagnosticsDebounceTimer) clearTimeout(this._sourceDiagnosticsDebounceTimer);
-      if (this._sourceDiagnosticsRequestRunning || this._sourceDiagnosticTimerId) {
-        this._sourceDiagnosticsRequestSeq = (this._sourceDiagnosticsRequestSeq || 0) + 1;
-      }
       this._sourceDiagnosticsDebounceTimer = setTimeout(() => {
         this._sourceDiagnosticsDebounceTimer = 0;
         this.requestSourceDiagnosticsCheck({
