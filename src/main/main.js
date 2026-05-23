@@ -52,6 +52,7 @@ const {
   registerAuthIpc,
   registerServiceIpc,
   registerUpdateIpc,
+  registerDeveloperModeIpc,
 } = require('./ipc');
 const {
   runStartupUpdateGate,
@@ -286,6 +287,9 @@ const {
   getTrayIconPath,
   createAppIconImage,
   pickPrivacyWindow,
+  getDeveloperModeWindow,
+  openDeveloperModeWindow,
+  closeDeveloperModeWindow,
 } = appShell;
 
 function createStartupUpdateWindow() {
@@ -496,6 +500,14 @@ function setupIPC() {
     getAutoDownloadState: () => _autoDownloadState,
     setAutoDownloadState: (v) => { _autoDownloadState = v; },
     setIsQuitting: (v) => { isQuitting = v; },
+  });
+
+  registerDeveloperModeIpc({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    getDeveloperModeWindow,
+    openDeveloperModeWindow,
+    closeDeveloperModeWindow,
   });
 }
 

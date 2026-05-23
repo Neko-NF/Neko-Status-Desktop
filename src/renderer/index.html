@@ -204,6 +204,22 @@
                                 </div>
                                 <div class="toggle-switch" id="toggleConsole"></div>
                             </div>
+                            <div class="action-btn quick-action-row is-static">
+                                <i class="ph ph-code-block"></i>
+                                <div class="quick-action-copy">
+                                    <div class="quick-action-title">开发者模式</div>
+                                    <div class="quick-action-meta">UIUX / backend debug</div>
+                                </div>
+                                <div class="toggle-switch" id="toggleDeveloperMode"></div>
+                            </div>
+                            <div class="action-btn quick-action-row is-static">
+                                <i class="ph ph-selection"></i>
+                                <div class="quick-action-copy">
+                                    <div class="quick-action-title">UIUX 辅助线</div>
+                                    <div class="quick-action-meta">element locator</div>
+                                </div>
+                                <div class="toggle-switch" id="toggleDeveloperUiInspect"></div>
+                            </div>
                             <div class="action-btn quick-action-row" id="quickIntervalCard">
                                 <i class="ph ph-timer"></i>
                                 <div class="quick-action-copy">
@@ -1623,6 +1639,30 @@
                             </div>
                         </div>
 
+                        <div class="settings-group-label"><i class="ph ph-code-block"></i> 开发者模式</div>
+                        <div class="glass-card settings-group-card" id="settings-developer-mode">
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-code-block settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">开发者模式</div>
+                                        <div class="settings-row-desc">开启后显示受控诊断面板，用于前后端联调与 UIUX 检查。</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="stgDeveloperModeSwitch"></div>
+                            </div>
+                            <div class="settings-row" id="stgDeveloperUiInspectRow">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-selection settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">UIUX 辅助线</div>
+                                        <div class="settings-row-desc" id="stgDeveloperUiInspectDesc">需要先开启开发者模式，才可框选页面元素并查看定位信息。</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="stgDeveloperUiInspectSwitch"></div>
+                            </div>
+                        </div>
+
                         <!-- ========== 直播推流配置 ========== -->
                         <div class="settings-group-label" id="streamSettingsLabel"><i class="ph ph-broadcast"></i> 直播推流</div>
                         <div class="glass-card settings-group-card experimental-settings-note" id="streamSettingsDisabledNotice" style="display:none;">
@@ -2328,6 +2368,7 @@
     <script src="./js/components/expandable-section.js"></script>
     <script src="./js/components/modal.js"></script>
     <script src="./js/components/developer-console.js"></script>
+    <script src="./js/components/developer-mode.js"></script>
     <script src="./js/state/app-state.js"></script>
     <!-- 1.8 页面组装（在 app.js 前加载，供后续全面替换） -->
     <script src="./js/pages/settings.page.js"></script>

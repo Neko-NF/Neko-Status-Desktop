@@ -93,6 +93,123 @@ function createAppShell(deps) {
     });
   }
 
+  let developerModeWindow = null;
+  let syncingDeveloperModeBounds = false;
+  let allowDeveloperModeWindowClose = false;
+  const DEVELOPER_MODE_PANEL_WIDTH = 380;
+  const DEVELOPER_MODE_PANEL_GAP = 8;
+
+  function getDeveloperModeWindow() {
+    return developerModeWindow && !developerModeWindow.isDestroyed() ? developerModeWindow : null;
+  }
+
+  function syncDeveloperModeWindowBounds() {
+    const panel = getDeveloperModeWindow();
+    const mainWindow = getMainWindow();
+    if (!panel || !mainWindow || mainWindow.isDestroyed() || syncingDeveloperModeBounds) return;
+
+    syncingDeveloperModeBounds = true;
+    try {
+      const mainBounds = mainWindow.getBounds();
+      const display = screen.getDisplayMatching(mainBounds);
+      const workArea = display.workArea;
+      const panelWidth = DEVELOPER_MODE_PANEL_WIDTH;
+      const panelHeight = mainBounds.height;
+      let mainX = mainBounds.x;
+      let mainY = mainBounds.y;
+
+      if (mainX + mainBounds.width + DEVELOPER_MODE_PANEL_GAP + panelWidth > workArea.x + workArea.width) {
+        mainX = Math.max(workArea.x, workArea.x + workArea.width - mainBounds.width - panelWidth - DEVELOPER_MODE_PANEL_GAP);
+      }
+      if (mainY + panelHeight > workArea.y + workArea.height) {
+        mainY = Math.max(workArea.y, workArea.y + workArea.height - panelHeight);
+      }
+
+      if (mainX !== mainBounds.x || mainY !== mainBounds.y) {
+        mainWindow.setBounds({ x: mainX, y: mainY, width: mainBounds.width, height: mainBounds.height }, false);
+      }
+
+      if (typeof panel.setMinimumSize === 'function') panel.setMinimumSize(panelWidth, panelHeight);
+      if (typeof panel.setMaximumSize === 'function') panel.setMaximumSize(panelWidth, panelHeight);
+      panel.setBounds({
+        x: mainX + mainBounds.width + DEVELOPER_MODE_PANEL_GAP,
+        y: mainY,
+        width: panelWidth,
+        height: panelHeight,
+      }, false);
+    } finally {
+      syncingDeveloperModeBounds = false;
+    }
+  }
+
+  function closeDeveloperModeWindow() {
+    const panel = getDeveloperModeWindow();
+    if (panel) {
+      allowDeveloperModeWindowClose = true;
+      panel.close();
+      allowDeveloperModeWindowClose = false;
+    }
+    developerModeWindow = null;
+  }
+
+  function openDeveloperModeWindow() {
+    const mainWindow = getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+
+    if (developerModeWindow && !developerModeWindow.isDestroyed()) {
+      syncDeveloperModeWindowBounds();
+      developerModeWindow.show();
+      return developerModeWindow;
+    }
+
+    const icon = createAppIconImage();
+    developerModeWindow = new BrowserWindow({
+      width: DEVELOPER_MODE_PANEL_WIDTH,
+      height: mainWindow.getBounds().height,
+      minWidth: DEVELOPER_MODE_PANEL_WIDTH,
+      maxWidth: DEVELOPER_MODE_PANEL_WIDTH,
+      minHeight: mainWindow.getBounds().height,
+      maxHeight: mainWindow.getBounds().height,
+      title: `${APP_NAME} Developer Mode`,
+      show: false,
+      frame: false,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      movable: false,
+      skipTaskbar: true,
+      parent: mainWindow,
+      ...(icon ? { icon } : {}),
+      webPreferences: {
+        preload: path.join(__dirname, '../preload/index.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+      },
+    });
+
+    developerModeWindow.setMenuBarVisibility(false);
+    developerModeWindow.loadFile(path.join(__dirname, '../renderer/developer-mode-panel.html'));
+    developerModeWindow.once('ready-to-show', () => {
+      syncDeveloperModeWindowBounds();
+      if (developerModeWindow && !developerModeWindow.isDestroyed()) developerModeWindow.show();
+      sendToRenderer(IPC_EVENTS.DEV_MODE_PANEL_COMMAND, { action: 'request-state' });
+    });
+    developerModeWindow.on('closed', () => {
+      developerModeWindow = null;
+      const currentMainWindow = getMainWindow();
+      if (currentMainWindow && !currentMainWindow.isDestroyed()) {
+        currentMainWindow.webContents.send(IPC_EVENTS.DEV_MODE_PANEL_COMMAND, { action: 'panel-closed' });
+      }
+    });
+    developerModeWindow.on('close', (event) => {
+      if (allowDeveloperModeWindowClose) return;
+      event.preventDefault();
+      sendToRenderer(IPC_EVENTS.DEV_MODE_PANEL_COMMAND, { action: 'request-state' });
+    });
+    return developerModeWindow;
+  }
+
   function createWindow() {
     const savedScale = configStore.get('uiScale') || 100;
     const zoomFactor = Math.max(0.5, Math.min(3.0, savedScale / 100));
@@ -136,6 +253,7 @@ function createAppShell(deps) {
         console.log('[StartupTrace] main window did-finish-load');
       }
       pushInitialState();
+      if (configStore.get('debugEnabled')) openDeveloperModeWindow();
     });
 
     if (!app.isPackaged) {
@@ -158,7 +276,25 @@ function createAppShell(deps) {
       if (process.env.NEKO_STARTUP_TRACE === '1') {
         console.log('[StartupTrace] main window closed');
       }
+      closeDeveloperModeWindow();
       setMainWindow(null);
+    });
+
+    mainWindow.on('move', syncDeveloperModeWindowBounds);
+    mainWindow.on('resize', syncDeveloperModeWindowBounds);
+    mainWindow.on('restore', () => {
+      if (configStore.get('debugEnabled')) openDeveloperModeWindow();
+    });
+    mainWindow.on('show', () => {
+      if (configStore.get('debugEnabled')) openDeveloperModeWindow();
+    });
+    mainWindow.on('minimize', () => {
+      const panel = getDeveloperModeWindow();
+      if (panel) panel.hide();
+    });
+    mainWindow.on('hide', () => {
+      const panel = getDeveloperModeWindow();
+      if (panel) panel.hide();
     });
 
     mainWindow.on('close', (event) => {
@@ -470,6 +606,10 @@ function createAppShell(deps) {
     getTrayIconPath,
     createAppIconImage,
     pickPrivacyWindow,
+    getDeveloperModeWindow,
+    openDeveloperModeWindow,
+    closeDeveloperModeWindow,
+    syncDeveloperModeWindowBounds,
   };
 }
 

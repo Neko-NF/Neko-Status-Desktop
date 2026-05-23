@@ -14,6 +14,7 @@ test('ipc index exports domain registrars and generic helpers', () => {
     'registerSystemIpc',
     'registerServiceIpc',
     'registerUpdateIpc',
+    'registerDeveloperModeIpc',
   ]) {
     assert.equal(typeof ipc[name], 'function', `${name} should be exported`);
   }

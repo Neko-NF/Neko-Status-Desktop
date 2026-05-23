@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
     UPDATE_AUTO_DOWNLOADED: 'update:autoDownloaded',
     UPDATE_AUTO_DOWNLOAD_FAILED: 'update:autoDownloadFailed',
     SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
+    DEV_MODE_PANEL_COMMAND: 'dev:modePanel:command',
+    DEV_MODE_PANEL_STATE: 'dev:modePanel:state',
   };
   const consoleNavEntry = document.getElementById('navConsole');
   const setExpandableSectionState = window._nekoUIHelpers?.setExpandableSectionState
@@ -706,6 +708,53 @@ document.addEventListener('DOMContentLoaded', () => {
     getPendingInstall: () => callUpdate('getPendingInstall', 'getPendingInstall'),
     checkIntegrity: () => callUpdate('checkIntegrity', 'checkIntegrity'),
   };
+
+  async function getDeveloperBackendSnapshot(options = {}) {
+    const includeNetwork = options.includeNetwork === true;
+    const [version, serviceRunning, processInfo, metrics, cacheSize, config] = await Promise.all([
+      callSystem('getVersion', 'getVersion').catch(() => null),
+      callService('isRunning', 'isRunning').catch(() => false),
+      callService('getProcessInfo', 'getProcessInfo').catch(() => null),
+      callSystem('getMetrics', 'getMetrics').catch(() => null),
+      callSystem('getCacheSize', 'getCacheSize').catch(() => 0),
+      callConfig('getAll', 'getAllConfig').catch(() => ({})),
+    ]);
+    const snapshot = {
+      ipcReady: !!ipcClient?.isReady?.(),
+      version,
+      serviceRunning: !!serviceRunning,
+      processInfo,
+      metrics,
+      cacheSize,
+      configMode: config?.serverMode || 'production',
+    };
+    if (includeNetwork) {
+      const serverUrl = config?.serverMode === 'local' ? config.serverUrlLocal : config?.serverUrlProd;
+      const apiProbe = callApi('testConnection', 'testConnection', serverUrl).catch((error) => ({
+        ok: false,
+        error: error.message,
+      }));
+      const timeoutProbe = new Promise((resolve) => {
+        setTimeout(() => resolve({ ok: false, error: 'API 探测超时' }), 5000);
+      });
+      snapshot.api = await Promise.race([apiProbe, timeoutProbe]);
+    }
+    return snapshot;
+  }
+
+  const developerMode = window._nekoModules?.components?.DeveloperMode?.create?.({
+    getConfig: (key) => callConfig('get', 'getConfig', key),
+    setConfig: (key, value) => callConfig('set', 'setConfig', key, value),
+    getBackendSnapshot: getDeveloperBackendSnapshot,
+    addLogLine,
+    notify: showNekoIsland,
+    openPanel: () => ipcClient.invoke('openDeveloperModePanel'),
+    closePanel: () => ipcClient.invoke('closeDeveloperModePanel'),
+    updatePanel: (payload) => ipcClient.invoke('updateDeveloperModePanel', payload),
+    onPanelCommand: (handler) => ipcClient.on(IPC_EVENTS.DEV_MODE_PANEL_COMMAND, handler),
+  });
+  developerMode?.init?.();
+
   const developerConsole = window._nekoModules?.components?.DeveloperConsole?.createCommandRegistry?.({
     addLogLine,
     clearOutput: () => { if (consoleOutput) consoleOutput.innerHTML = ''; },

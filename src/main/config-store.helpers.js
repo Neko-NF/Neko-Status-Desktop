@@ -28,6 +28,8 @@ const DEFAULTS = {
   uiScale: 100,
   uiFont: '',
   debugEnabled: false,
+  developerUiInspectEnabled: false,
+  developerUiInspectIncludeHidden: false,
   enableNotification: true,
   doNotDisturb: false,
   enableIncognito: false,

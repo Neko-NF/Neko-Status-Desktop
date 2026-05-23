@@ -87,6 +87,10 @@ const IPC_CHANNELS = Object.freeze({
   CACHE_GET_SIZE: 'cache:getSize',
 
   DEV_RENDERER_ERROR: 'dev:rendererError',
+  DEV_MODE_PANEL_OPEN: 'dev:modePanel:open',
+  DEV_MODE_PANEL_CLOSE: 'dev:modePanel:close',
+  DEV_MODE_PANEL_COMMAND: 'dev:modePanel:command',
+  DEV_MODE_PANEL_STATE: 'dev:modePanel:state',
 });
 
 const IPC_EVENTS = Object.freeze({
@@ -102,6 +106,8 @@ const IPC_EVENTS = Object.freeze({
   UPDATE_AUTO_DOWNLOAD_FAILED: 'update:autoDownloadFailed',
   STARTUP_UPDATE_STATUS: 'startup-update:status',
   SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
+  DEV_MODE_PANEL_COMMAND: 'dev:modePanel:command',
+  DEV_MODE_PANEL_STATE: 'dev:modePanel:state',
 });
 
 function createIpcSuccess(data) {

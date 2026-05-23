@@ -1344,3 +1344,52 @@ test('developer console registry parses aliases and delegates commands', async (
     'clearOutput',
   ]);
 });
+
+test('developer mode extracts UI metadata without direct IPC access', () => {
+  const context = {
+    window: {
+      innerWidth: 1280,
+      innerHeight: 720,
+      getComputedStyle: () => ({
+        position: 'fixed',
+        zIndex: '24',
+        transitionDuration: '0.2s',
+        animationName: 'none',
+        backdropFilter: 'blur(8px)',
+        maskImage: 'none',
+        overflow: 'hidden',
+      }),
+    },
+    console,
+  };
+  context.window.window = context.window;
+
+  loadBrowserScript(context, 'src/renderer/js/components/developer-mode.js');
+
+  const attrs = new Map([
+    ['type', 'button'],
+    ['title', 'Save config'],
+  ]);
+  const el = {
+    tagName: 'BUTTON',
+    id: 'saveConfigBtn',
+    dataset: { section: 'settings' },
+    classList: ['action-btn', 'primary'],
+    getAttribute: (key) => attrs.get(key) || '',
+    getBoundingClientRect: () => ({ width: 120, height: 40 }),
+    matches: (selector) => selector.includes('#page-settings'),
+    closest: () => ({ id: 'page-settings' }),
+  };
+
+  const info = context.window._nekoModules.components.DeveloperMode.inspectElement(el);
+  assert.equal(context.window._nekoModules.components.DeveloperMode.CONFIG_KEYS.MODE, 'debugEnabled');
+  assert.equal(info.name, 'settings');
+  assert.equal(info.selector, '#saveConfigBtn');
+  assert.equal(info.role, 'button');
+  assert.equal(info.sourceOwner, 'SettingsPage');
+  assert.equal(info.sourceFile, 'src/renderer/js/pages/settings.page.js');
+  assert.equal(info.size, '120x40');
+  assert.match(info.features, /position=fixed/);
+  assert.match(info.features, /transition=0.2s/);
+  assert.match(info.features, /backdrop-filter/);
+});

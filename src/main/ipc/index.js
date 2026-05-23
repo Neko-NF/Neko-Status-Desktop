@@ -17,6 +17,7 @@ const { registerApiIpc } = require('./api.ipc');
 const { registerAuthIpc } = require('./auth.ipc');
 const { registerServiceIpc } = require('./service.ipc');
 const { registerUpdateIpc } = require('./update.ipc');
+const { registerDeveloperModeIpc } = require('./developer-mode.ipc');
 
 module.exports = {
   registerInvokeHandlers,
@@ -28,4 +29,5 @@ module.exports = {
   registerAuthIpc,
   registerServiceIpc,
   registerUpdateIpc,
+  registerDeveloperModeIpc,
 };

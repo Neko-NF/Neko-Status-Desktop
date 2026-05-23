@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neko Status - 开发者模式</title>
+    <link rel="stylesheet" href="../../node_modules/@phosphor-icons/web/src/regular/style.css">
+    <link rel="stylesheet" href="./css/tokens.css">
+    <link rel="stylesheet" href="./css/developer-mode-panel.css">
+</head>
+<body>
+    <main class="dev-panel-shell">
+        <header class="dev-panel-header">
+            <div class="dev-panel-brand">
+                <span class="dev-panel-mark"><i class="ph ph-brackets-curly"></i></span>
+                <h1>开发者模式</h1>
+            </div>
+            <button class="dev-icon-btn" id="closePanelBtn" title="关闭开发者模式">
+                <i class="ph ph-x"></i>
+            </button>
+        </header>
+
+        <section class="dev-action-grid">
+            <button class="dev-action-btn" id="toggleInspectBtn">
+                <i class="ph ph-selection"></i>
+                <span>UIUX 辅助线</span>
+            </button>
+            <button class="dev-action-btn" id="refreshBackendBtn">
+                <i class="ph ph-plugs-connected"></i>
+                <span>后端状态</span>
+            </button>
+            <button class="dev-action-btn" id="rescanBtn">
+                <i class="ph ph-crosshair"></i>
+                <span>重新扫描</span>
+            </button>
+        </section>
+
+        <section class="dev-panel-card">
+            <div class="dev-section-head">
+                <span>后端快照</span>
+                <small>既有 IPC 安全读取</small>
+            </div>
+            <div class="dev-backend-grid" id="backendList"></div>
+        </section>
+
+        <section class="dev-panel-card dev-panel-card-fill">
+            <div class="dev-section-head">
+                <span>UIUX 定位</span>
+                <small id="inspectHint">点击辅助框锁定元素</small>
+            </div>
+            <div class="dev-inline-setting">
+                <span>包含隐藏层</span>
+                <button class="dev-switch" id="includeHiddenSwitch" type="button" aria-pressed="false">
+                    <span></span>
+                </button>
+            </div>
+            <div class="dev-empty" id="inspectEmpty">未选中元素</div>
+            <div class="dev-details" id="inspectDetails" hidden></div>
+        </section>
+    </main>
+
+    <script src="./js/developer-mode-panel.js"></script>
+</body>
+</html>

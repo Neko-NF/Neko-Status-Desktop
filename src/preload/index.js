@@ -123,6 +123,11 @@ function createRendererBridge() {
     emitRendererError(payload) {
       ipcRenderer.send(IPC_CHANNELS.DEV_RENDERER_ERROR, payload);
     },
+
+    openDeveloperModePanel: () => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_OPEN),
+    closeDeveloperModePanel: () => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_CLOSE),
+    sendDeveloperModePanelCommand: (payload) => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_COMMAND, payload),
+    updateDeveloperModePanel: (payload) => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_STATE, payload),
   };
 }
 
