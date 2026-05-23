@@ -1180,7 +1180,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 }
 .update-source-carousel-stack {
     display: grid;
-    grid-template-rows: minmax(150px, auto) 18px;
+    grid-template-rows: minmax(150px, auto) 26px;
     gap: 8px;
     min-width: 0;
 }
@@ -1235,27 +1235,66 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     cursor: default;
 }
 .update-source-dots {
-    display: flex;
+    display: inline-flex;
     justify-content: center;
     align-items: center;
-    gap: 6px;
-    min-height: 18px;
+    gap: 4px;
+    min-height: 26px;
+    padding: 0;
     margin-bottom: 0;
     align-self: center;
+    border-radius: 999px;
 }
 .update-source-dot {
-    width: 6px;
-    height: 6px;
+    width: 22px;
+    height: 22px;
     border: 0;
     border-radius: 999px;
     padding: 0;
-    background: color-mix(in srgb, var(--text-main) 22%, transparent);
+    background: transparent;
     cursor: pointer;
-    transition: width 0.2s ease, background 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.update-source-dot span {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-main) 24%, transparent);
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 0.78;
+    transform: scale(1);
+    transition:
+        background 0.22s ease,
+        box-shadow 0.22s ease,
+        opacity 0.22s ease,
+        transform 0.28s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.update-source-dot:hover {
+    transform: translateY(-1px);
+}
+.update-source-dot:hover span {
+    background: color-mix(in srgb, var(--theme-color) 56%, var(--text-main));
+    opacity: 0.95;
+    transform: scale(1.18);
+}
+.update-source-dot:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--theme-color) 44%, transparent);
+    outline-offset: 2px;
 }
 .update-source-dot.active {
-    width: 18px;
+    transform: translateY(-1px);
+}
+.update-source-dot.active span {
     background: var(--theme-color);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--theme-color) 46%, transparent);
+    opacity: 1;
+    transform: scale(1.36);
+}
+.update-source-dots.is-switching .update-source-dot.active span {
+    animation: updateSourceDotPulse 0.34s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 .update-source-chip {
     flex: 0 0 100%;
@@ -1481,6 +1520,39 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     color: var(--theme-color);
     font-weight: 800;
 }
+.update-source-probe-btn {
+    width: 100%;
+    min-width: 120px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid color-mix(in srgb, var(--theme-color) 24%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--theme-color) 8%, transparent);
+    color: var(--theme-color);
+    font-size: var(--type-label-caps-size);
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+.update-source-probe-btn i {
+    font-size: 16px;
+    line-height: 1;
+}
+.update-source-probe-btn span {
+    white-space: nowrap;
+}
+.update-source-probe-btn:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--theme-color) 42%, transparent);
+    background: color-mix(in srgb, var(--theme-color) 13%, transparent);
+}
+.update-source-probe-btn:disabled {
+    opacity: 0.62;
+    cursor: wait;
+}
 .update-source-status-pill {
     min-width: 76px;
     min-height: 24px;
@@ -1627,7 +1699,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 .update-source-form {
     grid-area: form;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 210px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     align-items: center;
     gap: 10px;
     min-width: 0;
@@ -1635,6 +1707,13 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 }
 .update-source-input-wrap {
     margin-bottom: 0;
+    min-width: 0;
+}
+.update-source-actions {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.9fr) minmax(150px, 1.1fr);
+    align-items: stretch;
+    gap: 10px;
     min-width: 0;
 }
 .update-source-save-btn {
@@ -1650,6 +1729,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
         gap: 12px;
     }
     .update-source-form { grid-template-columns: 1fr; }
+    .update-source-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 
 @media (max-width: 560px) {
@@ -1691,6 +1771,11 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     0%, 100% { opacity: 0.52; }
     50% { opacity: 1; }
 }
+@keyframes updateSourceDotPulse {
+    0% { transform: scale(0.78); opacity: 0.58; box-shadow: 0 0 0 0 transparent; }
+    60% { transform: scale(1.5); opacity: 1; box-shadow: 0 0 12px color-mix(in srgb, var(--theme-color) 50%, transparent); }
+    100% { transform: scale(1.36); opacity: 1; box-shadow: 0 0 10px color-mix(in srgb, var(--theme-color) 46%, transparent); }
+}
 
 /* Update source UIUX refresh: larger touch targets, theme-safe surfaces, denser card content. */
 .update-source-card {
@@ -1729,8 +1814,8 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     overflow: visible;
 }
 .update-source-carousel-stack {
-    grid-template-rows: minmax(236px, 1fr) 24px;
-    gap: 12px;
+    grid-template-rows: minmax(236px, 1fr) 28px;
+    gap: 10px;
     height: 100%;
     overflow: visible;
 }
@@ -1778,12 +1863,13 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     background: color-mix(in srgb, var(--theme-color) 12%, var(--glass-bg-solid));
     transform: translateY(-50%) scale(1.08);
 }
-.update-source-dot {
-    width: 8px;
-    height: 8px;
+.update-source-dots {
+    min-height: 28px;
+    gap: 6px;
 }
-.update-source-dot.active {
-    width: 22px;
+.update-source-dot {
+    width: 24px;
+    height: 24px;
 }
 .update-source-chip {
     position: absolute;
@@ -2251,7 +2337,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     font-size: 13px;
 }
 .update-source-form {
-    grid-template-columns: minmax(0, 1fr) 210px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     gap: 12px;
 }
 .update-source-save-btn {
@@ -2308,6 +2394,15 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
         width: 100%;
     }
     .update-source-form {
+        grid-template-columns: 1fr;
+    }
+    .update-source-actions {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 420px) {
+    .update-source-actions {
         grid-template-columns: 1fr;
     }
 }

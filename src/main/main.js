@@ -28,7 +28,7 @@ if (process.env.NEKO_DISABLE_HW_ACCEL === '1') {
 
 // ─── 热重载（仅开发环境）────────────────────────────────────────────
 // 监听整个 src/ 目录（含 renderer）；传入 electron 可执行文件路径使主进程变更时硬重启
-if (!app.isPackaged) {
+if (!app.isPackaged && process.env.NEKO_PARENT_DEV_WATCH !== '1') {
   try {
     require('electron-reload')(path.join(__dirname, '../../src'), {
       electron: require('electron'),  // electron 包导出的即是 exe 绝对路径
@@ -61,6 +61,7 @@ const {
   getActiveUpdateSource,
   getSavedUpdateSources,
   getUpdateSourceMode,
+  getUpdateSourceKind,
   buildReleaseHeaders,
   buildDownloadHeadersForUrl,
   pickAssetDownloadUrl,
@@ -744,6 +745,7 @@ async function buildUpdateResultFromReleaseList(all, source, channel) {
       hasUpdate: false,
       channel,
       sourceType: source.type,
+      sourceKind: getUpdateSourceKind(source),
       sourceId: source.id,
       sourceLabel: source.label,
       currentVersion: APP_VERSION,
@@ -760,6 +762,7 @@ async function buildUpdateResultFromReleaseList(all, source, channel) {
         hasUpdate: false,
         channel,
         sourceType: source.type,
+        sourceKind: getUpdateSourceKind(source),
         sourceId: source.id,
         sourceLabel: source.label,
         currentVersion: APP_VERSION,
@@ -775,6 +778,7 @@ async function buildUpdateResultFromReleaseList(all, source, channel) {
         hasUpdate: false,
         channel,
         sourceType: source.type,
+        sourceKind: getUpdateSourceKind(source),
         sourceId: source.id,
         sourceLabel: source.label,
         currentVersion: APP_VERSION,
@@ -802,6 +806,7 @@ async function buildUpdateResultFromReleaseList(all, source, channel) {
     hasUpdate,
     channel,
     sourceType: source.type,
+    sourceKind: getUpdateSourceKind(source),
     sourceId: source.id,
     sourceLabel: source.label,
     releasePageUrl: source.releasePageUrl,
@@ -827,6 +832,7 @@ async function checkSourceForUpdates(source, channel, options = {}) {
       hasUpdate: false,
       channel,
       sourceType: source.type,
+      sourceKind: getUpdateSourceKind(source),
       sourceId: source.id,
       sourceLabel: source.label,
       currentVersion: APP_VERSION,
@@ -858,6 +864,7 @@ async function checkSourceForUpdates(source, channel, options = {}) {
 
           return {
             ...result,
+            sourceKind: getUpdateSourceKind(source),
             sourceLatencyMs: Date.now() - startedAt,
             downloadSpeedBytesPerSecond: speedEstimate.bytesPerSecond || 0,
             downloadSpeedSampleBytes: speedEstimate.sampledBytes || 0,
@@ -893,6 +900,7 @@ async function checkSourceForUpdates(source, channel, options = {}) {
 
     return {
       ...result,
+      sourceKind: getUpdateSourceKind(source),
       sourceLatencyMs: Date.now() - startedAt,
       downloadSpeedBytesPerSecond: speedEstimate.bytesPerSecond || 0,
       downloadSpeedSampleBytes: speedEstimate.sampledBytes || 0,
@@ -905,6 +913,7 @@ async function checkSourceForUpdates(source, channel, options = {}) {
       hasUpdate: false,
       channel,
       sourceType: source.type,
+      sourceKind: getUpdateSourceKind(source),
       sourceId: source.id,
       sourceLabel: source.label,
       currentVersion: APP_VERSION,
@@ -943,23 +952,37 @@ async function checkForUpdates(options = {}) {
       };
     }
 
+    const probeOptions = { ...options, estimateSpeed: false };
     const results = options.parallelSources === false
       ? []
       : await Promise.all(sources.map(async (source) => ({
-        ...(await checkSourceForUpdates(source, channel, options)),
+        ...(await checkSourceForUpdates(source, channel, probeOptions)),
         sourceMode: 'smart',
       })));
     if (options.parallelSources === false) {
       for (const source of sources) {
-        const result = await checkSourceForUpdates(source, channel, options);
+        const result = await checkSourceForUpdates(source, channel, probeOptions);
         results.push({ ...result, sourceMode: 'smart' });
       }
     }
 
     const healthy = results.filter((result) => !result.error);
-    const best = (healthy.length ? healthy : results)
+    let best = (healthy.length ? healthy : results)
       .slice()
       .sort((a, b) => scoreUpdateSourceResult(a) - scoreUpdateSourceResult(b))[0];
+    const downloadUrl = best?.exeDownloadUrl || best?.zipDownloadUrl;
+    if (downloadUrl && options.estimateSpeed !== false) {
+      const speedEstimate = await estimateDownloadSpeed(downloadUrl, configStore);
+      best = {
+        ...best,
+        downloadSpeedBytesPerSecond: speedEstimate.bytesPerSecond || 0,
+        downloadSpeedSampleBytes: speedEstimate.sampledBytes || 0,
+        downloadSpeedSampleMs: speedEstimate.durationMs || 0,
+        downloadSpeedProbeMethod: speedEstimate.method || 'failed',
+      };
+      const bestIndex = results.findIndex((result) => result.sourceId === best.sourceId);
+      if (bestIndex >= 0) results[bestIndex] = best;
+    }
 
     return {
       ...best,
@@ -967,6 +990,7 @@ async function checkForUpdates(options = {}) {
       smartSources: results.map((result) => ({
         sourceId: result.sourceId,
         sourceType: result.sourceType,
+        sourceKind: result.sourceKind,
         sourceLabel: result.sourceLabel,
         latencyMs: result.sourceLatencyMs,
         downloadSpeedBytesPerSecond: result.downloadSpeedBytesPerSecond || 0,

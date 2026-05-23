@@ -7,7 +7,15 @@ const electronBinary = require('electron');
 const projectRoot = path.resolve(__dirname, '..');
 const childEnv = { ...process.env };
 const extraArgs = [];
+const WATCHED_SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.css', '.html', '.json']);
 let didRetryWithGpuFallback = false;
+let activeChild = null;
+let restartTimer = null;
+let restartingForFileChange = false;
+let currentUseGpuFallback = false;
+let watcherStarted = false;
+let watcherReadyAt = 0;
+let watchedFileMtimes = new Map();
 
 function findRcedit() {
   if (process.env.RCEDIT_PATH && fs.existsSync(process.env.RCEDIT_PATH)) return process.env.RCEDIT_PATH;
@@ -128,8 +136,97 @@ function shouldRetryWithGpuFallback(code, stderrText) {
   return /GPU process isn't usable|gpu_process_host|exit_code=-1073741515/i.test(stderrText);
 }
 
+function isWatchableSourceFile(relativeFile) {
+  const normalized = String(relativeFile || '').replace(/\\/g, '/');
+  if (!normalized || normalized.includes('/.') || normalized.startsWith('.')) return false;
+  const ext = path.extname(normalized).toLowerCase();
+  return WATCHED_SOURCE_EXTENSIONS.has(ext);
+}
+
+function getSourceFileMtime(watchRoot, relativeFile) {
+  const absoluteFile = path.join(watchRoot, relativeFile);
+  try {
+    const stat = fs.statSync(absoluteFile);
+    return stat.isFile() ? stat.mtimeMs : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function snapshotSourceMtimes(watchRoot) {
+  const mtimes = new Map();
+  const stack = [''];
+  while (stack.length) {
+    const current = stack.pop();
+    const absoluteDir = path.join(watchRoot, current);
+    let entries = [];
+    try {
+      entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const relativePath = current ? path.join(current, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.')) stack.push(relativePath);
+        continue;
+      }
+      if (!entry.isFile() || !isWatchableSourceFile(relativePath)) continue;
+      mtimes.set(relativePath.replace(/\\/g, '/'), getSourceFileMtime(watchRoot, relativePath));
+    }
+  }
+  return mtimes;
+}
+
+function didSourceFileReallyChange(watchRoot, relativeFile) {
+  if (!isWatchableSourceFile(relativeFile)) return false;
+  if (Date.now() < watcherReadyAt) return false;
+  const normalized = String(relativeFile || '').replace(/\\/g, '/');
+  const mtime = getSourceFileMtime(watchRoot, normalized);
+  const previous = watchedFileMtimes.get(normalized) || 0;
+  if (!mtime || Math.abs(mtime - previous) < 1) return false;
+  watchedFileMtimes.set(normalized, mtime);
+  return true;
+}
+
+function setupDevWatcher() {
+  if (watcherStarted || childEnv.NEKO_DISABLE_DEV_WATCH === '1') return;
+  watcherStarted = true;
+
+  const watchRoot = path.join(projectRoot, 'src');
+  watchedFileMtimes = snapshotSourceMtimes(watchRoot);
+  watcherReadyAt = Date.now() + 900;
+  try {
+    fs.watch(watchRoot, { recursive: true }, (_eventType, filename) => {
+      const changedFile = String(filename || '').replace(/\\/g, '/');
+      if (!didSourceFileReallyChange(watchRoot, changedFile)) return;
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => {
+        if (!activeChild || activeChild.killed) return;
+        restartingForFileChange = true;
+        console.log(`[start-electron] source changed: ${changedFile}; restarting Electron...`);
+        activeChild.kill();
+        if (process.platform === 'win32') {
+          const pid = activeChild.pid;
+          setTimeout(() => {
+            if (activeChild && activeChild.pid === pid && !activeChild.killed) {
+              try {
+                cp.execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+              } catch {}
+            }
+          }, 1500).unref?.();
+        }
+      }, 280);
+    });
+    console.log(`[start-electron] watching ${watchRoot} for dev restarts.`);
+  } catch (err) {
+    console.warn(`[start-electron] failed to watch ${watchRoot}: ${err.message}`);
+  }
+}
+
 function startElectron(useGpuFallback = childEnv.NEKO_DISABLE_HW_ACCEL === '1') {
   const env = { ...childEnv };
+  currentUseGpuFallback = useGpuFallback;
   const args = [];
   if (useGpuFallback) {
     env.NEKO_DISABLE_HW_ACCEL = '1';
@@ -138,12 +235,15 @@ function startElectron(useGpuFallback = childEnv.NEKO_DISABLE_HW_ACCEL === '1') 
   args.push(projectRoot, ...extraArgs);
   const runtimeBinary = getDevElectronBinary();
   env.NEKO_DEV_RUNTIME_EXE = runtimeBinary;
+  env.NEKO_PARENT_DEV_WATCH = '1';
 
   const child = spawn(runtimeBinary, args, {
     stdio: ['inherit', 'pipe', 'pipe'],
     windowsHide: false,
     env,
   });
+  activeChild = child;
+  setupDevWatcher();
 
   let stderrText = '';
   child.stdout.on('data', (chunk) => process.stdout.write(chunk));
@@ -154,6 +254,13 @@ function startElectron(useGpuFallback = childEnv.NEKO_DISABLE_HW_ACCEL === '1') 
   });
 
   child.on('exit', (code, signal) => {
+    if (restartingForFileChange) {
+      restartingForFileChange = false;
+      activeChild = null;
+      startElectron(currentUseGpuFallback);
+      return;
+    }
+
     if (signal) {
       process.kill(process.pid, signal);
       return;
@@ -174,5 +281,15 @@ function startElectron(useGpuFallback = childEnv.NEKO_DISABLE_HW_ACCEL === '1') 
     process.exit(1);
   });
 }
+
+process.on('SIGINT', () => {
+  if (activeChild && !activeChild.killed) activeChild.kill();
+  process.exit(130);
+});
+
+process.on('SIGTERM', () => {
+  if (activeChild && !activeChild.killed) activeChild.kill();
+  process.exit(143);
+});
 
 startElectron();

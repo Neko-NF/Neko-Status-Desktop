@@ -640,6 +640,89 @@ test('update page renders animated and tiered update source diagnostics', () => 
   assert.match(panel.innerHTML, /640 ms/);
   assert.match(panel.innerHTML, /3\.0 MB\/s/);
   assert.match(panel.innerHTML, /is-good/);
+
+  page.renderSourceDiagnostics({
+    sourceId: 'personal-default',
+    sourceType: 'personal',
+    sourceLabel: 'Personal',
+    sourceLatencyMs: 9504,
+    downloadSpeedBytesPerSecond: 10.5 * 1024 * 1024,
+    hasInstaller: true,
+  }, { cfg });
+
+  assert.match(panel.className, /error/);
+  assert.match(panel.innerHTML, /连接过慢/);
+  assert.match(panel.innerHTML, /9504 ms/);
+});
+
+test('update source diagnostics runs once on entry and reruns from explicit controls', async () => {
+  function makeElement(id) {
+    const listeners = {};
+    return {
+      id,
+      innerHTML: '',
+      disabled: false,
+      dataset: {},
+      className: '',
+      setAttribute(name, value) { this[name] = value; },
+      addEventListener(type, handler) { listeners[type] = handler; },
+      dispatch(type, event = {}) { return listeners[type]?.({ target: this, currentTarget: this, ...event }); },
+    };
+  }
+
+  const panel = makeElement('updateSourceDiagnostics');
+  const probeBtn = makeElement('updateSourceProbeBtn');
+  const nav = makeElement('navUpdate');
+  const elements = new Map([
+    ['updateSourceDiagnostics', panel],
+    ['updateSourceProbeBtn', probeBtn],
+  ]);
+  let checks = 0;
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) { return elements.get(id) || null; },
+      querySelector(selector) {
+        return selector === '.nav-item[data-target="page-update"]' ? nav : null;
+      },
+      querySelectorAll() { return []; },
+    },
+    URL,
+    setInterval() { return 1; },
+    clearInterval() {},
+    Date,
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+  const page = context.window._nekoModules.pages.UpdatePage;
+  page.bindSourceControls({
+    checkUpdate: async () => {
+      checks += 1;
+      return {
+        sourceId: 'github-default',
+        sourceType: 'github',
+        sourceLabel: 'GitHub',
+        sourceLatencyMs: 120,
+        hasInstaller: true,
+      };
+    },
+  });
+
+  page.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(checks, 1);
+  assert.equal(probeBtn.disabled, false);
+
+  assert.equal(page.requestSourceDiagnosticsCheck({ reason: 'enter-update-page' }), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(checks, 1);
+
+  await probeBtn.dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(checks, 2);
 });
 
 test('screenshot page exposes activity helpers after page initialization', () => {

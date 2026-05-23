@@ -91,6 +91,17 @@
     return type === 'github' ? 'GitHub' : '个人仓库';
   }
 
+  function isOfficialSource(source = {}) {
+    return source.type === 'github'
+      && String(source.owner || '').toLowerCase() === 'neko-nf'
+      && String(source.repo || '').toLowerCase() === 'neko-status-desktop';
+  }
+
+  function sourceKindLabel(source = {}) {
+    if (isOfficialSource(source)) return '官方仓库';
+    return source.type === 'github' ? 'GitHub' : '个人仓库';
+  }
+
   function normalizeSourceLabel(label, type) {
     const value = String(label || '').trim();
     if (!value || /^local repo$/i.test(value) || /^personal$/i.test(value)) return sourceTypeLabel(type);
@@ -253,12 +264,24 @@
     return 'error';
   }
 
+  function scoreDiagnosticSource(item = {}) {
+    if (item.error) return Number.POSITIVE_INFINITY;
+    const latency = Number(item.sourceLatencyMs ?? item.latencyMs);
+    const speed = Number(pickDownloadSpeed(item));
+    const installerPenalty = item.hasInstaller ? 0 : 50000;
+    const updateBonus = item.hasUpdate ? -100000 : 0;
+    const speedBonus = Number.isFinite(speed) && speed > 0 ? -Math.min(speed / 1024, 25000) : 0;
+    return (Number.isFinite(latency) ? latency : 999999) + installerPenalty + updateBonus + speedBonus;
+  }
+
   function statusMeta(kind) {
     const map = {
       checking: { icon: 'ph-circle-notch', text: '检测中', className: 'checking' },
       success: { icon: 'ph-check-circle', text: '已检测', className: 'success' },
       best: { icon: 'ph-sparkle', text: '当前最优', className: 'success' },
       warn: { icon: 'ph-warning-circle', text: '资产缺失', className: 'warn' },
+      degraded: { icon: 'ph-gauge', text: '状态一般', className: 'warn' },
+      slow: { icon: 'ph-timer', text: '连接过慢', className: 'error' },
       error: { icon: 'ph-warning', text: '检测失败', className: 'error' },
       idle: { icon: 'ph-clock', text: '待检测', className: 'idle' },
     };
@@ -272,7 +295,7 @@
       document.querySelector('.nav-item[data-target="page-update"]')?.addEventListener('click', (event) => {
         event.currentTarget.classList.remove('has-update');
       });
-      this.requestSourceDiagnosticsCheck({ reason: 'enter-update-page' });
+      this.requestSourceDiagnosticsCheck({ reason: 'enter-update-page', oncePerSession: true });
     },
 
     buildSourceList,
@@ -318,11 +341,30 @@
       }, { elapsedMs });
     },
 
+    setSourceProbeButtonChecking(checking) {
+      const btn = $('updateSourceProbeBtn');
+      if (!btn) return;
+      btn.disabled = !!checking;
+      btn.innerHTML = checking
+        ? '<i class="ph ph-circle-notch ph-spin"></i><span>检测中</span>'
+        : '<i class="ph ph-gauge"></i><span>重新检测</span>';
+      btn.title = checking ? '检测中' : '重新检测更新源';
+      btn.setAttribute('aria-label', btn.title);
+    },
+
     requestSourceDiagnosticsCheck(options = {}) {
       const runner = this._runSourceDiagnosticsCheck;
-      if (this._sourceDiagnosticsRequestRunning || this._sourceDiagnosticTimerId) return false;
+      const isEnter = options.oncePerSession || options.reason === 'enter-update-page';
+      const cfg = options.cfg || this._lastSourceCfg || {};
+      const mode = options.mode || (cfg.updateSourceMode === 'smart' ? 'smart' : 'selected');
+      const isSmartEnter = isEnter && mode === 'smart';
+      if (!options.force && isSmartEnter && this._sourceDiagnosticsCheckedOnce) return false;
       if (typeof runner !== 'function') {
         this._pendingSourceDiagnosticsOnEnter = true;
+        return false;
+      }
+      if (this._sourceDiagnosticsRequestRunning || this._sourceDiagnosticTimerId) {
+        if (options.latestWins) this._queuedSourceDiagnosticsOptions = { ...options, force: true };
         return false;
       }
       const now = Date.now();
@@ -330,8 +372,26 @@
         return false;
       }
       this._lastSourceDiagnosticsRequestedAt = now;
-      runner();
+      if (isSmartEnter) this._sourceDiagnosticsCheckedOnce = true;
+      const requestSeq = (this._sourceDiagnosticsRequestSeq || 0) + 1;
+      this._sourceDiagnosticsRequestSeq = requestSeq;
+      runner({ ...options, requestSeq });
       return true;
+    },
+
+    scheduleSourceDiagnosticsCheck(options = {}, delayMs = 320) {
+      if (this._sourceDiagnosticsDebounceTimer) clearTimeout(this._sourceDiagnosticsDebounceTimer);
+      if (this._sourceDiagnosticsRequestRunning || this._sourceDiagnosticTimerId) {
+        this._sourceDiagnosticsRequestSeq = (this._sourceDiagnosticsRequestSeq || 0) + 1;
+      }
+      this._sourceDiagnosticsDebounceTimer = setTimeout(() => {
+        this._sourceDiagnosticsDebounceTimer = 0;
+        this.requestSourceDiagnosticsCheck({
+          ...options,
+          force: true,
+          latestWins: true,
+        });
+      }, delayMs);
     },
 
     renderSources(cfg = {}) {
@@ -415,9 +475,7 @@
         const modeLabel = mode === 'smart'
           ? (isPlaceholder ? '等待填写' : '参与智能检测')
           : (isPlaceholder ? '填写此槽' : (source.id === selected?.id ? '当前使用' : '点击切换'));
-        const typeLabel = isPlaceholder
-          ? '占位槽'
-          : (source.type === 'github' ? 'GitHub' : '个人仓库');
+        const typeLabel = isPlaceholder ? '占位槽' : sourceKindLabel(source);
         const host = isPlaceholder ? compactRepoUrl(source.baseUrl) : compactRepoUrl(source.baseUrl);
         const title = isPlaceholder ? '待添加更新源' : source.label;
         const repoUrl = isPlaceholder ? '示例：example.com/team/neko-status' : compactRepoUrl(source.repoUrl);
@@ -488,7 +546,24 @@
       this._renderedCarouselIndex = currentIndex;
 
       if (dots) {
-        dots.innerHTML = displaySources.map((source, index) => `<button type="button" class="update-source-dot${index === this._sourceCarouselIndex ? ' active' : ''}" data-source-index="${index}" aria-label="查看第 ${index + 1} 个${source.isPlaceholder ? '占位槽' : '更新源'}"></button>`).join('');
+        const isSwitching = renderedIndex !== currentIndex;
+        dots.classList.toggle('is-switching', isSwitching);
+        dots.dataset.direction = isSwitching && currentIndex > renderedIndex ? 'next' : (isSwitching ? 'prev' : 'idle');
+        dots.innerHTML = displaySources.map((source, index) => {
+          const isActive = index === this._sourceCarouselIndex;
+          const label = `查看第 ${index + 1} 个${source.isPlaceholder ? '占位槽' : '更新源'}`;
+          return `<button type="button" class="update-source-dot${isActive ? ' active' : ''}" data-source-index="${index}" aria-label="${escapeHtml(label)}"${isActive ? ' aria-current="true"' : ''}><span aria-hidden="true"></span></button>`;
+        }).join('');
+        if (isSwitching) {
+          const clearSwitching = typeof setTimeout === 'function'
+            ? setTimeout
+            : ((fn) => {
+              const scheduleFrame = window.requestAnimationFrame || ((run) => run());
+              scheduleFrame(fn);
+              return 0;
+            });
+          clearSwitching(() => dots.classList.remove('is-switching'), 320);
+        }
       }
       if (prevBtn) prevBtn.disabled = displaySources.length <= 1;
       if (nextBtn) nextBtn.disabled = displaySources.length <= 1;
@@ -506,12 +581,7 @@
       const smartItems = Array.isArray(diagnostics.smartSources) ? diagnostics.smartSources : [];
       const selectedSmart = smartItems.find((item) => item.sourceId === selected?.id);
       const smartBest = smartItems.find((item) => item.sourceId === diagnostics.sourceId)
-        || smartItems.slice().sort((a, b) => {
-          const aError = a.error ? 1 : 0;
-          const bError = b.error ? 1 : 0;
-          if (aError !== bError) return aError - bError;
-          return (Number(a.latencyMs) || Number.POSITIVE_INFINITY) - (Number(b.latencyMs) || Number.POSITIVE_INFINITY);
-        })[0];
+        || smartItems.slice().sort((a, b) => scoreDiagnosticSource(a) - scoreDiagnosticSource(b))[0];
       const sourceResult = mode === 'smart'
         ? (diagnostics.sourceId ? diagnostics : smartBest)
         : (diagnostics.sourceId === selected?.id ? diagnostics : selectedSmart);
@@ -529,15 +599,23 @@
         ? sourceResult.hasInstaller
         : !!(sourceResult?.exeDownloadUrl || sourceResult?.zipDownloadUrl);
       const isChecking = !!options.checking;
+      const latencyKind = isChecking ? 'checking' : latencyLevel(latency);
+      const speedKind = isChecking ? 'checking' : speedLevel(speed);
+      const installerKind = isChecking ? 'checking' : (sourceResult ? (hasInstaller ? 'good' : 'warn') : 'idle');
       const statusKind = isChecking
         ? 'checking'
         : (sourceResult?.error
           ? 'error'
-          : (sourceResult ? (hasInstaller ? (mode === 'smart' ? 'best' : 'success') : 'warn') : 'idle'));
+          : (!sourceResult
+            ? 'idle'
+            : (!hasInstaller
+              ? 'warn'
+              : (latencyKind === 'error'
+                ? 'slow'
+                : (speedKind === 'error' || latencyKind === 'warn' || speedKind === 'warn'
+                  ? 'degraded'
+                  : (mode === 'smart' ? 'best' : 'success'))))));
       const status = statusMeta(statusKind);
-      const latencyKind = isChecking ? 'checking' : latencyLevel(latency);
-      const speedKind = isChecking ? 'checking' : speedLevel(speed);
-      const installerKind = isChecking ? 'checking' : (sourceResult ? (hasInstaller ? 'good' : 'warn') : 'idle');
       const panel = $('updateSourceDiagnostics');
       if (!panel) return;
       panel.className = `update-source-diagnostics ${status.className}${isChecking ? ' is-checking' : ''}`;
@@ -585,25 +663,34 @@
         checkUpdate,
       } = deps;
 
-      const triggerSilentCheck = async () => {
+      const triggerSilentCheck = async (options = {}) => {
         if (typeof checkUpdate === 'function') {
+          const requestSeq = options.requestSeq || this._sourceDiagnosticsRequestSeq || 0;
           this._sourceDiagnosticsRequestRunning = true;
+          this.setSourceProbeButtonChecking(true);
           this.startSourceDiagnosticsCheck();
           try {
             const result = await checkUpdate();
-            this.finishSourceDiagnosticsCheck(result);
+            if (requestSeq === this._sourceDiagnosticsRequestSeq) this.finishSourceDiagnosticsCheck(result);
           } catch (e) {
-            this.failSourceDiagnosticsCheck(e);
+            if (requestSeq === this._sourceDiagnosticsRequestSeq) this.failSourceDiagnosticsCheck(e);
             console.error('[UpdatePage] silent check failed:', e);
           } finally {
             this._sourceDiagnosticsRequestRunning = false;
+            const queued = this._queuedSourceDiagnosticsOptions;
+            this._queuedSourceDiagnosticsOptions = null;
+            if (queued) {
+              this.requestSourceDiagnosticsCheck({ ...queued, force: true, latestWins: true });
+              return;
+            }
+            this.setSourceProbeButtonChecking(false);
           }
         }
       };
       this._runSourceDiagnosticsCheck = triggerSilentCheck;
       if (this._pendingSourceDiagnosticsOnEnter) {
         this._pendingSourceDiagnosticsOnEnter = false;
-        this.requestSourceDiagnosticsCheck({ force: true, reason: 'pending-enter-update-page' });
+        this.requestSourceDiagnosticsCheck({ force: true, reason: 'enter-update-page', oncePerSession: true });
       }
 
       const refresh = async (patch = {}) => {
@@ -611,6 +698,15 @@
         this.renderSources({ ...cfg, ...patch });
         return cfg;
       };
+
+      const probeBtn = $('updateSourceProbeBtn');
+      if (probeBtn && !probeBtn.dataset.probeBound) {
+        probeBtn.dataset.probeBound = 'true';
+        probeBtn.addEventListener('click', () => {
+          if (probeBtn.disabled) return;
+          this.requestSourceDiagnosticsCheck({ force: true, latestWins: true, reason: 'source-probe-button' });
+        });
+      }
 
       const rail = $('updateSourceRail');
       if (rail && !rail.dataset.dragBound) {
@@ -707,7 +803,6 @@
             this._sourcePendingDeleteId = '';
             this.renderSources({ ...cfg, ...payload });
             addLogLine('SUCCESS', `已删除更新源：${source.label}`);
-            triggerSilentCheck();
             return;
           }
 
@@ -718,7 +813,7 @@
           await setManyConfig?.(payload);
           this.renderSources({ ...cfg, ...payload });
           addLogLine('INFO', `已切换更新源：${source.label} - ${source.repoUrl}`);
-          triggerSilentCheck();
+          this.scheduleSourceDiagnosticsCheck({ reason: 'manual-source-selected' });
         });
       }
 
@@ -738,7 +833,7 @@
           await setManyConfig?.(payload);
           this.renderSources({ ...cfg, ...payload });
           addLogLine('INFO', `已切换更新源：${nextSource.label} - ${nextSource.repoUrl}`);
-          triggerSilentCheck();
+          this.scheduleSourceDiagnosticsCheck({ reason: 'manual-source-carousel' });
           return;
         }
         this.renderSources(cfg);
@@ -768,7 +863,6 @@
           await setConfig?.('updateSourceMode', mode);
           await refresh({ updateSourceMode: mode });
           addLogLine('INFO', `更新源模式：${mode === 'smart' ? '智能择优' : '手动选择'}`);
-          triggerSilentCheck();
         });
       });
 
@@ -825,7 +919,7 @@
           input.value = '';
           delete btn.dataset.editSourceId;
           delete btn.dataset.placeholderIndex;
-          triggerSilentCheck();
+          this.requestSourceDiagnosticsCheck({ force: true, reason: editSourceId ? 'source-updated' : 'source-added' });
           setTimeout(() => { btn.innerHTML = defaultSaveHtml || origHtml; btn.disabled = false; }, 1500);
         } catch (error) {
           addLogLine('ERROR', `更新源保存失败：${error.message}`);

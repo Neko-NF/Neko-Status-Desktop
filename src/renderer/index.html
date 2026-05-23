@@ -1301,9 +1301,14 @@
                         <div class="update-source-input-wrap">
                             <input type="text" class="glass-input" id="updateSourceInput" placeholder="GitHub 或个人服务器仓库，如：https://git.koirin.com:39520/user/repo">
                         </div>
-                        <button class="action-btn primary update-source-save-btn" id="saveUpdateSourceBtn">
-                            <i class="ph ph-floppy-disk"></i> 保存更新源
-                        </button>
+                        <div class="update-source-actions">
+                            <button type="button" class="action-btn update-source-probe-btn" id="updateSourceProbeBtn" title="重新检测更新源" aria-label="重新检测更新源">
+                                <i class="ph ph-gauge"></i> <span>重新检测</span>
+                            </button>
+                            <button class="action-btn primary update-source-save-btn" id="saveUpdateSourceBtn">
+                                <i class="ph ph-floppy-disk"></i> 保存更新源
+                            </button>
+                        </div>
                     </div>
                 </div>
 

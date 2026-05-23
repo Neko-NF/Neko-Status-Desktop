@@ -63,10 +63,10 @@
 
   function getBatteryLevelInfo(level, isCharging, hasBattery) {
     if (hasBattery === false) return { text: 'AC', icon: 'ph-plug-charging', level: 'ok' };
-    if (isCharging) return { text: 'Charging', icon: 'ph-battery-charging', level: 'ok' };
+    if (isCharging) return { text: 'AC', icon: 'ph-plug-charging', level: 'ok' };
     if (level <= 20) return { text: 'Low', icon: 'ph-battery-low', level: 'error' };
-    if (level <= 50) return { text: 'Medium', icon: 'ph-battery-medium', level: 'warn' };
-    return { text: 'Good', icon: 'ph-battery-full', level: 'ok' };
+    if (level <= 50) return { text: 'Battery', icon: 'ph-battery-medium', level: 'warn' };
+    return { text: 'Battery', icon: 'ph-battery-full', level: 'ok' };
   }
 
   function getSparklineThemeColor() {

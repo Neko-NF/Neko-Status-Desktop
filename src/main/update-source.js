@@ -41,6 +41,17 @@ function parseRepoInput(input) {
   }
 }
 
+function isOfficialUpdateSource(source = {}) {
+  return source.type === 'github'
+    && String(source.owner || '').toLowerCase() === DEFAULT_GITHUB_OWNER.toLowerCase()
+    && String(source.repo || '').toLowerCase() === DEFAULT_GITHUB_REPO.toLowerCase();
+}
+
+function getUpdateSourceKind(source = {}) {
+  if (isOfficialUpdateSource(source)) return 'official';
+  return source.type === 'personal' ? 'personal' : 'github';
+}
+
 function normalizeSource(source, fallback = {}) {
   const type = source?.type === 'personal' ? 'personal' : 'github';
   const id = String(source?.id || fallback.id || `${type}-${source?.owner || fallback.owner || 'default'}-${source?.repo || fallback.repo || 'repo'}`).trim();
@@ -57,6 +68,7 @@ function normalizeSource(source, fallback = {}) {
   return {
     id,
     type,
+    kind: getUpdateSourceKind({ type, owner, repo }),
     label,
     owner,
     repo,
@@ -255,6 +267,8 @@ module.exports = {
   DEFAULT_PERSONAL_BASE_URL,
   parseRepoInput,
   normalizeSource,
+  isOfficialUpdateSource,
+  getUpdateSourceKind,
   getSavedUpdateSources,
   getSelectedUpdateSource,
   getUpdateSourceMode,

@@ -6,6 +6,7 @@ const {
   getActiveUpdateSource,
   getSavedUpdateSources,
   getUpdateSourceMode,
+  getUpdateSourceKind,
   buildDownloadHeadersForUrl,
   pickAssetDownloadUrl,
 } = require('../../src/main/update-source');
@@ -52,6 +53,12 @@ describe('update source helpers', () => {
     const sources = getSavedUpdateSources(config);
     assert.deepEqual(sources.map((source) => source.id), ['github-default', 'personal-default']);
     assert.equal(getActiveUpdateSource(config).type, 'personal');
+  });
+
+  it('classifies the built-in GitHub source separately from personal repositories', () => {
+    assert.equal(getUpdateSourceKind({ type: 'github', owner: 'Neko-NF', repo: 'Neko-Status-Desktop' }), 'official');
+    assert.equal(getUpdateSourceKind({ type: 'github', owner: 'someone', repo: 'fork' }), 'github');
+    assert.equal(getUpdateSourceKind({ type: 'personal', owner: 'NF', repo: 'Neko' }), 'personal');
   });
 
   it('lets saved disabled sources hide legacy defaults', () => {

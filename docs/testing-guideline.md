@@ -99,6 +99,8 @@ npm run test:smoke
 npm run dev
 ```
 
+`npm run dev` 必须启用源码监听：`scripts/start-electron.js` 负责 watch `src/`，当 main、preload、renderer、CSS 或 HTML 等源码文件的修改时间真实变化时，应自动重启 Electron 子进程。开发者验证 UI 修改时，不应依赖旧窗口手动刷新；如果窗口没有跟随源码变化，优先检查 dev 父进程日志中是否出现 `[start-electron] watching ...` 与 `source changed ... restarting Electron...`。监听器必须过滤目录噪声、临时文件和无 mtime 变化事件，避免开发版无源码保存时自我重启。只有在临时排查时才允许设置 `NEKO_DISABLE_DEV_WATCH=1` 关闭该行为。
+
 dev 日志必须确认：
 
 - 没有 `preload bridge missing`。
