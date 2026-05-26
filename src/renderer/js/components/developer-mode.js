@@ -16,11 +16,45 @@
     'textarea',
     'canvas',
     'img',
+    'svg',
+    'i[class*="ph-"]',
+    'i.ph',
+    '[class*="icon"]',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'p',
+    'label',
+    'legend',
+    'small',
+    'strong',
+    'em',
+    'code',
+    'kbd',
+    'span',
+    'li',
+    'td',
+    'th',
+    'dt',
+    'dd',
     '[role]',
     '[data-target]',
     '[data-section]',
+    '[data-dev-name]',
+    '[data-component]',
+    '[aria-label]',
+    '[title]',
     '.glass-card',
     '.metric-card',
+    '.kpi-value',
+    '.kpi-label',
+    '.section-title',
+    '.page-title',
+    '.settings-title',
+    '.settings-desc',
     '.action-btn',
     '.toggle-switch',
     '.modal-container',
@@ -30,6 +64,15 @@
     '.sidebar',
     '.dock-pill',
     '.color-swatch',
+  ].join(',');
+
+  const TEXT_NODE_SKIP_SELECTOR = [
+    'script',
+    'style',
+    'noscript',
+    'template',
+    '#developerModeHost',
+    '#developerModeHost *',
   ].join(',');
 
   const SOURCE_HINTS = [
@@ -51,6 +94,10 @@
   function safeText(value, fallback = '--') {
     const text = value == null || value === '' ? fallback : String(value);
     return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+  }
+
+  function normalizeInlineText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
   function isInspectable(el, options = {}) {
@@ -80,14 +127,39 @@
     return isInspectable(el, { includeHidden: false });
   }
 
+  function isRectInspectable(rect) {
+    return !!rect
+      && rect.width >= 4
+      && rect.height >= 4
+      && rect.bottom > 0
+      && rect.right > 0
+      && rect.top < window.innerHeight
+      && rect.left < window.innerWidth;
+  }
+
   function selectorFor(el) {
     if (!el) return '';
     if (el.id) return `#${el.id}`;
     const tag = el.tagName?.toLowerCase?.() || 'element';
-    const dataName = el.dataset?.component || el.dataset?.target || el.dataset?.section;
-    if (dataName) return `${tag}[data-${el.dataset.component ? 'component' : el.dataset.target ? 'target' : 'section'}="${dataName}"]`;
+    const dataName = el.dataset?.devName || el.dataset?.component || el.dataset?.target || el.dataset?.section;
+    if (dataName) {
+      const key = el.dataset.devName ? 'dev-name' : el.dataset.component ? 'component' : el.dataset.target ? 'target' : 'section';
+      return `${tag}[data-${key}="${dataName}"]`;
+    }
     const classes = Array.from(el.classList || []).filter(Boolean).slice(0, 3);
-    return classes.length ? `${tag}.${classes.join('.')}` : tag;
+    const base = classes.length ? `${tag}.${classes.join('.')}` : tag;
+    const siblings = Array.from(el.parentElement?.children || []).filter((child) => child.tagName === el.tagName);
+    if (siblings.length <= 1) return base;
+    const index = siblings.indexOf(el);
+    return index >= 0 ? `${base}:nth-of-type(${index + 1})` : base;
+  }
+
+  function textSelectorFor(node, parent) {
+    const base = selectorFor(parent);
+    if (!node || !parent) return `${base}::text`;
+    const textSiblings = Array.from(parent.childNodes || []).filter((child) => child.nodeType === 3);
+    const index = Math.max(0, textSiblings.indexOf(node));
+    return `${base}::text(${index + 1})`;
   }
 
   function codeNameFor(el) {
@@ -104,6 +176,11 @@
       el.tagName?.toLowerCase?.() ||
       'element'
     );
+  }
+
+  function codeNameForText(node, parent) {
+    const text = normalizeInlineText(node?.nodeValue || '');
+    return text ? `text:${safeText(text, '').slice(0, 48)}` : `text:${codeNameFor(parent)}`;
   }
 
   function sourceFor(el) {
@@ -129,6 +206,15 @@
     return parts.length ? parts.join(' | ') : 'static visual layer';
   }
 
+  function textFeatureSummary(parent) {
+    const style = window.getComputedStyle?.(parent) || {};
+    const parts = ['text-node'];
+    if (style.fontSize) parts.push(`font=${style.fontSize}`);
+    if (style.fontWeight) parts.push(`weight=${style.fontWeight}`);
+    if (style.lineHeight) parts.push(`line-height=${style.lineHeight}`);
+    return parts.join(' | ');
+  }
+
   function inspectElement(el) {
     const rect = el.getBoundingClientRect();
     const source = sourceFor(el);
@@ -141,6 +227,20 @@
       sourceFile: source.file,
       size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
       features: featureSummary(el),
+    };
+  }
+
+  function inspectTextNode(node, parent, rect) {
+    const source = sourceFor(parent);
+    return {
+      name: codeNameForText(node, parent),
+      selector: textSelectorFor(node, parent),
+      tag: '#text',
+      role: 'text',
+      sourceOwner: source.owner,
+      sourceFile: source.file,
+      size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+      features: textFeatureSummary(parent),
     };
   }
 
@@ -174,6 +274,7 @@
       selectedBox: null,
       selectedInfo: null,
       lastBackendSnapshot: null,
+      diagnostics: [],
     };
 
     const api = {
@@ -186,6 +287,9 @@
       closePanel: deps.closePanel || (async () => {}),
       updatePanel: deps.updatePanel || (async () => {}),
       onPanelCommand: deps.onPanelCommand || (() => () => {}),
+      runHealthCheck: deps.runHealthCheck || (async () => []),
+      runUpdateIntegrity: deps.runUpdateIntegrity || (async () => []),
+      clearCache: deps.clearCache || (async () => ({})),
     };
 
     let host;
@@ -260,8 +364,39 @@
         includeHidden: state.includeHidden,
         backend: state.lastBackendSnapshot,
         selectedInfo: state.selectedInfo,
+        diagnostics: state.diagnostics,
         theme: getPanelTheme(),
       });
+    }
+
+    function summarizeResult(result) {
+      if (Array.isArray(result)) {
+        const failed = result.filter((item) => item && item.ok === false).length;
+        return `${result.length} 项，${failed} 项异常`;
+      }
+      if (result && typeof result === 'object') {
+        if (result.message) return String(result.message);
+        if (result.path) return String(result.path);
+        if (Object.prototype.hasOwnProperty.call(result, 'ok')) return result.ok ? '通过' : '异常';
+        if (Object.prototype.hasOwnProperty.call(result, 'success')) return result.success ? '完成' : '失败';
+      }
+      return result == null ? '完成' : safeText(result);
+    }
+
+    function pushDiagnostic(title, status, detail) {
+      state.diagnostics = [{
+        title,
+        status,
+        detail: safeText(detail, '完成'),
+        at: new Date().toISOString(),
+      }, ...state.diagnostics].slice(0, 8);
+      sendPanelState();
+    }
+
+    async function toggleConfigSwitch(key, nextValue, title, detail) {
+      await api.setConfig(key, nextValue);
+      pushDiagnostic(title, 'ok', detail(nextValue));
+      await refreshBackend(false);
     }
 
     function schedulePanelThemeSync() {
@@ -297,6 +432,66 @@
       if (action === 'rescan') {
         requestScan();
         api.addLogLine('INFO', '开发者模式已重新扫描 UIUX 辅助线');
+        pushDiagnostic('UIUX 辅助线', 'ok', '已重新扫描当前界面');
+        return;
+      }
+      if (action === 'toggle-update-source-mode') {
+        const current = state.lastBackendSnapshot?.update?.sourceMode === 'smart' ? 'smart' : 'selected';
+        await toggleConfigSwitch(
+          'updateSourceMode',
+          current === 'smart' ? 'selected' : 'smart',
+          '更新源模式',
+          (next) => (next === 'smart' ? '已切换为智能探测' : '已切换为手动选择'),
+        );
+        return;
+      }
+      if (action === 'toggle-auto-check-update') {
+        const current = state.lastBackendSnapshot?.update?.autoCheck !== false;
+        await toggleConfigSwitch('autoCheckUpdate', !current, '自动检查更新', (next) => (next ? '已开启' : '已关闭'));
+        return;
+      }
+      if (action === 'toggle-auto-download') {
+        const current = state.lastBackendSnapshot?.update?.autoDownload === true;
+        await toggleConfigSwitch('autoDownload', !current, '自动下载更新', (next) => (next ? '已开启' : '已关闭'));
+        return;
+      }
+      if (action === 'run-health-check') {
+        try {
+          const result = await api.runHealthCheck();
+          const summary = summarizeResult(result);
+          pushDiagnostic('服务体检', Array.isArray(result) && result.some((item) => item?.ok === false) ? 'warn' : 'ok', summary);
+          api.addLogLine('INFO', `开发者模式服务体检完成: ${summary}`);
+          await refreshBackend(false);
+        } catch (error) {
+          pushDiagnostic('服务体检', 'error', error.message);
+          api.addLogLine('ERROR', `开发者模式服务体检失败: ${error.message}`);
+        }
+        return;
+      }
+      if (action === 'run-update-integrity') {
+        try {
+          const result = await api.runUpdateIntegrity();
+          const summary = summarizeResult(result);
+          pushDiagnostic('更新完整性', Array.isArray(result) && result.some((item) => item?.ok === false) ? 'warn' : 'ok', summary);
+          api.addLogLine('INFO', `开发者模式更新完整性检查完成: ${summary}`);
+          await refreshBackend(false);
+        } catch (error) {
+          pushDiagnostic('更新完整性', 'error', error.message);
+          api.addLogLine('ERROR', `开发者模式更新完整性检查失败: ${error.message}`);
+        }
+        return;
+      }
+      if (action === 'clear-cache') {
+        try {
+          const result = await api.clearCache();
+          const summary = summarizeResult(result);
+          pushDiagnostic('缓存清理', 'ok', summary);
+          api.addLogLine('INFO', `开发者模式缓存清理完成: ${summary}`);
+          await refreshBackend(false);
+        } catch (error) {
+          pushDiagnostic('缓存清理', 'error', error.message);
+          api.addLogLine('ERROR', `开发者模式缓存清理失败: ${error.message}`);
+        }
       }
     }
 
@@ -491,7 +686,82 @@
       return null;
     }
 
+    function targetElement(target) {
+      return target?.el || target;
+    }
+
+    function targetRect(target) {
+      if (target?.kind === 'text') return target.rect;
+      return targetElement(target)?.getBoundingClientRect?.();
+    }
+
+    function targetSelector(target) {
+      return target?.kind === 'text'
+        ? textSelectorFor(target.node, target.el)
+        : selectorFor(targetElement(target));
+    }
+
+    function inspectTarget(target) {
+      if (target?.kind === 'text') return inspectTextNode(target.node, target.el, target.rect);
+      return inspectElement(targetElement(target));
+    }
+
+    function collectElementTargets() {
+      return Array.from(document.querySelectorAll(INSPECT_SELECTOR))
+        .filter((el) => isInspectable(el, { includeHidden: state.includeHidden }))
+        .map((el) => ({ kind: 'element', el }));
+    }
+
+    function collectTextNodeTargets() {
+      const nodeFilter = window.NodeFilter || (typeof NodeFilter !== 'undefined' ? NodeFilter : null);
+      const RangeCtor = window.Range || (typeof Range !== 'undefined' ? Range : null);
+      if (typeof document.createTreeWalker !== 'function' || !nodeFilter || !RangeCtor) return [];
+      const targets = [];
+      const acceptNode = (node) => {
+        const text = normalizeInlineText(node.nodeValue || '');
+        if (text.length < 2) return nodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent || parent.closest?.(TEXT_NODE_SKIP_SELECTOR)) return nodeFilter.FILTER_REJECT;
+        if (!isInspectable(parent, { includeHidden: state.includeHidden })) return nodeFilter.FILTER_REJECT;
+        return nodeFilter.FILTER_ACCEPT;
+      };
+      const walker = document.createTreeWalker(document.body, nodeFilter.SHOW_TEXT, { acceptNode });
+      let node = walker.nextNode();
+      while (node && targets.length < 180) {
+        const parent = node.parentElement;
+        const range = document.createRange();
+        try {
+          range.selectNodeContents(node);
+          const rect = range.getBoundingClientRect();
+          if (isRectInspectable(rect)) {
+            targets.push({ kind: 'text', node, el: parent, rect });
+          }
+        } catch {
+          // Skip text nodes whose layout range cannot be measured.
+        } finally {
+          range.detach?.();
+        }
+        node = walker.nextNode();
+      }
+      return targets;
+    }
+
+    function collectInspectTargets() {
+      const seen = new Set();
+      const targets = [...collectElementTargets(), ...collectTextNodeTargets()];
+      return targets.filter((target) => {
+        const selector = targetSelector(target);
+        if (!selector || seen.has(selector)) return false;
+        seen.add(selector);
+        return true;
+      }).slice(0, 420);
+    }
+
     function selectAtPoint(fallbackBox, fallbackInfo, x, y) {
+      if (fallbackInfo?.role === 'text') {
+        selectElement(fallbackBox, fallbackInfo);
+        return;
+      }
       const topElement = findTopInspectableAtPoint(x, y);
       if (!topElement) {
         selectElement(fallbackBox, fallbackInfo);
@@ -502,12 +772,12 @@
       selectElement(target?.box || fallbackBox, target?.info || inspectElement(topElement));
     }
 
-    function drawBox(el, index) {
-      const rect = el.getBoundingClientRect();
-      const info = inspectElement(el);
+    function drawBox(target, index) {
+      const rect = targetRect(target);
+      const info = inspectTarget(target);
       const box = document.createElement('button');
       box.type = 'button';
-      box.className = 'developer-mode-box';
+      box.className = `developer-mode-box developer-mode-box-${target.kind || 'element'}`;
       box.dataset.devName = info.name;
       box.dataset.devSelector = info.selector;
       box.style.transform = `translate(${Math.round(rect.left)}px, ${Math.round(rect.top)}px)`;
@@ -525,7 +795,7 @@
       });
       overlay.appendChild(box);
       state.boxes.push(box);
-      state.inspectTargets.push({ el, box, info });
+      state.inspectTargets.push({ ...target, box, info });
     }
 
     function scan() {
@@ -539,15 +809,13 @@
       state.selectedBox = null;
       state.selectedInfo = null;
       renderInspectDetails(null);
-      const elements = Array.from(document.querySelectorAll(INSPECT_SELECTOR))
-        .filter((el) => isInspectable(el, { includeHidden: state.includeHidden }))
-        .slice(0, 240);
-      elements.forEach(drawBox);
+      const targets = collectInspectTargets();
+      targets.forEach(drawBox);
       if (previousSelector) {
         const found = state.boxes.find((box) => box.dataset.devSelector === previousSelector);
         if (found) {
-          const element = elements.find((item) => selectorFor(item) === previousSelector);
-          if (element) selectElement(found, inspectElement(element));
+          const target = targets.find((item) => targetSelector(item) === previousSelector);
+          if (target) selectElement(found, inspectTarget(target));
         }
       }
       state.scanning = false;
@@ -668,6 +936,7 @@
       refreshBackend,
       requestScan,
       inspectElement,
+      inspectTextNode,
       getState: () => ({ enabled: state.enabled, uiInspect: state.uiInspect, includeHidden: state.includeHidden, boxes: state.boxes.length }),
       CONFIG_KEYS,
     };
@@ -678,6 +947,7 @@
   window._nekoModules.components.DeveloperMode = {
     create: createDeveloperMode,
     inspectElement,
+    inspectTextNode,
     CONFIG_KEYS,
   };
 })();

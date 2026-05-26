@@ -187,6 +187,7 @@ function launchInstaller(filePath, options = {}) {
   const {
     silent = true,
     relaunchAfterInstall = true,
+    relaunchStrategy = process.env.NEKO_UPDATE_RELAUNCH_STRATEGY || 'installer',
     platform = process.platform,
     spawnImpl = spawn,
     shell,
@@ -198,12 +199,15 @@ function launchInstaller(filePath, options = {}) {
 
     if (platform === 'win32' && ext === '.exe') {
       const args = silent && !fromArchive ? ['/S'] : [];
+      if (silent && relaunchAfterInstall && !fromArchive && relaunchStrategy === 'installer') {
+        args.push('--force-run');
+      }
       const child = spawnImpl(resolvedPath, args, {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
       });
-      if (relaunchAfterInstall && !fromArchive) {
+      if (relaunchAfterInstall && !fromArchive && relaunchStrategy === 'watcher') {
         scheduleRelaunch(child.pid, { platform, exePath: process.execPath, appPid: process.pid, spawnImpl });
       }
       if (child && typeof child.unref === 'function') child.unref();

@@ -476,4 +476,4 @@ release_notes.txt
 2. 选择本地 `.exe`、`.zip` 或 `.7z`。
 3. `.exe` 直接交给安装器；`.zip` 由主进程解压后拉起内部可执行文件；`.7z` 交给系统打开。
 
-安装交接后当前应用会退出。NSIS `.exe` 自动更新安装时，主进程会启动隐藏重启 watcher，等待安装器退出后再打开新版本 `NekoStatus.exe`。
+安装交接后当前应用会退出。NSIS `.exe` 自动更新安装时，主进程默认使用 `/S --force-run`，由安装器完成覆盖安装后拉起新版本 `NekoStatus.exe`。隐藏重启 watcher 只作为显式兜底策略保留：需要时设置 `NEKO_UPDATE_RELAUNCH_STRATEGY=watcher`。

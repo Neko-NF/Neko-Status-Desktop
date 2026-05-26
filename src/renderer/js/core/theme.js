@@ -7,6 +7,7 @@
  */
 (function () {
   const bus = window._nekoModules?.eventBus;
+  const DEFAULT_THEME_COLOR = '#0ea5e9';
 
   // ── 主题模式 ────────────────────────────────────────────────
   let _darkModeTimer = null;
@@ -78,7 +79,53 @@
     }
     const m = hex.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     if (m) return { r: +m[1], g: +m[2], b: +m[3] };
-    return { r: 6, g: 182, b: 212 };
+    return { r: 14, g: 165, b: 233 };
+  }
+
+  function componentToHex(value) {
+    return Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
+  }
+
+  function rgbToHex({ r, g, b }) {
+    return `#${componentToHex(r)}${componentToHex(g)}${componentToHex(b)}`;
+  }
+
+  function rgbToHsv({ r, g, b }) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    const d = max - min;
+    let h = 0;
+    if (d !== 0) {
+      if (max === rn) h = ((gn - bn) / d) % 6;
+      else if (max === gn) h = ((bn - rn) / d) + 2;
+      else h = ((rn - gn) / d) + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return { h: Math.round(h), s: max === 0 ? 0 : d / max, v: max };
+  }
+
+  function hsvToRgb({ h, s, v }) {
+    const c = v * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = v - c;
+    let rp = 0;
+    let gp = 0;
+    let bp = 0;
+    if (h < 60) [rp, gp, bp] = [c, x, 0];
+    else if (h < 120) [rp, gp, bp] = [x, c, 0];
+    else if (h < 180) [rp, gp, bp] = [0, c, x];
+    else if (h < 240) [rp, gp, bp] = [0, x, c];
+    else if (h < 300) [rp, gp, bp] = [x, 0, c];
+    else [rp, gp, bp] = [c, 0, x];
+    return { r: (rp + m) * 255, g: (gp + m) * 255, b: (bp + m) * 255 };
+  }
+
+  function hexToHsv(color) {
+    return rgbToHsv(parseColorRgb(color));
   }
 
   function normalizeThemeColorInput(value) {
@@ -99,11 +146,11 @@
       localStorage.getItem('neko-custom-theme-color')
       || (document.getElementById('stgCustomColorInput') || {}).value
       || localStorage.getItem('neko-theme-color')
-    ) || '#06b6d4';
+    ) || DEFAULT_THEME_COLOR;
   }
 
   function syncThemeColorUI(color, customColor = getSavedCustomThemeColor()) {
-    const normalizedColor = normalizeThemeColorInput(color) || '#06b6d4';
+    const normalizedColor = normalizeThemeColorInput(color) || DEFAULT_THEME_COLOR;
     const normalizedCustom = normalizeThemeColorInput(customColor) || normalizedColor;
     const builtinSelectors = document.querySelectorAll('.settings-swatch, .color-swatch[data-color]');
     let matchedBuiltin = false;
@@ -128,9 +175,13 @@
     const customColorInput = document.getElementById('stgCustomColorInput');
     const customColorHex = document.getElementById('stgCustomColorHex');
     const customColorPreview = document.getElementById('stgCustomColorPreview');
+    const topCustomColorHex = document.getElementById('topCustomColorHex');
+    const topCustomColorPreview = document.getElementById('topCustomColorPreview');
     if (customColorInput) customColorInput.value = normalizedCustom;
     if (customColorHex) customColorHex.value = normalizedCustom.toUpperCase();
     if (customColorPreview) customColorPreview.style.background = normalizedCustom;
+    if (topCustomColorHex) topCustomColorHex.value = normalizedCustom.toUpperCase();
+    if (topCustomColorPreview) topCustomColorPreview.style.background = normalizedCustom;
   }
 
   /**
@@ -168,14 +219,14 @@
 
   /** 获取当前主题色 */
   function getCurrentThemeColor() {
-    return getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || '#06b6d4';
+    return getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || DEFAULT_THEME_COLOR;
   }
 
   function initThemeColorControls() {
     if (document.documentElement.dataset.themeColorControlsBound === '1') return;
     document.documentElement.dataset.themeColorControlsBound = '1';
 
-    const savedColor = normalizeThemeColorInput(localStorage.getItem('neko-theme-color')) || '#06b6d4';
+    const savedColor = normalizeThemeColorInput(localStorage.getItem('neko-theme-color')) || DEFAULT_THEME_COLOR;
     const savedCustomColor = getSavedCustomThemeColor();
     applyThemeColor(savedColor, { customColor: savedCustomColor, persistCustom: false, persistSeed: false, emitEvent: false });
 
@@ -207,40 +258,157 @@
     const customColorRow = document.getElementById('stgCustomColorRow');
     const customColorPreview = document.getElementById('stgCustomColorPreview');
     const customColorHex = document.getElementById('stgCustomColorHex');
+    const topCustomColorBtn = document.getElementById('topCustomColorBtn');
+    const topCustomColorEditor = document.getElementById('topCustomColorEditor');
+    const topCustomColorPreview = document.getElementById('topCustomColorPreview');
+    const topCustomColorHex = document.getElementById('topCustomColorHex');
+    const topColorPickerPlane = document.getElementById('topColorPickerPlane');
+    const topColorPickerHandle = document.getElementById('topColorPickerHandle');
+    const topColorHue = document.getElementById('topColorHue');
+    const stgColorPickerPlane = document.getElementById('stgColorPickerPlane');
+    const stgColorPickerHandle = document.getElementById('stgColorPickerHandle');
+    const stgColorHue = document.getElementById('stgColorHue');
+    const topPickerState = hexToHsv(getSavedCustomThemeColor());
+    const stgPickerState = hexToHsv(getSavedCustomThemeColor());
+
+    function renderPicker(picker, pickerState) {
+      if (picker.plane) {
+        picker.plane.style.background = [
+          'linear-gradient(to top, #000 0%, transparent 100%)',
+          `linear-gradient(to right, #fff 0%, hsl(${pickerState.h} 100% 50%) 100%)`,
+        ].join(', ');
+      }
+      if (picker.handle) {
+        picker.handle.style.left = `${Math.round(pickerState.s * 100)}%`;
+        picker.handle.style.top = `${Math.round((1 - pickerState.v) * 100)}%`;
+      }
+      if (picker.hue) picker.hue.value = String(pickerState.h);
+    }
+
+    const topPicker = { plane: topColorPickerPlane, handle: topColorPickerHandle, hue: topColorHue };
+    const stgPicker = { plane: stgColorPickerPlane, handle: stgColorPickerHandle, hue: stgColorHue };
+
+    function setCustomDraft(color) {
+      const normalized = normalizeThemeColorInput(color) || getSavedCustomThemeColor();
+      Object.assign(topPickerState, hexToHsv(normalized));
+      Object.assign(stgPickerState, hexToHsv(normalized));
+      if (customColorInput) customColorInput.value = normalized;
+      if (customColorHex) customColorHex.value = normalized.toUpperCase();
+      if (customColorPreview) customColorPreview.style.background = normalized;
+      if (topCustomColorHex) topCustomColorHex.value = normalized.toUpperCase();
+      if (topCustomColorPreview) topCustomColorPreview.style.background = normalized;
+      [
+        document.getElementById('stgCustomColorBtn'),
+        topCustomColorBtn,
+      ].filter(Boolean).forEach((btn) => btn.style.setProperty('--custom-swatch-color', normalized));
+      renderPicker(topPicker, topPickerState);
+      renderPicker(stgPicker, stgPickerState);
+    }
+
+    function syncCustomDraftColor(color) {
+      if (customColorInput) customColorInput.value = color;
+      if (customColorHex) customColorHex.value = color.toUpperCase();
+      if (customColorPreview) customColorPreview.style.background = color;
+      if (topCustomColorHex) topCustomColorHex.value = color.toUpperCase();
+      if (topCustomColorPreview) topCustomColorPreview.style.background = color;
+      [
+        document.getElementById('stgCustomColorBtn'),
+        topCustomColorBtn,
+      ].filter(Boolean).forEach((btn) => btn.style.setProperty('--custom-swatch-color', color));
+    }
+
+    function setPickerDraftFromState(picker, pickerState) {
+      const color = rgbToHex(hsvToRgb(pickerState));
+      syncCustomDraftColor(color);
+      renderPicker(picker, pickerState);
+    }
+
+    function updatePickerFromPoint(event, picker, pickerState) {
+      if (!picker.plane) return;
+      const rect = picker.plane.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+      pickerState.s = x / rect.width;
+      pickerState.v = 1 - (y / rect.height);
+      setPickerDraftFromState(picker, pickerState);
+    }
+
+    function bindPickerPlane(picker, pickerState) {
+      picker.plane?.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        picker.plane.setPointerCapture?.(event.pointerId);
+        updatePickerFromPoint(event, picker, pickerState);
+      });
+      picker.plane?.addEventListener('pointermove', (event) => {
+        if (event.buttons !== 1) return;
+        updatePickerFromPoint(event, picker, pickerState);
+      });
+      picker.hue?.addEventListener('input', () => {
+        pickerState.h = Number(picker.hue.value) || 0;
+        setPickerDraftFromState(picker, pickerState);
+      });
+    }
 
     if (customColorBtn && customColorInput) {
       customColorBtn.addEventListener('click', () => {
         if (customColorRow) customColorRow.style.display = customColorRow.style.display === 'none' ? '' : 'none';
-        const current = getSavedCustomThemeColor();
-        customColorInput.value = current;
-        if (customColorHex) customColorHex.value = current.toUpperCase();
-        if (customColorPreview) customColorPreview.style.background = current;
+        setCustomDraft(getSavedCustomThemeColor());
       });
 
       customColorInput.addEventListener('input', () => {
         const color = customColorInput.value;
-        if (customColorPreview) customColorPreview.style.background = color;
-        if (customColorHex) customColorHex.value = color.toUpperCase();
+        setCustomDraft(color);
       });
 
       if (customColorPreview) {
         customColorPreview.style.cursor = 'pointer';
-        customColorPreview.addEventListener('click', () => customColorInput.click());
+        customColorPreview.addEventListener('click', () => {
+          customColorHex?.focus();
+          customColorHex?.select();
+        });
       }
 
       customColorHex?.addEventListener('input', () => {
         const normalized = normalizeThemeColorInput(customColorHex.value);
         if (!normalized) return;
-        customColorInput.value = normalized;
-        customColorHex.value = normalized.toUpperCase();
-        if (customColorPreview) customColorPreview.style.background = normalized;
+        setCustomDraft(normalized);
       });
     }
 
-    document.getElementById('topCustomColorBtn')?.addEventListener('click', (e) => {
+    topCustomColorBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      const customColor = getSavedCustomThemeColor();
-      applyThemeColor(customColor, { customColor });
+      if (topCustomColorEditor) {
+        topCustomColorEditor.hidden = !topCustomColorEditor.hidden;
+        setCustomDraft(getSavedCustomThemeColor());
+      }
+    });
+
+    bindPickerPlane(topPicker, topPickerState);
+    bindPickerPlane(stgPicker, stgPickerState);
+
+    topCustomColorPreview?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      topCustomColorHex?.focus();
+      topCustomColorHex?.select();
+    });
+
+    topCustomColorHex?.addEventListener('input', () => {
+      const normalized = normalizeThemeColorInput(topCustomColorHex.value);
+      if (!normalized) return;
+      setCustomDraft(normalized);
+    });
+
+    document.getElementById('topCustomColorApply')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const color = normalizeThemeColorInput(topCustomColorHex?.value);
+      if (!color) {
+        topCustomColorHex?.focus();
+        topCustomColorHex?.select();
+        return;
+      }
+      applyThemeColor(color, { customColor: color });
+      if (topCustomColorEditor) topCustomColorEditor.hidden = true;
       colorPalette?.classList.remove('show');
     });
 

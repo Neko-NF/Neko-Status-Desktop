@@ -113,6 +113,61 @@ function validateStreamConfigPayload(payload) {
   return { ok: true };
 }
 
+const DEVELOPER_MODE_COMMAND_ACTIONS = new Set([
+  'disable',
+  'panel-closed',
+  'request-state',
+  'toggle-inspect',
+  'toggle-include-hidden',
+  'refresh-backend',
+  'rescan',
+  'open-main-devtools',
+  'open-panel-devtools',
+  'reload-main-window',
+  'reload-panel-window',
+  'focus-main-window',
+  'toggle-update-source-mode',
+  'toggle-auto-check-update',
+  'toggle-auto-download',
+  'run-health-check',
+  'run-update-integrity',
+  'clear-cache',
+]);
+
+function validateDeveloperModeCommandPayload(payload) {
+  if (!isPlainObject(payload)) {
+    return { ok: false, reason: 'payload must be an object' };
+  }
+
+  if (!DEVELOPER_MODE_COMMAND_ACTIONS.has(payload.action)) {
+    return { ok: false, reason: 'unsupported developer mode action' };
+  }
+
+  return { ok: true };
+}
+
+function validateDeveloperModePanelStatePayload(payload) {
+  if (!isPlainObject(payload)) {
+    return { ok: false, reason: 'payload must be an object' };
+  }
+
+  const booleanFields = ['enabled', 'uiInspect', 'includeHidden'];
+  for (const field of booleanFields) {
+    if (payload[field] !== undefined && typeof payload[field] !== 'boolean') {
+      return { ok: false, reason: `${field} must be a boolean when provided` };
+    }
+  }
+
+  const objectFields = ['backend', 'selectedInfo', 'theme'];
+  for (const field of objectFields) {
+    if (payload[field] !== undefined && payload[field] !== null && !isPlainObject(payload[field])) {
+      return { ok: false, reason: `${field} must be an object when provided` };
+    }
+  }
+
+  return { ok: true };
+}
+
 module.exports = {
   isPlainObject,
   validateUpdateInstallPayload,
@@ -122,4 +177,6 @@ module.exports = {
   validateConfigKeyPayload,
   validateConfigValuesPayload,
   validateStreamConfigPayload,
+  validateDeveloperModeCommandPayload,
+  validateDeveloperModePanelStatePayload,
 };

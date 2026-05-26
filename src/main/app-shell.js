@@ -170,7 +170,7 @@ function createAppShell(deps) {
       maxWidth: DEVELOPER_MODE_PANEL_WIDTH,
       minHeight: mainWindow.getBounds().height,
       maxHeight: mainWindow.getBounds().height,
-      title: `${APP_NAME} Developer Mode`,
+      title: `${APP_NAME} 开发者模式`,
       show: false,
       frame: false,
       resizable: false,
@@ -419,8 +419,8 @@ function createAppShell(deps) {
   }
 
   function getPickerThemeColor() {
-    const color = String(configStore.get('seedColor') || '#06b6d4').trim();
-    return /^#[0-9a-f]{6}$/i.test(color) || /^rgb/i.test(color) ? color : '#06b6d4';
+    const color = String(configStore.get('seedColor') || '#0ea5e9').trim();
+    return /^#[0-9a-f]{6}$/i.test(color) || /^rgb/i.test(color) ? color : '#0ea5e9';
   }
 
   function pickerColorToRgb(color) {

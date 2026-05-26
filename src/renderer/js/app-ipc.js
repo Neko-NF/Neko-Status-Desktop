@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_trendChart) { _trendChart.destroy(); _trendChart = null; }
     // 从 CSS 变量读取颜色，以响应深/浅色模式和主题色变更
     const cs = getComputedStyle(document.documentElement);
-    const themeColor = cs.getPropertyValue('--theme-color').trim() || '#06b6d4';
+    const themeColor = cs.getPropertyValue('--theme-color').trim() || '#0ea5e9';
     _themeColorRgb = _parseColorRgb(themeColor);
     const isLight = document.documentElement.hasAttribute('data-theme');
     const { r, g, b } = _themeColorRgb;
@@ -711,22 +711,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function getDeveloperBackendSnapshot(options = {}) {
     const includeNetwork = options.includeNetwork === true;
-    const [version, serviceRunning, processInfo, metrics, cacheSize, config] = await Promise.all([
+    const [version, serviceRunning, processInfo, metrics, cacheSize, config, pendingInstall] = await Promise.all([
       callSystem('getVersion', 'getVersion').catch(() => null),
       callService('isRunning', 'isRunning').catch(() => false),
       callService('getProcessInfo', 'getProcessInfo').catch(() => null),
       callSystem('getMetrics', 'getMetrics').catch(() => null),
       callSystem('getCacheSize', 'getCacheSize').catch(() => 0),
       callConfig('getAll', 'getAllConfig').catch(() => ({})),
+      callUpdate('getPendingInstall', 'getPendingInstall').catch(() => null),
     ]);
     const snapshot = {
       ipcReady: !!ipcClient?.isReady?.(),
       version,
+      runtime: runtimeVersions,
       serviceRunning: !!serviceRunning,
       processInfo,
       metrics,
       cacheSize,
       configMode: config?.serverMode || 'production',
+      update: {
+        channel: config?.updateChannel || 'stable',
+        sourceMode: config?.updateSourceMode === 'smart' ? 'smart' : 'selected',
+        activeSourceId: config?.activeUpdateSourceId || config?.updateSourceType || 'github-default',
+        autoCheck: config?.autoCheckUpdate !== false,
+        autoDownload: config?.autoDownload === true,
+        pending: pendingInstall || null,
+      },
+      sampledAt: new Date().toISOString(),
     };
     if (includeNetwork) {
       const serverUrl = config?.serverMode === 'local' ? config.serverUrlLocal : config?.serverUrlProd;
@@ -746,6 +757,9 @@ document.addEventListener('DOMContentLoaded', () => {
     getConfig: (key) => callConfig('get', 'getConfig', key),
     setConfig: (key, value) => callConfig('set', 'setConfig', key, value),
     getBackendSnapshot: getDeveloperBackendSnapshot,
+    runHealthCheck: () => callService('runHealthCheck', 'runHealthCheck'),
+    runUpdateIntegrity: () => callUpdate('checkIntegrity', 'checkIntegrity'),
+    clearCache: () => callSystem('clearCache', 'clearCache'),
     addLogLine,
     notify: showNekoIsland,
     openPanel: () => ipcClient.invoke('openDeveloperModePanel'),

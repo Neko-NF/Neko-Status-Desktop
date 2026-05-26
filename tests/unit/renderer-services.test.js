@@ -936,7 +936,7 @@ test('device status page owns metrics rendering and diagnostics', () => {
     document: {
       documentElement: makeElement('html', {
         style: {
-          getPropertyValue() { return '#06b6d4'; },
+          getPropertyValue() { return '#0ea5e9'; },
         },
       }),
       body: makeElement('body'),
@@ -956,7 +956,7 @@ test('device status page owns metrics rendering and diagnostics', () => {
     },
     getComputedStyle() {
       return {
-        getPropertyValue() { return '#06b6d4'; },
+        getPropertyValue() { return '#0ea5e9'; },
         color: 'rgb(6, 182, 212)',
       };
     },
@@ -1160,7 +1160,7 @@ test('theme module owns color normalization, persistence, and swatch binding', (
   }
 
   const storage = new Map([
-    ['neko-theme-color', '#06b6d4'],
+    ['neko-theme-color', '#0ea5e9'],
     ['neko-custom-theme-color', '#123abc'],
   ]);
   const setConfigCalls = [];
@@ -1179,6 +1179,22 @@ test('theme module owns color normalization, persistence, and swatch binding', (
     ['stgCustomColorPreview', makeElement('stgCustomColorPreview')],
     ['stgCustomColorApply', makeElement('stgCustomColorApply')],
     ['stgCustomColorRow', makeElement('stgCustomColorRow')],
+    ['stgColorPickerPlane', makeElement('stgColorPickerPlane', {
+      getBoundingClientRect() { return { left: 0, top: 0, width: 120, height: 100 }; },
+      setPointerCapture() {},
+    })],
+    ['stgColorPickerHandle', makeElement('stgColorPickerHandle')],
+    ['stgColorHue', makeElement('stgColorHue', { value: '199' })],
+    ['topCustomColorHex', makeElement('topCustomColorHex')],
+    ['topCustomColorPreview', makeElement('topCustomColorPreview')],
+    ['topCustomColorEditor', makeElement('topCustomColorEditor', { hidden: true })],
+    ['topCustomColorApply', makeElement('topCustomColorApply')],
+    ['topColorPickerPlane', makeElement('topColorPickerPlane', {
+      getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 100 }; },
+      setPointerCapture() {},
+    })],
+    ['topColorPickerHandle', makeElement('topColorPickerHandle')],
+    ['topColorHue', makeElement('topColorHue', { value: '199' })],
     ['profileModalAvatar', makeElement('profileModalAvatar')],
   ]);
 
@@ -1234,8 +1250,9 @@ test('theme module owns color normalization, persistence, and swatch binding', (
   assert.equal(theme.normalizeThemeColorInput('nope'), '');
 
   theme.initThemeColorControls();
-  assert.equal(storage.get('neko-theme-color'), '#06b6d4');
+  assert.equal(storage.get('neko-theme-color'), '#0ea5e9');
   assert.equal(elements.get('stgCustomColorHex').value, '#123ABC');
+  assert.equal(elements.get('topCustomColorHex').value, '#123ABC');
 
   topSwatch.dispatch('click');
   assert.equal(storage.get('neko-theme-color'), '#ff0000');
@@ -1244,11 +1261,25 @@ test('theme module owns color normalization, persistence, and swatch binding', (
   assert.equal(context.document.lastEvent.type, 'neko:themeChange');
 
   elements.get('stgCustomColorHex').value = '#abcdef';
+  elements.get('stgColorHue').value = '180';
+  elements.get('stgColorHue').dispatch('input');
+  assert.match(elements.get('stgCustomColorHex').value, /^#[0-9A-F]{6}$/);
+  elements.get('stgCustomColorHex').value = '#abcdef';
   elements.get('stgCustomColorApply').dispatch('click');
   assert.equal(storage.get('neko-theme-color'), '#abcdef');
   assert.equal(storage.get('neko-custom-theme-color'), '#abcdef');
   assert.deepEqual(setConfigCalls.at(-2), ['seedColor', '#abcdef']);
   assert.deepEqual(setConfigCalls.at(-1), ['customSeedColor', '#abcdef']);
+
+  elements.get('topCustomColorBtn').dispatch('click', { stopPropagation() {} });
+  assert.equal(elements.get('topCustomColorEditor').hidden, false);
+  elements.get('topColorHue').value = '0';
+  elements.get('topColorHue').dispatch('input');
+  assert.match(elements.get('topCustomColorHex').value, /^#[0-9A-F]{6}$/);
+  elements.get('topCustomColorHex').value = '#123456';
+  elements.get('topCustomColorApply').dispatch('click', { stopPropagation() {} });
+  assert.equal(storage.get('neko-theme-color'), '#123456');
+  assert.equal(storage.get('neko-custom-theme-color'), '#123456');
 });
 
 test('developer console registry parses aliases and delegates commands', async () => {
@@ -1392,4 +1423,164 @@ test('developer mode extracts UI metadata without direct IPC access', () => {
   assert.match(info.features, /position=fixed/);
   assert.match(info.features, /transition=0.2s/);
   assert.match(info.features, /backdrop-filter/);
+
+  const iconAttrs = new Map([
+    ['aria-label', 'Refresh backend'],
+  ]);
+  const icon = {
+    tagName: 'I',
+    id: '',
+    dataset: {},
+    classList: ['ph', 'ph-plugs-connected'],
+    getAttribute: (key) => iconAttrs.get(key) || '',
+    getBoundingClientRect: () => ({ width: 18, height: 18 }),
+    matches: (selector) => selector.includes('#page-settings'),
+    closest: () => ({ id: 'page-settings' }),
+  };
+  const iconInfo = context.window._nekoModules.components.DeveloperMode.inspectElement(icon);
+  assert.equal(iconInfo.name, 'Refresh backend');
+  assert.equal(iconInfo.selector, 'i.ph.ph-plugs-connected');
+  assert.equal(iconInfo.role, 'Refresh backend');
+
+  const textNode = { nodeValue: '  Developer diagnostics  ' };
+  const parent = {
+    tagName: 'SPAN',
+    id: 'developerDiagnosticsTitle',
+    dataset: {},
+    classList: ['settings-title'],
+    childNodes: [textNode],
+    getAttribute: () => '',
+    matches: (selector) => selector.includes('#page-settings'),
+    closest: () => ({ id: 'page-settings' }),
+  };
+  const textInfo = context.window._nekoModules.components.DeveloperMode.inspectTextNode(
+    textNode,
+    parent,
+    { width: 164, height: 24 },
+  );
+  assert.equal(textInfo.name, 'text:Developer diagnostics');
+  assert.equal(textInfo.selector, '#developerDiagnosticsTitle::text(1)');
+  assert.equal(textInfo.role, 'text');
+  assert.match(textInfo.features, /text-node/);
+});
+
+test('developer mode panel commands drive diagnostic switches through injected clients', async () => {
+  function makeElement(id) {
+    return {
+      id,
+      dataset: {},
+      hidden: false,
+      style: {
+        setProperty() {},
+        getPropertyValue() { return ''; },
+      },
+      classList: {
+        values: new Set(),
+        add(value) { this.values.add(value); },
+        remove(value) { this.values.delete(value); },
+        toggle(value, enabled) {
+          const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+          if (shouldAdd) this.values.add(value);
+          else this.values.delete(value);
+        },
+      },
+      append() {},
+      appendChild() {},
+      replaceChildren() {},
+      remove() {},
+      addEventListener() {},
+      getAttribute() { return ''; },
+      setAttribute() {},
+      removeAttribute() {},
+      getBoundingClientRect() { return { width: 0, height: 0, left: 0, top: 0 }; },
+    };
+  }
+
+  let panelHandler = null;
+  const calls = [];
+  const panelStates = [];
+  const context = {
+    window: {
+      innerWidth: 1280,
+      innerHeight: 720,
+      requestAnimationFrame(fn) { fn(); return 1; },
+      setTimeout(fn) { fn(); return 1; },
+      addEventListener() {},
+      getComputedStyle: () => ({
+        getPropertyValue() { return ''; },
+      }),
+    },
+    document: {
+      documentElement: makeElement('html'),
+      body: makeElement('body'),
+      createElement(tag) { return makeElement(tag); },
+      getElementById() { return null; },
+      addEventListener() {},
+      querySelectorAll() { return []; },
+    },
+    MutationObserver: class {
+      observe() {}
+    },
+    getComputedStyle: () => ({
+      getPropertyValue() { return ''; },
+    }),
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.MutationObserver = context.MutationObserver;
+  context.window.requestAnimationFrame = context.window.requestAnimationFrame;
+  context.window.setTimeout = context.window.setTimeout;
+
+  loadBrowserScript(context, 'src/renderer/js/components/developer-mode.js');
+
+  const mode = context.window._nekoModules.components.DeveloperMode.create({
+    getConfig: async (key) => key === 'debugEnabled',
+    setConfig: async (key, value) => {
+      calls.push(['setConfig', key, value]);
+      return true;
+    },
+    getBackendSnapshot: async () => ({
+      ipcReady: true,
+      update: { sourceMode: 'selected', autoCheck: true, autoDownload: false },
+    }),
+    openPanel: async () => calls.push('openPanel'),
+    closePanel: async () => calls.push('closePanel'),
+    updatePanel: async (payload) => panelStates.push(payload),
+    onPanelCommand: (handler) => {
+      panelHandler = handler;
+      return () => {};
+    },
+    runHealthCheck: async () => {
+      calls.push('runHealthCheck');
+      return [{ name: 'service', ok: true }];
+    },
+    runUpdateIntegrity: async () => {
+      calls.push('runUpdateIntegrity');
+      return [{ name: 'package', ok: true }];
+    },
+    clearCache: async () => {
+      calls.push('clearCache');
+      return { success: true };
+    },
+  });
+
+  await mode.init();
+  await panelHandler({ action: 'toggle-update-source-mode' });
+  await panelHandler({ action: 'toggle-auto-check-update' });
+  await panelHandler({ action: 'toggle-auto-download' });
+  await panelHandler({ action: 'run-health-check' });
+  await panelHandler({ action: 'run-update-integrity' });
+  await panelHandler({ action: 'clear-cache' });
+
+  assert.deepEqual(calls.filter(Array.isArray), [
+    ['setConfig', 'updateSourceMode', 'smart'],
+    ['setConfig', 'autoCheckUpdate', false],
+    ['setConfig', 'autoDownload', true],
+  ]);
+  assert.equal(calls.includes('runHealthCheck'), true);
+  assert.equal(calls.includes('runUpdateIntegrity'), true);
+  assert.equal(calls.includes('clearCache'), true);
+  assert.equal(panelStates.some((payload) => payload.diagnostics?.some((item) => item.title === '服务体检')), true);
+  assert.equal(panelStates.some((payload) => payload.diagnostics?.some((item) => item.title === '缓存清理')), true);
 });

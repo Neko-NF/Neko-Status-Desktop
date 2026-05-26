@@ -165,6 +165,7 @@ function ensureWindowsAppIdentityShortcuts({
   dirname = __dirname,
   resourcesPath = process.resourcesPath,
   spawnImpl = null,
+  ensureDesktopShortcut = false,
 }) {
   if (platform !== 'win32') return { ok: true, skipped: true };
 
@@ -180,7 +181,9 @@ function ensureWindowsAppIdentityShortcuts({
     const description = appName;
 
     const removedLegacy = [];
-    for (const legacy of uniquePaths(targets.legacy).filter((item) => path.resolve(item) !== path.resolve(targets.primary))) {
+    const protectedShortcuts = uniquePaths([targets.primary, targets.desktop])
+      .map((item) => path.resolve(item).toLowerCase());
+    for (const legacy of uniquePaths(targets.legacy).filter((item) => !protectedShortcuts.includes(path.resolve(item).toLowerCase()))) {
       if (removeShortcutIfExists(fs, legacy)) removedLegacy.push(legacy);
     }
 
@@ -200,7 +203,7 @@ function ensureWindowsAppIdentityShortcuts({
     }
 
     let desktop = { ok: true, changed: false, skipped: true };
-    if (isPackaged && targets.desktop) {
+    if (isPackaged && ensureDesktopShortcut && targets.desktop) {
       desktop = writeShortcutIfNeeded({
         shell,
         fs,
@@ -223,7 +226,7 @@ function ensureWindowsAppIdentityShortcuts({
     return {
       ok: true,
       shortcutPath: targets.primary,
-      desktopShortcutPath: isPackaged ? targets.desktop : null,
+      desktopShortcutPath: isPackaged && ensureDesktopShortcut ? targets.desktop : null,
       icon,
       changed,
       removedLegacy,

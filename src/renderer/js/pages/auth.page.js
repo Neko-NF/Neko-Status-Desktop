@@ -59,7 +59,7 @@
       const displayName = user.username || 'User';
       const avatarUrl = user.avatar
         ? user.avatar
-        : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=06b6d4&color=fff`;
+        : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=0ea5e9&color=fff`;
 
       if (avatar) avatar.src = avatarUrl;
       if (nameEl) nameEl.textContent = displayName;
@@ -80,7 +80,7 @@
       if (profileBtn) profileBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'none';
       if (logoutDiv) logoutDiv.style.display = 'none';
-      if (profileAvatar) profileAvatar.src = 'https://ui-avatars.com/api/?name=User&background=06b6d4&color=fff';
+      if (profileAvatar) profileAvatar.src = 'https://ui-avatars.com/api/?name=User&background=0ea5e9&color=fff';
       if (settingsName) settingsName.textContent = 'Neko User';
       if (settingsSub) settingsSub.textContent = '设备监控本地账户';
     }
@@ -756,7 +756,7 @@
         if (pEmail) pEmail.value = u.email || '';
         avatarEditorState.pendingAvatar = u.avatar || '';
         if (pAvatar && u.avatar) pAvatar.src = u.avatar;
-        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=06b6d4&color=fff`;
+        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=0ea5e9&color=fff`;
       };
 
       fillProfileForm(state.user || {});

@@ -355,7 +355,7 @@
 
             // 1. 读取本地存储的主题设置
             const savedMode = localStorage.getItem('neko-theme-mode') || 'light';
-            const savedColor = localStorage.getItem('neko-theme-color') || '#06b6d4';
+            const savedColor = localStorage.getItem('neko-theme-color') || '#0ea5e9';
 
             // 2. 初始化主题模式
             if (savedMode === 'light') {

@@ -85,7 +85,7 @@ button {
 
 .dev-action-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
 }
 
@@ -122,6 +122,52 @@ button {
     cursor: wait;
 }
 
+.dev-tool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.dev-tool-grid-compact {
+    margin-top: 10px;
+}
+
+.dev-tool-btn {
+    min-width: 0;
+    min-height: 38px;
+    padding: 8px 9px;
+    border: 1px solid color-mix(in srgb, var(--text-main) 9%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-main) 4%, transparent);
+    color: var(--text-main);
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 7px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.dev-tool-btn i {
+    flex: 0 0 auto;
+    color: var(--theme-color);
+    font-size: 16px;
+}
+
+.dev-tool-btn span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dev-tool-btn.loading {
+    opacity: 0.72;
+    cursor: wait;
+}
+
 .dev-panel-card {
     padding: 12px;
     border: 1px solid color-mix(in srgb, var(--text-main) 8%, transparent);
@@ -132,6 +178,13 @@ button {
 .dev-panel-card-fill {
     min-height: 164px;
     flex: 1;
+}
+
+.dev-inspect-card {
+    min-height: 174px;
+    scroll-margin: 18px;
+    display: flex;
+    flex-direction: column;
 }
 
 .dev-section-head {
@@ -213,9 +266,26 @@ button {
     font-size: 12px;
 }
 
+.dev-inspect-empty {
+    flex: 1;
+    min-height: 112px;
+    padding: 12px;
+    text-align: center;
+}
+
+.dev-empty-compact {
+    min-height: 44px;
+}
+
+.dev-switch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .dev-inline-setting {
     min-height: 34px;
-    margin: -2px 0 10px;
+    margin: 0;
     padding: 7px 10px;
     border-radius: 8px;
     border: 1px solid color-mix(in srgb, var(--text-main) 7%, transparent);
@@ -262,6 +332,56 @@ button {
     background: var(--theme-color);
 }
 
+.dev-diagnostics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dev-diagnostic-row {
+    min-width: 0;
+    min-height: 46px;
+    padding: 8px 9px;
+    border: 1px solid color-mix(in srgb, var(--success-mint) 24%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-main) 4%, transparent);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.dev-diagnostic-row.warn {
+    border-color: color-mix(in srgb, var(--warning-amber) 30%, transparent);
+}
+
+.dev-diagnostic-row.error {
+    border-color: color-mix(in srgb, var(--error-coral) 32%, transparent);
+}
+
+.dev-diagnostic-row div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.dev-diagnostic-row strong {
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: var(--fw-semibold);
+}
+
+.dev-diagnostic-row span,
+.dev-diagnostic-row small {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .dev-empty[hidden],
 .dev-details[hidden] {
     display: none !important;
@@ -271,6 +391,7 @@ button {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
 }
 
 .dev-details-title {
@@ -288,11 +409,11 @@ button {
 
 .dev-detail-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 34px;
     gap: 8px;
     align-items: center;
-    min-height: 40px;
-    padding: 8px;
+    min-height: 44px;
+    padding: 8px 9px;
     border: 1px solid color-mix(in srgb, var(--text-main) 8%, transparent);
     border-radius: 8px;
     background: color-mix(in srgb, var(--text-main) 4%, transparent);
@@ -317,11 +438,13 @@ button {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: 100%;
 }
 
 .dev-copy-btn {
-    min-width: 62px;
-    height: 30px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
     border: 1px solid color-mix(in srgb, var(--theme-color) 28%, transparent);
     border-radius: 8px;
     background: color-mix(in srgb, var(--theme-color) 8%, transparent);
@@ -332,6 +455,10 @@ button {
     gap: 5px;
     cursor: pointer;
     font-size: 12px;
+}
+
+.dev-copy-btn span {
+    display: none;
 }
 
 .dev-copy-btn.copied {
@@ -345,7 +472,8 @@ button {
     }
 
     .dev-action-grid,
-    .dev-backend-grid {
+    .dev-backend-grid,
+    .dev-tool-grid {
         grid-template-columns: 1fr;
     }
 }

@@ -65,7 +65,7 @@ describe('Windows app identity shortcuts', () => {
     }), true);
   });
 
-  it('creates packaged Start Menu and Desktop shortcuts with the app icon and identity id', () => {
+  it('creates a packaged Start Menu shortcut with the app icon and identity id', () => {
     const resourcesPath = 'C:\\Program Files\\NekoStatus\\resources';
     const icon = path.join(resourcesPath, 'app_icon.ico');
     const existing = new Set([
@@ -98,14 +98,51 @@ describe('Windows app identity shortcuts', () => {
     });
 
     assert.equal(result.ok, true);
-    assert.equal(writes.length, 2);
+    assert.equal(writes.length, 1);
     assert.equal(normalizePathForAssert(writes[0].shortcutPath), 'C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\NekoStatus.lnk');
-    assert.equal(normalizePathForAssert(writes[1].shortcutPath), 'C:\\Users\\qwe\\Desktop\\NekoStatus.lnk');
     assert.equal(writes[0].options.icon, icon);
     assert.equal(writes[0].options.appUserModelId, 'com.koirin.neko-status');
     assert.equal(writes[0].options.cwd, 'C:\\Program Files\\NekoStatus');
     assert.ok(fs.removed.includes('C:\\Users\\qwe\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Neko Status.lnk'));
-    assert.ok(fs.removed.includes('C:\\Users\\qwe\\Desktop\\Neko Status.lnk'));
+    assert.equal(fs.removed.includes('C:\\Users\\qwe\\Desktop\\NekoStatus.lnk'), false);
+  });
+
+  it('can explicitly manage the Desktop shortcut without deleting it as legacy', () => {
+    const resourcesPath = 'C:\\Program Files\\NekoStatus\\resources';
+    const icon = path.join(resourcesPath, 'app_icon.ico');
+    const existing = new Set([
+      icon,
+      'C:\\Users\\qwe\\Desktop\\NekoStatus.lnk',
+    ]);
+    const fs = createFs(existing);
+    const writes = [];
+    const shell = {
+      readShortcutLink: mock.fn(() => {
+        throw new Error('missing shortcut');
+      }),
+      writeShortcutLink: mock.fn((shortcutPath, operation, options) => {
+        writes.push({ shortcutPath, operation, options });
+        existing.add(shortcutPath);
+        return true;
+      }),
+    };
+
+    const result = ensureWindowsAppIdentityShortcuts({
+      app: createApp({ packaged: true }),
+      shell,
+      fs,
+      appName: 'NekoStatus',
+      appUserModelId: 'com.koirin.neko-status',
+      platform: 'win32',
+      execPath: 'C:\\Program Files\\NekoStatus\\NekoStatus.exe',
+      resourcesPath,
+      ensureDesktopShortcut: true,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(writes.length, 2);
+    assert.equal(normalizePathForAssert(writes[1].shortcutPath), 'C:\\Users\\qwe\\Desktop\\NekoStatus.lnk');
+    assert.equal(fs.removed.includes('C:\\Users\\qwe\\Desktop\\NekoStatus.lnk'), false);
   });
 
   it('creates a dev Start Menu shortcut pointing at electron with project args', () => {

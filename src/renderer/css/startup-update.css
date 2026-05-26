@@ -38,18 +38,18 @@ body {
     isolation: isolate;
     contain: paint;
     clip-path: inset(0 round 28px);
-    border: 1px solid color-mix(in srgb, var(--theme-color, #06b6d4) 34%, rgba(255, 255, 255, 0.24));
+    border: 1px solid color-mix(in srgb, var(--theme-color, #0ea5e9) 34%, rgba(255, 255, 255, 0.24));
     border-radius: 28px;
     background:
         linear-gradient(135deg, rgba(255, 255, 255, 0.19), rgba(255, 255, 255, 0.072) 42%, rgba(255, 255, 255, 0.032)),
-        color-mix(in srgb, var(--theme-color, #06b6d4) 13%, rgba(15, 23, 42, 0.38));
+        color-mix(in srgb, var(--theme-color, #0ea5e9) 13%, rgba(15, 23, 42, 0.38));
     background-clip: padding-box;
     backdrop-filter: blur(26px) saturate(180%);
     -webkit-backdrop-filter: blur(26px) saturate(180%);
     box-shadow:
         inset 0 1px 0 rgba(255,255,255,0.28),
         inset 0 -1px 0 rgba(255,255,255,0.08),
-        0 22px 58px color-mix(in srgb, var(--theme-color, #06b6d4) 16%, rgba(0, 0, 0, 0.30));
+        0 22px 58px color-mix(in srgb, var(--theme-color, #0ea5e9) 16%, rgba(0, 0, 0, 0.30));
 }
 
 .startup-panel::before,
@@ -64,7 +64,7 @@ body {
 .startup-panel::before {
     background:
         radial-gradient(circle at 18% 16%, rgba(255,255,255,0.20), transparent 34%),
-        radial-gradient(circle at 88% 84%, color-mix(in srgb, var(--theme-color, #06b6d4) 20%, transparent), transparent 42%);
+        radial-gradient(circle at 88% 84%, color-mix(in srgb, var(--theme-color, #0ea5e9) 20%, transparent), transparent 42%);
     filter: blur(18px);
     opacity: 0.72;
     transform: translateZ(0);
@@ -89,7 +89,7 @@ body {
     place-items: center;
     border-radius: var(--radius-compact, 12px);
     color: #fff;
-    background: color-mix(in srgb, var(--theme-color, #06b6d4) 84%, #ffffff 16%);
+    background: color-mix(in srgb, var(--theme-color, #0ea5e9) 84%, #ffffff 16%);
     font-size: 22px;
     font-weight: 800;
     box-shadow: var(--shadow-sm);
@@ -120,14 +120,14 @@ body {
     height: 6px;
     overflow: hidden;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--theme-color, #06b6d4) 12%, rgba(255,255,255,0.12));
+    background: color-mix(in srgb, var(--theme-color, #0ea5e9) 12%, rgba(255,255,255,0.12));
 }
 
 .progress-fill {
     width: 36%;
     height: 100%;
     border-radius: inherit;
-    background: var(--theme-color, #06b6d4);
+    background: var(--theme-color, #0ea5e9);
     box-shadow: 0 0 10px color-mix(in srgb, var(--theme-color) 50%, transparent);
     transition: width 0.24s ease;
 }

@@ -28,13 +28,17 @@ The main renderer keeps only the UIUX inspection guide layer. The external sidec
 
 The sidecar receives the main window's current theme mode and core CSS variables through the panel state payload, so theme color, semantic colors, text colors, and UI font follow the main application.
 
-The sidecar provides:
+The sidecar is fully localized in Chinese and provides:
 
-- UIUX 辅助线: scans visible interactive/layout elements and draws guide boxes.
-- 后端状态: refreshes a backend snapshot using existing clients.
-- 重新扫描: redraws guide boxes after layout changes.
+- `检查元素`: scans visible interactive/layout elements and draws guide boxes.
+- `刷新快照`: refreshes a backend snapshot using existing clients.
+- `重扫界面`: redraws guide boxes after layout changes.
+- `复制快照`: copies a text-only diagnostic snapshot containing Developer Mode state, runtime/backend/update status, diagnostics, and the selected UI locator.
+- `调试工具`: opens main/panel DevTools, reloads the main or sidecar window without cache, focuses the main window, and clears Chromium cache.
+- `诊断开关`: toggles include-hidden-layer scanning, smart update source selection, auto update check, and auto update download.
+- `一键诊断`: runs service health checks and update integrity checks, then records the result in the sidecar diagnostics list.
 
-The UIUX guide layer highlights targets such as buttons, links, inputs, cards, page sections, open modals, toggles, charts, and navigation items. By default it scans visually visible UI only. Pre-rendered but closed dialogs are valid application structure, and developers can explicitly enable "include hidden layers" from the sidecar when they need to inspect those DOM nodes. Hovering a guide box shows a preview. Clicking a guide box resolves the topmost visible element at that screen point before locking the selection, so overlapped guide boxes follow the visual stacking order instead of DOM scan order. The locked selection exposes copy buttons for each locator field:
+The UIUX guide layer highlights targets such as buttons, links, inputs, text labels, headings, inline text nodes, icons, images, cards, page sections, open modals, toggles, charts, and navigation items. By default it scans visually visible UI only. Pre-rendered but closed dialogs are valid application structure, and developers can explicitly enable "include hidden layers" from the sidecar when they need to inspect those DOM nodes. Hovering a guide box shows a preview. Clicking a guide box resolves the topmost visible element at that screen point before locking the selection, so overlapped guide boxes follow the visual stacking order instead of DOM scan order. Text-node boxes lock the exact text range that was clicked. The locked selection exposes copy buttons for each locator field:
 
 - code-facing name
 - selector
@@ -50,15 +54,32 @@ Runtime source hints are inferred from stable DOM ownership. For exact source ma
 
 ## Backend Debug Snapshot
 
-Developer Mode does not add a new IPC channel yet. It aggregates existing safe capabilities:
+Developer Mode aggregates existing safe capabilities:
 
 - `config:get` / `config:getAll`
+- `config:set` for fixed diagnostic switches only
 - `app:getVersion`
 - `service:isRunning`
 - `service:getProcessInfo`
+- `service:healthCheck`
 - `system:metrics`
 - `cache:getSize`
+- `cache:clear`
+- `update:getPendingInstall`
+- `update:integrity`
 - optional `api:testConnection`
+
+The sidecar groups this snapshot into Backend, Runtime, and Update sections. Runtime includes app/Electron/process/cache data. Update includes channel, source mode, active source id, auto-check/auto-download flags, and pending installer state.
+
+Window-level debugging actions are handled in the main process instead of being forwarded to the renderer:
+
+- `open-main-devtools`
+- `open-panel-devtools`
+- `reload-main-window`
+- `reload-panel-window`
+- `focus-main-window`
+
+Sidecar command and state payloads are schema-validated before forwarding. Commands are limited to the fixed Developer Mode action list and cannot carry arbitrary JavaScript, shell, PowerShell, or dynamic IPC channel names.
 
 The sidecar window adds these controlled IPC entries:
 
@@ -95,6 +116,14 @@ Covered by `tests/unit/renderer-services.test.js`:
 - metadata extraction without direct IPC access
 - config key ownership through `debugEnabled`
 - source hint and CSS feature reporting
+- sidecar diagnostic commands using injected health, update integrity, cache, and config clients
+
+Covered by `tests/unit/developer-mode-ipc.test.js` and `tests/unit/schemas.test.js`:
+
+- sidecar command forwarding through whitelisted actions
+- Electron DevTools/reload/focus actions handled by main IPC
+- malformed Developer Mode state rejection
+- payload validation for command/state boundaries
 
 Recommended manual check:
 
@@ -103,4 +132,7 @@ Recommended manual check:
 3. Confirm the Developer Mode menu appears as a separate window attached to the right of the main window.
 4. Enable UIUX Guide from Settings or the right-side sidecar.
 5. Hover visible UI elements and verify guide boxes and metadata stay aligned with the main app.
-6. Press Backend in the sidecar and confirm IPC-backed status updates.
+6. Press Refresh in the sidecar and confirm Backend, Runtime, and Update status cards refresh.
+7. Open main/panel DevTools from the sidecar and confirm both windows can be inspected.
+8. Run service health and update integrity checks; confirm the result appears in `最近诊断`.
+9. Press Copy and confirm the copied snapshot is JSON text and contains no HTML.

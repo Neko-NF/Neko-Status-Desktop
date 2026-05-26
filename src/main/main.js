@@ -338,7 +338,7 @@ function createStartupUpdateWindow() {
 function sendStartupUpdateStatus(payload) {
   const themePayload = {
     ...payload,
-    themeColor: configStore.get('seedColor') || configStore.get('themeColor') || '#06b6d4',
+    themeColor: configStore.get('seedColor') || configStore.get('themeColor') || '#0ea5e9',
     customThemeColor: configStore.get('customSeedColor') || '',
     themeMode: configStore.get('themeMode') || 'dark',
   };

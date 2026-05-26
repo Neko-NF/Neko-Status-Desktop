@@ -46,6 +46,18 @@
         0 0 0 2px rgba(245, 158, 11, 0.20);
 }
 
+.developer-mode-box-text {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--warning-amber) 70%, white);
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.developer-mode-box-element:is([data-dev-selector*=".ph"], [data-dev-selector*="icon"], [data-dev-selector*="svg"]) {
+    border-radius: 999px;
+    border-color: color-mix(in srgb, var(--accent-cyan) 70%, white);
+    background: color-mix(in srgb, var(--accent-cyan) 10%, transparent);
+}
+
 .developer-mode-box.selected {
     border-color: var(--success-mint);
     background: color-mix(in srgb, var(--success-mint) 16%, transparent);

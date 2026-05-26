@@ -75,7 +75,7 @@ describe('update installer relaunch watcher', () => {
 });
 
 describe('launchInstaller', () => {
-  it('runs NSIS installers silently and schedules relaunch', async () => {
+  it('runs NSIS installers silently and asks the installer to relaunch the app', async () => {
     const childUnref = mock.fn();
     const spawnImpl = mock.fn(() => ({ pid: 4321, unref: childUnref }));
     const scheduleRelaunch = mock.fn();
@@ -90,10 +90,26 @@ describe('launchInstaller', () => {
 
     assert.equal(result, '');
     assert.equal(spawnImpl.mock.callCount(), 1);
+    assert.deepEqual(spawnImpl.mock.calls[0].arguments[1], ['/S', '--force-run']);
+    assert.equal(scheduleRelaunch.mock.callCount(), 0);
+    assert.equal(childUnref.mock.callCount(), 1);
+  });
+
+  it('keeps the PowerShell relaunch watcher as an explicit fallback strategy', async () => {
+    const spawnImpl = mock.fn(() => ({ pid: 4321, unref: mock.fn() }));
+    const scheduleRelaunch = mock.fn();
+
+    await launchInstaller('C:\\Temp\\NekoStatus-Setup-1.2.11.exe', {
+      platform: 'win32',
+      silent: true,
+      relaunchStrategy: 'watcher',
+      spawnImpl,
+      scheduleRelaunch,
+    });
+
     assert.deepEqual(spawnImpl.mock.calls[0].arguments[1], ['/S']);
     assert.equal(scheduleRelaunch.mock.callCount(), 1);
     assert.equal(scheduleRelaunch.mock.calls[0].arguments[0], 4321);
-    assert.equal(childUnref.mock.callCount(), 1);
   });
 
   it('does not pass silent flags for manual installer launches', async () => {

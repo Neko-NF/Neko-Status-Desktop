@@ -5,6 +5,8 @@ const {
   validateAuthUpdateProfilePayload,
   validateConfigKeyPayload,
   validateConfigValuesPayload,
+  validateDeveloperModeCommandPayload,
+  validateDeveloperModePanelStatePayload,
   validateStreamConfigPayload,
   validateUpdateDownloadPayload,
   validateUpdateInstallPayload,
@@ -57,4 +59,26 @@ test('validateStreamConfigPayload validates port-shaped fields', () => {
   assert.equal(validateStreamConfigPayload({ srsHost: 'example.com', srsRtmpPort: 1935 }).ok, true);
   assert.equal(validateStreamConfigPayload({ obsWsPort: 70000 }).ok, false);
   assert.equal(validateStreamConfigPayload({ srsHost: 123 }).ok, false);
+});
+
+test('developer mode payload validators keep sidecar commands controlled', () => {
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'refresh-backend' }).ok, true);
+  [
+    'open-main-devtools',
+    'open-panel-devtools',
+    'reload-main-window',
+    'reload-panel-window',
+    'focus-main-window',
+    'toggle-update-source-mode',
+    'toggle-auto-check-update',
+    'toggle-auto-download',
+    'run-health-check',
+    'run-update-integrity',
+    'clear-cache',
+  ].forEach((action) => {
+    assert.equal(validateDeveloperModeCommandPayload({ action }).ok, true);
+  });
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'run-shell' }).ok, false);
+  assert.equal(validateDeveloperModePanelStatePayload({ enabled: true, backend: { ipcReady: true } }).ok, true);
+  assert.equal(validateDeveloperModePanelStatePayload({ includeHidden: 'true' }).ok, false);
 });

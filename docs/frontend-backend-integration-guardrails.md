@@ -156,7 +156,7 @@ node --test --test-concurrency=1 "tests/unit/*.test.js"
 - 手动安装必须支持用户选择 `.exe`、`.zip` 和 `.7z`。
 - 手动 `.exe` 应交互式启动；自动下载的 `.exe` 可以静默启动。
 - `.zip` 必须由主进程解压，然后拉起内部安装器或 NekoStatus 可执行文件。
-- NSIS 自动安装后的重启 watcher 必须在当前应用退出前启动。
+- NSIS 自动安装默认通过 `/S --force-run` 交给安装器在完成后拉起新版本，避免额外隐藏 PowerShell watcher 触发安全软件误判；只有显式设置 `NEKO_UPDATE_RELAUNCH_STRATEGY=watcher` 时才启用 watcher 兜底。
 
 发布前至少使用以下开发者控制台命令验证一次 GitHub 源和个人仓库源：
 

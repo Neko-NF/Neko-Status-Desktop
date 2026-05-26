@@ -17,7 +17,7 @@
             --dock-blur: blur(20px) saturate(180%);
             --dropdown-bg: rgba(15, 23, 42, 0.95);
             /* 主题色 (可动态切换) */
-            --theme-color: #06b6d4;      /* 默认：青蓝 */
+            --theme-color: #0ea5e9;      /* 默认：青蓝 */
             --accent-cyan: var(--theme-color); /* 兼容旧代码 */
             --success-mint: #10b981;     /* 成功：薄荷绿 */
             --warning-amber: #f59e0b;    /* 警告：琥珀黄 */
@@ -467,6 +467,7 @@
             position: absolute;
             top: 60px;
             right: 0;
+            width: 236px;
             background: var(--dropdown-bg);
             border: var(--glass-border);
             border-radius: var(--radius-btn);
@@ -474,6 +475,8 @@
             box-shadow: var(--shadow-md); /* 减小阴影 */
             backdrop-filter: var(--glass-blur);
             display: flex;
+            flex-wrap: wrap;
+            align-items: center;
             gap: 12px;
             visibility: hidden;
             opacity: 0;
@@ -491,6 +494,11 @@
             opacity: 1;
             transform: translateY(0);
             pointer-events: auto;
+        }
+        .color-palette-swatches {
+            display: grid;
+            grid-template-columns: repeat(5, 24px);
+            gap: 10px;
         }
         .color-swatch {
             width: 24px;
@@ -523,6 +531,126 @@
         .color-swatch-custom.active {
             color: transparent;
             border-style: solid;
+        }
+        .top-custom-color-editor {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            padding-top: 10px;
+            border-top: 1px solid color-mix(in srgb, var(--text-main) 9%, transparent);
+        }
+        .top-color-picker {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .top-color-picker-plane {
+            position: relative;
+            width: 100%;
+            height: 92px;
+            padding: 0;
+            border: 1px solid color-mix(in srgb, var(--text-main) 14%, transparent);
+            border-radius: 8px;
+            background:
+                linear-gradient(to top, #000 0%, transparent 100%),
+                linear-gradient(to right, #fff 0%, hsl(199 100% 50%) 100%);
+            cursor: crosshair;
+            overflow: hidden;
+            box-shadow: inset 0 0 0 1px color-mix(in srgb, #ffffff 10%, transparent);
+        }
+        #topColorPickerHandle {
+            position: absolute;
+            left: 86%;
+            top: 9%;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.82), 0 2px 8px rgba(0, 0, 0, 0.35);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .top-color-hue {
+            width: 100%;
+            height: 16px;
+            margin: 0;
+            padding: 0;
+            appearance: none;
+            background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444);
+            border: 1px solid color-mix(in srgb, var(--text-main) 12%, transparent);
+            border-radius: 999px;
+            cursor: pointer;
+            outline: none;
+        }
+        .top-color-hue::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            background: var(--custom-swatch-color, var(--theme-color));
+            box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.78), 0 2px 8px rgba(0, 0, 0, 0.28);
+        }
+        .top-custom-color-editor[hidden] {
+            display: none !important;
+        }
+        .top-custom-color-preview {
+            width: 36px;
+            height: 36px;
+            border: 1px solid color-mix(in srgb, var(--text-main) 16%, transparent);
+            border-radius: 8px;
+            background: var(--custom-swatch-color, var(--theme-color));
+            cursor: pointer;
+        }
+        .top-custom-color-body {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .top-custom-color-body > span {
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: var(--fw-medium);
+            line-height: 1;
+        }
+        .top-custom-color-controls {
+            min-width: 0;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 7px;
+            align-items: center;
+        }
+        .top-custom-color-hex {
+            min-width: 0;
+            height: 30px;
+            padding: 0 9px;
+            border: 1px solid color-mix(in srgb, var(--text-main) 12%, transparent);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--text-main) 5%, transparent);
+            color: var(--text-main);
+            font-family: Consolas, monospace;
+            font-size: 12px;
+            text-transform: uppercase;
+            outline: none;
+        }
+        .top-custom-color-hex:focus {
+            border-color: color-mix(in srgb, var(--theme-color) 50%, transparent);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-color) 16%, transparent);
+        }
+        .top-custom-color-apply {
+            height: 30px;
+            padding: 0 10px;
+            border: 1px solid color-mix(in srgb, var(--theme-color) 34%, transparent);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--theme-color) 14%, transparent);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: var(--fw-semibold);
         }
 
         .dropdown-item {

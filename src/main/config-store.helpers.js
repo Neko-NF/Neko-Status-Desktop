@@ -21,7 +21,7 @@ const DEFAULTS = {
   themeMode: 'light',
   darkModeStart: '18:00',
   darkModeEnd: '07:00',
-  seedColor: '#06b6d4',
+  seedColor: '#0ea5e9',
   customSeedColor: '',
   enableExperimentalFeatures: false,
   glassEffect: true,

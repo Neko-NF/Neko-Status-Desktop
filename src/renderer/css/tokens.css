@@ -20,7 +20,7 @@
     --dock-blur: blur(20px) saturate(180%);
     --dropdown-bg: rgba(15, 23, 42, 0.95);
     /* 主题色 */
-    --theme-color: #06b6d4;
+    --theme-color: #0ea5e9;
     --accent-cyan: var(--theme-color);
     /* 语义色 */
     --success-mint: #10b981;
