@@ -2,6 +2,16 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## 1.3.0-beta.3 - 2026-05-31
+ 
+- Added screenshot compression and optimization core algorithm, supporting configuration of resolution, format selection (JPEG/PNG/auto), target/max bytes, and resolution scaling bounds.
+- Added Visual CSS token visual parameter tuning (card/button border-radius, font scaling, opacity) in Developer Mode with persistence.
+- Added live screenshot compression debugging and computed styles inspect details (rounded borders, line height, margins, padding, gap, background colors) in Developer Mode.
+- Optimized app-theme color picker with real-time swatch preview.
+- Optimized autostart registration and Windows shortcut creation to reduce AV false positives.
+- Fixed Developer Mode UI positioning and misalignment.
+- Added comprehensive unit tests and verify script static scans for screenshot tuning.
+ 
 ## 1.2.11 - 2026-05-20
 
 - Fixed update installer relaunch after installing a new version.
