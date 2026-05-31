@@ -24,9 +24,23 @@ function registerSystemIpc(deps) {
 
   ipcMain.handle(IPC_CHANNELS.SCREENSHOT_CAPTURE, async () => {
     try {
-      const buf = await systemUtils.captureScreen();
+      const captureOptions = statusService.getScreenshotCaptureOptions?.() || {};
+      const result = await systemUtils.captureScreen({ ...captureOptions, includeMetadata: true });
+      const buf = result?.buffer || result;
       if (!buf) return createIpcError('CAPTURE_FAILED', '截图获取为空');
-      return createIpcSuccess({ data: Array.from(buf), type: 'image/png' });
+      return createIpcSuccess({
+        data: Array.from(buf),
+        type: result?.mimeType || 'image/png',
+        format: result?.format || 'png',
+        extension: result?.extension || 'png',
+        originalSize: result?.originalBytes || buf.length,
+        compressedSize: result?.compressedBytes || buf.length,
+        compressionRatio: result?.compressionRatio || 0,
+        quality: result?.quality || null,
+        scale: result?.scale || 1,
+        width: result?.width || null,
+        height: result?.height || null,
+      });
     } catch (err) {
       return createIpcError('CAPTURE_EXCEPTION', err.message);
     }

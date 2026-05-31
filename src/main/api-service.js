@@ -55,7 +55,9 @@ async function streamRequest(pathname, { method = 'GET', deviceKey, query, body 
  * @param {number} [params.batteryLevel]
  * @param {boolean} [params.isCharging]
  * @param {string} [params.status]        'online' | 'away' | 'offline'
- * @param {Buffer|null} [params.screenshotBuffer] PNG/JPG Buffer
+ * @param {Buffer|null} [params.screenshotBuffer] PNG/JPEG Buffer
+ * @param {string} [params.screenshotMimeType]
+ * @param {string} [params.screenshotFilename]
  * @param {object|null} [params.music]
  * @param {Buffer|null} [params.iconBuffer] 应用图标 PNG Buffer
  */
@@ -69,6 +71,8 @@ async function reportStatusV2(params) {
     isCharging = false,
     status = 'online',
     screenshotBuffer = null,
+    screenshotMimeType = 'image/png',
+    screenshotFilename = 'screenshot.png',
     music = null,
     iconBuffer = null,
   } = params;
@@ -94,8 +98,12 @@ async function reportStatusV2(params) {
   formData.append('data', JSON.stringify(dataObj));
 
   if (screenshotBuffer && screenshotBuffer.length > 0) {
-    const blob = new Blob([screenshotBuffer], { type: 'image/png' });
-    formData.append('screenshot', blob, 'screenshot.png');
+    const safeMime = screenshotMimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const safeFilename = typeof screenshotFilename === 'string' && /\.(png|jpe?g)$/i.test(screenshotFilename)
+      ? screenshotFilename
+      : safeMime === 'image/jpeg' ? 'screenshot.jpg' : 'screenshot.png';
+    const blob = new Blob([screenshotBuffer], { type: safeMime });
+    formData.append('screenshot', blob, safeFilename);
   }
 
   if (iconBuffer && iconBuffer.length > 0) {

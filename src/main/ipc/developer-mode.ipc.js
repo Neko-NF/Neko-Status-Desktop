@@ -15,6 +15,11 @@ const PANEL_WINDOW_COMMANDS = new Set([
   'reload-panel-window',
 ]);
 
+const SCREENSHOT_TUNING_COMMANDS = new Set([
+  'set-screenshot-token',
+  'reset-screenshot-tokens',
+]);
+
 function isUsableWindow(win) {
   return !!win && typeof win.isDestroyed === 'function' && !win.isDestroyed();
 }
@@ -41,6 +46,7 @@ function registerDeveloperModeIpc({
   getDeveloperModeWindow,
   openDeveloperModeWindow,
   closeDeveloperModeWindow,
+  statusService,
 }) {
   ipcMain.handle(IPC_CHANNELS.DEV_MODE_PANEL_OPEN, () => {
     const panel = openDeveloperModeWindow();
@@ -89,8 +95,22 @@ function registerDeveloperModeIpc({
     if (!isUsableWindow(mainWindow)) {
       return createIpcError('MAIN_WINDOW_MISSING', 'Main window is not available');
     }
+    let applied = false;
+    if (SCREENSHOT_TUNING_COMMANDS.has(payload.action) && statusService) {
+      try {
+        if (payload.action === 'set-screenshot-token') {
+          statusService.setScreenshotTuningToken?.(payload.token, payload.value);
+        } else {
+          statusService.resetScreenshotTuning?.();
+        }
+        applied = true;
+      } catch (error) {
+        return createIpcError('SCREENSHOT_TUNING_FAILED', error.message);
+      }
+    }
+
     mainWindow.webContents.send(IPC_EVENTS.DEV_MODE_PANEL_COMMAND, payload);
-    return createIpcSuccess({ sent: true });
+    return createIpcSuccess({ sent: true, applied });
   });
 
   ipcMain.handle(IPC_CHANNELS.DEV_MODE_PANEL_STATE, (_event, payload = {}) => {

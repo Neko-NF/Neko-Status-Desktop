@@ -1,6 +1,18 @@
 const DEFAULT_SRS_HOST = 'rtmp1.koirin.com';
 const DEFAULT_SRS_RTMP_PORT = 51935;
 const DEFAULT_SRS_API_PORT = 51985;
+const {
+  DEVELOPER_SCREENSHOT_TUNING_DEFAULTS,
+  normalizeDeveloperScreenshotTuning,
+} = require('../shared/screenshot-tuning');
+
+const DEVELOPER_UIUX_TUNING_DEFAULTS = Object.freeze({
+  radiusCard: 24,
+  radiusButton: 18,
+  glassOpacity: 5,
+  fontScale: 100,
+  textOpacity: 60,
+});
 
 const DEFAULTS = {
   deviceKey: '',
@@ -30,6 +42,8 @@ const DEFAULTS = {
   debugEnabled: false,
   developerUiInspectEnabled: false,
   developerUiInspectIncludeHidden: false,
+  developerUiuxTuning: { ...DEVELOPER_UIUX_TUNING_DEFAULTS },
+  developerScreenshotTuning: { ...DEVELOPER_SCREENSHOT_TUNING_DEFAULTS },
   enableNotification: true,
   doNotDisturb: false,
   enableIncognito: false,
@@ -85,6 +99,14 @@ function mergeDefaults(data = {}) {
   const merged = {
     ...DEFAULTS,
     ...data,
+    developerUiuxTuning: {
+      ...DEVELOPER_UIUX_TUNING_DEFAULTS,
+      ...(data.developerUiuxTuning || {}),
+    },
+    developerScreenshotTuning: normalizeDeveloperScreenshotTuning({
+      ...DEVELOPER_SCREENSHOT_TUNING_DEFAULTS,
+      ...(data.developerScreenshotTuning || {}),
+    }),
     streamConfig: {
       ...DEFAULTS.streamConfig,
       ...(data.streamConfig || {}),

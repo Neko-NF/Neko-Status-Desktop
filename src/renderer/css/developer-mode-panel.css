@@ -187,6 +187,105 @@ button {
     flex-direction: column;
 }
 
+.dev-uiux-card,
+.dev-screenshot-card {
+    scroll-margin: 18px;
+}
+
+.dev-uiux-control-list,
+.dev-screenshot-control-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dev-uiux-control,
+.dev-screenshot-control {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 9px 10px;
+    border: 1px solid color-mix(in srgb, var(--text-main) 7%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-main) 3%, transparent);
+}
+
+.dev-uiux-control span,
+.dev-screenshot-control span {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.dev-uiux-control strong,
+.dev-screenshot-control strong {
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: var(--fw-semibold);
+    font-variant-numeric: tabular-nums;
+}
+
+.dev-uiux-control input[type="range"],
+.dev-screenshot-control input[type="range"] {
+    width: 100%;
+    accent-color: var(--theme-color);
+}
+
+.dev-uiux-reset,
+.dev-screenshot-reset {
+    width: 100%;
+    margin-top: 10px;
+    justify-content: center;
+}
+
+.dev-screenshot-debug {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 10px;
+}
+
+.dev-screenshot-debug .dev-backend-row {
+    min-width: 0;
+}
+
+.dev-format-toggle {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    margin-bottom: 10px;
+}
+
+.dev-format-btn {
+    min-width: 0;
+    min-height: 32px;
+    border: 1px solid color-mix(in srgb, var(--text-main) 9%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-main) 4%, transparent);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: var(--fw-medium);
+}
+
+.dev-format-btn.active {
+    color: var(--theme-color);
+    border-color: color-mix(in srgb, var(--theme-color) 45%, transparent);
+    background: color-mix(in srgb, var(--theme-color) 14%, transparent);
+}
+
+.dev-screenshot-control.is-disabled {
+    opacity: 0.48;
+}
+
+.dev-screenshot-control.is-disabled input {
+    pointer-events: none;
+}
+
 .dev-section-head {
     display: flex;
     align-items: baseline;

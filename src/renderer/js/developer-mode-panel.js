@@ -6,6 +6,9 @@
     enabled: true,
     uiInspect: false,
     includeHidden: false,
+    uiuxTuning: null,
+    screenshotTuning: null,
+    screenshotDebug: null,
     backend: null,
     selectedInfo: null,
     diagnostics: [],
@@ -14,6 +17,47 @@
 
   const els = {};
   let renderedSelectedSelector = '';
+  const uiuxSendTimers = new Map();
+  const screenshotSendTimers = new Map();
+
+  const UIUX_DEFAULTS = Object.freeze({
+    radiusCard: 24,
+    radiusButton: 18,
+    glassOpacity: 5,
+    fontScale: 100,
+    textOpacity: 60,
+  });
+
+  const UIUX_CONTROLS = Object.freeze({
+    radiusCard: { inputId: 'uiuxRadiusCard', valueId: 'uiuxRadiusCardValue', suffix: 'px' },
+    radiusButton: { inputId: 'uiuxRadiusButton', valueId: 'uiuxRadiusButtonValue', suffix: 'px' },
+    glassOpacity: { inputId: 'uiuxGlassOpacity', valueId: 'uiuxGlassOpacityValue', suffix: '%' },
+    fontScale: { inputId: 'uiuxFontScale', valueId: 'uiuxFontScaleValue', suffix: '%' },
+    textOpacity: { inputId: 'uiuxTextOpacity', valueId: 'uiuxTextOpacityValue', suffix: '%' },
+  });
+
+  const SCREENSHOT_DEFAULTS = Object.freeze({
+    uploadFormat: 'auto',
+    captureWidth: 1920,
+    captureHeight: 1080,
+    targetKb: 2253,
+    maxKb: 4710,
+    uploadLimitKb: 5120,
+    jpegQuality: 88,
+    minQuality: 64,
+    resizeFloor: 50,
+  });
+
+  const SCREENSHOT_CONTROLS = Object.freeze({
+    captureWidth: { inputId: 'screenshotCaptureWidth', valueId: 'screenshotCaptureWidthValue', suffix: 'px' },
+    captureHeight: { inputId: 'screenshotCaptureHeight', valueId: 'screenshotCaptureHeightValue', suffix: 'px' },
+    targetKb: { inputId: 'screenshotTargetKb', valueId: 'screenshotTargetKbValue', suffix: 'KB' },
+    maxKb: { inputId: 'screenshotMaxKb', valueId: 'screenshotMaxKbValue', suffix: 'KB' },
+    uploadLimitKb: { inputId: 'screenshotUploadLimitKb', valueId: 'screenshotUploadLimitKbValue', suffix: 'KB' },
+    jpegQuality: { inputId: 'screenshotJpegQuality', valueId: 'screenshotJpegQualityValue', suffix: '' },
+    minQuality: { inputId: 'screenshotMinQuality', valueId: 'screenshotMinQualityValue', suffix: '' },
+    resizeFloor: { inputId: 'screenshotResizeFloor', valueId: 'screenshotResizeFloorValue', suffix: '%' },
+  });
 
   function safeText(value, fallback = '--') {
     const text = value == null || value === '' ? fallback : String(value);
@@ -148,6 +192,151 @@
     return row;
   }
 
+  function uiuxRows(info) {
+    const uiux = info?.uiux;
+    if (!uiux) return [];
+    return [
+      ['圆角/透明度', `${uiux.radius || '--'} / ${uiux.opacity || '--'}`],
+      ['字体', `${uiux.fontSize || '--'} / ${uiux.fontWeight || '--'} / ${uiux.lineHeight || '--'}`],
+      ['间距', `padding ${uiux.padding || '--'} / margin ${uiux.margin || '--'} / gap ${uiux.gap || '--'}`],
+      ['色彩', `fg ${uiux.color || '--'} / bg ${uiux.background || '--'}`],
+      ['布局', `${uiux.display || '--'}`],
+    ];
+  }
+
+  function renderUiuxPanel(info) {
+    if (!els.uiuxDetails || !els.uiuxEmpty) return;
+    const rows = uiuxRows(info);
+    els.uiuxDetails.hidden = rows.length === 0;
+    els.uiuxEmpty.hidden = rows.length > 0;
+    els.uiuxDetails.innerHTML = '';
+    if (!rows.length) return;
+
+    const title = document.createElement('div');
+    title.className = 'dev-details-title';
+    title.innerHTML = '<i class="ph ph-sliders-horizontal"></i><span>UIUX 样式参数</span>';
+    els.uiuxDetails.appendChild(title);
+    rows.forEach(([label, value]) => {
+      els.uiuxDetails.appendChild(detailRow(label, value));
+    });
+  }
+
+  function normalizedUiuxTuning(source = {}) {
+    return Object.fromEntries(Object.entries(UIUX_DEFAULTS).map(([token, fallback]) => {
+      const value = Number(source?.[token]);
+      return [token, Number.isFinite(value) ? value : fallback];
+    }));
+  }
+
+  function renderUiuxControls() {
+    const tuning = normalizedUiuxTuning(state.uiuxTuning);
+    Object.entries(UIUX_CONTROLS).forEach(([token, meta]) => {
+      const input = els[meta.inputId];
+      const valueEl = els[meta.valueId];
+      const value = tuning[token];
+      if (input && document.activeElement !== input) input.value = String(value);
+      if (valueEl) valueEl.textContent = `${value}${meta.suffix}`;
+    });
+  }
+
+  function queueUiuxTokenUpdate(token, value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return;
+    state.uiuxTuning = { ...normalizedUiuxTuning(state.uiuxTuning), [token]: numericValue };
+    renderUiuxControls();
+    clearTimeout(uiuxSendTimers.get(token));
+    uiuxSendTimers.set(token, setTimeout(() => {
+      uiuxSendTimers.delete(token);
+      sendCommand('set-uiux-token', { token, value: numericValue });
+    }, 70));
+  }
+
+  function clampNumber(value, min, max, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(min, Math.min(max, number));
+  }
+
+  function normalizedScreenshotTuning(source = {}) {
+    const targetKb = Math.round(clampNumber(source.targetKb, 256, 8192, SCREENSHOT_DEFAULTS.targetKb));
+    const maxKb = Math.round(Math.max(targetKb, clampNumber(source.maxKb, 512, 9216, SCREENSHOT_DEFAULTS.maxKb)));
+    const uploadLimitKb = Math.round(Math.max(maxKb, clampNumber(source.uploadLimitKb, 512, 10240, SCREENSHOT_DEFAULTS.uploadLimitKb)));
+    const uploadFormat = ['auto', 'jpeg', 'png'].includes(source.uploadFormat) ? source.uploadFormat : SCREENSHOT_DEFAULTS.uploadFormat;
+    const jpegQuality = Math.round(clampNumber(source.jpegQuality, 45, 94, SCREENSHOT_DEFAULTS.jpegQuality));
+    return {
+      uploadFormat,
+      captureWidth: Math.round(clampNumber(source.captureWidth, 800, 3840, SCREENSHOT_DEFAULTS.captureWidth)),
+      captureHeight: Math.round(clampNumber(source.captureHeight, 450, 2160, SCREENSHOT_DEFAULTS.captureHeight)),
+      targetKb,
+      maxKb,
+      uploadLimitKb,
+      jpegQuality,
+      minQuality: Math.min(jpegQuality, Math.round(clampNumber(source.minQuality, 45, 92, SCREENSHOT_DEFAULTS.minQuality))),
+      resizeFloor: Math.round(clampNumber(source.resizeFloor, 35, 100, SCREENSHOT_DEFAULTS.resizeFloor)),
+    };
+  }
+
+  function renderScreenshotControls() {
+    const tuning = normalizedScreenshotTuning(state.screenshotTuning);
+    const format = tuning.uploadFormat;
+    [els.screenshotFormatAuto, els.screenshotFormatJpeg, els.screenshotFormatPng].forEach((button) => {
+      if (!button) return;
+      button.classList.toggle('active', button.dataset.screenshotFormat === format);
+      button.setAttribute('aria-pressed', button.dataset.screenshotFormat === format ? 'true' : 'false');
+    });
+    Object.entries(SCREENSHOT_CONTROLS).forEach(([token, meta]) => {
+      const input = els[meta.inputId];
+      const valueEl = els[meta.valueId];
+      const value = tuning[token];
+      if (input && document.activeElement !== input) input.value = String(value);
+      if (valueEl) valueEl.textContent = `${value}${meta.suffix}`;
+      const control = input?.closest?.('[data-format-scope]');
+      if (control) {
+        const enabled = format !== 'png';
+        control.classList.toggle('is-disabled', !enabled);
+        if (input) input.disabled = !enabled;
+      }
+    });
+  }
+
+  function screenshotDebugRows() {
+    const latest = state.screenshotDebug || state.backend?.lastResult || {};
+    const compression = latest.screenshotCompression || {};
+    const hasCompression = Object.keys(compression).length > 0;
+    const skipped = latest.screenshotSkippedReason;
+    const requestedFormat = normalizedScreenshotTuning(state.screenshotTuning).uploadFormat.toUpperCase();
+    const format = (compression.format || latest.screenshotExtension || '--').toString().toUpperCase();
+    const ratio = Number(compression.ratio || 0);
+    const ratioText = ratio > 0 ? `${Math.round(ratio * 100)}%` : '--';
+    return [
+      ['最近截图', latest.hasScreenshot ? `${formatBytes(latest.screenshotSize)} · ${format}` : (skipped ? `已跳过 · ${skipped}` : '暂无'), latest.hasScreenshot ? 'ok' : skipped ? 'warn' : 'warn'],
+      ['上传格式', `${requestedFormat} → ${format}`, latest.hasScreenshot || hasCompression ? 'ok' : 'warn'],
+      ['压缩结果', hasCompression ? `${formatBytes(compression.originalBytes)} → ${formatBytes(compression.compressedBytes)} · ${ratioText}` : '--', hasCompression ? 'ok' : 'warn'],
+      ['分辨率', hasCompression ? `${compression.width || '--'}x${compression.height || '--'} · ${Math.round((Number(compression.scale) || 1) * 100)}%` : '--', hasCompression ? 'ok' : 'warn'],
+      ['质量', hasCompression ? `q${compression.quality || '--'} / min q${compression.minQuality || '--'}` : '--', hasCompression ? 'ok' : 'warn'],
+      ['目标/降级', hasCompression ? `${formatBytes(compression.targetBytes)} / ${formatBytes(compression.maxBytes)}` : '--', hasCompression ? 'ok' : 'warn'],
+      ['上报上限', hasCompression ? formatBytes(compression.uploadLimitBytes) : `${normalizedScreenshotTuning(state.screenshotTuning).uploadLimitKb} KB`, skipped ? 'warn' : 'ok'],
+    ];
+  }
+
+  function renderScreenshotDebug() {
+    renderRows(els.screenshotDebugList, screenshotDebugRows());
+  }
+
+  function queueScreenshotTokenUpdate(token, value) {
+    const nextValue = token === 'uploadFormat' ? value : Number(value);
+    if (token !== 'uploadFormat' && !Number.isFinite(nextValue)) return;
+    state.screenshotTuning = { ...normalizedScreenshotTuning(state.screenshotTuning), [token]: nextValue };
+    state.screenshotTuning = normalizedScreenshotTuning(state.screenshotTuning);
+    renderScreenshotControls();
+    renderScreenshotDebug();
+    clearTimeout(screenshotSendTimers.get(token));
+    screenshotSendTimers.set(token, setTimeout(() => {
+      screenshotSendTimers.delete(token);
+      sendCommand('set-screenshot-token', { token, value: state.screenshotTuning[token] });
+    }, 100));
+  }
+
   function renderDetails(info) {
     if (!els.inspectDetails || !els.inspectEmpty) return;
     const nextSelector = info?.selector || '';
@@ -170,6 +359,7 @@
       ['角色/类型', info.role],
       ['尺寸', info.size],
       ['CSS 层级', info.features],
+      ...uiuxRows(info),
     ].forEach(([label, value]) => {
       els.inspectDetails.appendChild(detailRow(label, value));
     });
@@ -214,6 +404,8 @@
         uiInspect: state.uiInspect,
         includeHidden: state.includeHidden,
       },
+      screenshotTuning: normalizedScreenshotTuning(state.screenshotTuning),
+      screenshotDebug: state.screenshotDebug || null,
       backend: snapshot,
       diagnostics: state.diagnostics,
       selectedInfo: state.selectedInfo || null,
@@ -225,6 +417,10 @@
     setSwitch(els.includeHiddenSwitch, state.includeHidden);
     renderSnapshot(state.backend || {});
     renderDiagnostics(state.diagnostics || []);
+    renderUiuxControls();
+    renderScreenshotControls();
+    renderScreenshotDebug();
+    renderUiuxPanel(state.selectedInfo || null);
     renderDetails(state.selectedInfo || null);
   }
 
@@ -242,6 +438,9 @@
     if (Object.prototype.hasOwnProperty.call(payload, 'enabled')) state.enabled = !!payload.enabled;
     if (Object.prototype.hasOwnProperty.call(payload, 'uiInspect')) state.uiInspect = !!payload.uiInspect;
     if (Object.prototype.hasOwnProperty.call(payload, 'includeHidden')) state.includeHidden = !!payload.includeHidden;
+    if (Object.prototype.hasOwnProperty.call(payload, 'uiuxTuning')) state.uiuxTuning = normalizedUiuxTuning(payload.uiuxTuning);
+    if (Object.prototype.hasOwnProperty.call(payload, 'screenshotTuning')) state.screenshotTuning = normalizedScreenshotTuning(payload.screenshotTuning);
+    if (Object.prototype.hasOwnProperty.call(payload, 'screenshotDebug')) state.screenshotDebug = payload.screenshotDebug;
     if (Object.prototype.hasOwnProperty.call(payload, 'backend')) state.backend = payload.backend;
     if (Object.prototype.hasOwnProperty.call(payload, 'selectedInfo')) state.selectedInfo = payload.selectedInfo;
     if (Object.prototype.hasOwnProperty.call(payload, 'diagnostics')) state.diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
@@ -308,6 +507,44 @@
       markCopied(copyButton);
     });
 
+    els.uiuxDetails?.addEventListener('click', async (event) => {
+      const copyButton = event.target.closest('[data-copy-value]');
+      if (!copyButton) return;
+      await copyText(copyButton.dataset.copyValue || '');
+      markCopied(copyButton);
+    });
+
+    Object.entries(UIUX_CONTROLS).forEach(([token, meta]) => {
+      els[meta.inputId]?.addEventListener('input', (event) => {
+        queueUiuxTokenUpdate(token, event.target.value);
+      });
+    });
+
+    els.uiuxResetBtn?.addEventListener('click', async () => {
+      state.uiuxTuning = { ...UIUX_DEFAULTS };
+      renderUiuxControls();
+      await sendCommand('reset-uiux-tokens');
+    });
+
+    Object.entries(SCREENSHOT_CONTROLS).forEach(([token, meta]) => {
+      els[meta.inputId]?.addEventListener('input', (event) => {
+        queueScreenshotTokenUpdate(token, event.target.value);
+      });
+    });
+
+    [els.screenshotFormatAuto, els.screenshotFormatJpeg, els.screenshotFormatPng].forEach((button) => {
+      button?.addEventListener('click', () => {
+        queueScreenshotTokenUpdate('uploadFormat', button.dataset.screenshotFormat || 'auto');
+      });
+    });
+
+    els.screenshotResetBtn?.addEventListener('click', async () => {
+      state.screenshotTuning = { ...SCREENSHOT_DEFAULTS };
+      renderScreenshotControls();
+      renderScreenshotDebug();
+      await sendCommand('reset-screenshot-tokens');
+    });
+
     if (typeof bridge.on === 'function' && IPC_EVENTS.DEV_MODE_PANEL_STATE) {
       bridge.on(IPC_EVENTS.DEV_MODE_PANEL_STATE, applyState);
     }
@@ -336,6 +573,42 @@
       'runtimeList',
       'updateList',
       'diagnosticsList',
+      'uiuxCard',
+      'uiuxRadiusCard',
+      'uiuxRadiusCardValue',
+      'uiuxRadiusButton',
+      'uiuxRadiusButtonValue',
+      'uiuxGlassOpacity',
+      'uiuxGlassOpacityValue',
+      'uiuxFontScale',
+      'uiuxFontScaleValue',
+      'uiuxTextOpacity',
+      'uiuxTextOpacityValue',
+      'uiuxResetBtn',
+      'uiuxEmpty',
+      'uiuxDetails',
+      'screenshotTuningCard',
+      'screenshotDebugList',
+      'screenshotFormatAuto',
+      'screenshotFormatJpeg',
+      'screenshotFormatPng',
+      'screenshotCaptureWidth',
+      'screenshotCaptureWidthValue',
+      'screenshotCaptureHeight',
+      'screenshotCaptureHeightValue',
+      'screenshotTargetKb',
+      'screenshotTargetKbValue',
+      'screenshotMaxKb',
+      'screenshotMaxKbValue',
+      'screenshotUploadLimitKb',
+      'screenshotUploadLimitKbValue',
+      'screenshotJpegQuality',
+      'screenshotJpegQualityValue',
+      'screenshotMinQuality',
+      'screenshotMinQualityValue',
+      'screenshotResizeFloor',
+      'screenshotResizeFloorValue',
+      'screenshotResetBtn',
       'inspectCard',
       'inspectEmpty',
       'inspectDetails',

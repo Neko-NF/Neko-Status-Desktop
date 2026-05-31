@@ -1389,6 +1389,17 @@ test('developer mode extracts UI metadata without direct IPC access', () => {
         backdropFilter: 'blur(8px)',
         maskImage: 'none',
         overflow: 'hidden',
+        borderRadius: '12px',
+        opacity: '0.86',
+        fontSize: '14px',
+        fontWeight: '600',
+        lineHeight: '20px',
+        color: 'rgb(15, 23, 42)',
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        padding: '8px 12px',
+        margin: '0px',
+        display: 'inline-flex',
+        gap: '6px',
       }),
     },
     console,
@@ -1423,6 +1434,10 @@ test('developer mode extracts UI metadata without direct IPC access', () => {
   assert.match(info.features, /position=fixed/);
   assert.match(info.features, /transition=0.2s/);
   assert.match(info.features, /backdrop-filter/);
+  assert.equal(info.uiux.radius, '12px');
+  assert.equal(info.uiux.opacity, '0.86');
+  assert.equal(info.uiux.fontSize, '14px');
+  assert.equal(info.uiux.gap, '6px');
 
   const iconAttrs = new Map([
     ['aria-label', 'Refresh backend'],
@@ -1471,8 +1486,9 @@ test('developer mode panel commands drive diagnostic switches through injected c
       dataset: {},
       hidden: false,
       style: {
-        setProperty() {},
-        getPropertyValue() { return ''; },
+        values: {},
+        setProperty(name, value) { this.values[name] = value; },
+        getPropertyValue(name) { return this.values[name] || ''; },
       },
       classList: {
         values: new Set(),
@@ -1572,15 +1588,53 @@ test('developer mode panel commands drive diagnostic switches through injected c
   await panelHandler({ action: 'run-health-check' });
   await panelHandler({ action: 'run-update-integrity' });
   await panelHandler({ action: 'clear-cache' });
+  await panelHandler({ action: 'set-uiux-token', token: 'radiusCard', value: 30 });
+  await panelHandler({ action: 'set-uiux-token', token: 'fontScale', value: 110 });
+  await panelHandler({ action: 'reset-uiux-tokens' });
+  await panelHandler({ action: 'set-screenshot-token', token: 'uploadFormat', value: 'jpeg' });
+  await panelHandler({ action: 'set-screenshot-token', token: 'targetKb', value: 2048 });
+  await panelHandler({ action: 'set-screenshot-token', token: 'resizeFloor', value: 65 });
+  mode.updateScreenshotDebug({
+    hasScreenshot: true,
+    screenshotSize: 512 * 1024,
+    screenshotTuning: { targetKb: 2048, resizeFloor: 65 },
+    screenshotCompression: {
+      originalBytes: 1024 * 1024,
+      compressedBytes: 512 * 1024,
+      ratio: 0.5,
+      format: 'jpeg',
+      quality: 84,
+      scale: 0.9,
+      width: 1280,
+      height: 720,
+    },
+  });
+  await panelHandler({ action: 'reset-screenshot-tokens' });
 
-  assert.deepEqual(calls.filter(Array.isArray), [
-    ['setConfig', 'updateSourceMode', 'smart'],
-    ['setConfig', 'autoCheckUpdate', false],
-    ['setConfig', 'autoDownload', true],
+  assert.deepEqual(calls.filter(Array.isArray).map(([kind, key, value]) => [kind, key, typeof value]), [
+    ['setConfig', 'updateSourceMode', 'string'],
+    ['setConfig', 'autoCheckUpdate', 'boolean'],
+    ['setConfig', 'autoDownload', 'boolean'],
+    ['setConfig', 'developerUiuxTuning', 'object'],
+    ['setConfig', 'developerUiuxTuning', 'object'],
+    ['setConfig', 'developerUiuxTuning', 'object'],
+    ['setConfig', 'developerScreenshotTuning', 'object'],
+    ['setConfig', 'developerScreenshotTuning', 'object'],
+    ['setConfig', 'developerScreenshotTuning', 'object'],
+    ['setConfig', 'developerScreenshotTuning', 'object'],
   ]);
   assert.equal(calls.includes('runHealthCheck'), true);
   assert.equal(calls.includes('runUpdateIntegrity'), true);
   assert.equal(calls.includes('clearCache'), true);
+  assert.equal(context.document.documentElement.style.values['--radius-card'], '24px');
+  assert.equal(context.document.documentElement.style.values['--type-body-size'], '12px');
+  assert.equal(context.document.body.style.zoom, '');
   assert.equal(panelStates.some((payload) => payload.diagnostics?.some((item) => item.title === '服务体检')), true);
   assert.equal(panelStates.some((payload) => payload.diagnostics?.some((item) => item.title === '缓存清理')), true);
+  assert.equal(panelStates.some((payload) => payload.uiuxTuning?.radiusCard === 30), true);
+  assert.equal(panelStates.some((payload) => payload.uiuxTuning?.fontScale === 110), true);
+  assert.equal(panelStates.some((payload) => payload.screenshotTuning?.uploadFormat === 'jpeg'), true);
+  assert.equal(panelStates.some((payload) => payload.screenshotTuning?.targetKb === 2048), true);
+  assert.equal(panelStates.some((payload) => payload.screenshotDebug?.screenshotCompression?.compressedBytes === 512 * 1024), true);
+  assert.equal(mode.getState().screenshotTuning.targetKb, 2253);
 });

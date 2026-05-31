@@ -508,6 +508,7 @@ function setupIPC() {
     getDeveloperModeWindow,
     openDeveloperModeWindow,
     closeDeveloperModeWindow,
+    statusService,
   });
 }
 

@@ -6,6 +6,8 @@
     MODE: 'debugEnabled',
     UI_INSPECT: 'developerUiInspectEnabled',
     INCLUDE_HIDDEN: 'developerUiInspectIncludeHidden',
+    UIUX_TUNING: 'developerUiuxTuning',
+    SCREENSHOT_TUNING: 'developerScreenshotTuning',
   });
 
   const INSPECT_SELECTOR = [
@@ -87,8 +89,121 @@
     { selector: '.nav-item, .topbar, .topbar *', file: 'src/renderer/js/core/router.js + src/renderer/js/app.js', owner: 'Shell/Router' },
   ];
 
+  const UIUX_TUNING_DEFAULTS = Object.freeze({
+    radiusCard: 24,
+    radiusButton: 18,
+    glassOpacity: 5,
+    fontScale: 100,
+    textOpacity: 60,
+  });
+
+  const SCREENSHOT_TUNING_DEFAULTS = Object.freeze({
+    uploadFormat: 'auto',
+    captureWidth: 1920,
+    captureHeight: 1080,
+    targetKb: 2253,
+    maxKb: 4710,
+    uploadLimitKb: 5120,
+    jpegQuality: 88,
+    minQuality: 64,
+    resizeFloor: 50,
+  });
+
+  const TYPE_SIZE_BASE = Object.freeze({
+    '--type-page-title-size': 22,
+    '--type-page-subtitle-size': 13,
+    '--type-section-title-size': 18,
+    '--type-section-subtitle-size': 13,
+    '--type-section-label-size': 18,
+    '--type-row-title-size': 14,
+    '--type-row-desc-size': 12,
+    '--type-body-size': 12,
+    '--type-metric-size': 15,
+    '--type-value-strong-size': 20,
+    '--type-kpi-size': 28,
+    '--type-kpi-compact-size': 26,
+    '--type-kpi-unit-size': 14,
+    '--type-label-caps-size': 11,
+  });
+
   function normalizeBool(value) {
     return value === true || value === 'true' || value === 1;
+  }
+
+  function clampNumber(value, min, max, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(min, Math.min(max, number));
+  }
+
+  function normalizedUiuxTuning(source = {}) {
+    return {
+      radiusCard: clampNumber(source.radiusCard, 8, 40, UIUX_TUNING_DEFAULTS.radiusCard),
+      radiusButton: clampNumber(source.radiusButton, 4, 28, UIUX_TUNING_DEFAULTS.radiusButton),
+      glassOpacity: clampNumber(source.glassOpacity, 2, 24, UIUX_TUNING_DEFAULTS.glassOpacity),
+      fontScale: clampNumber(source.fontScale, 85, 120, UIUX_TUNING_DEFAULTS.fontScale),
+      textOpacity: clampNumber(source.textOpacity, 40, 95, UIUX_TUNING_DEFAULTS.textOpacity),
+    };
+  }
+
+  function normalizedScreenshotTuning(source = {}) {
+    const targetKb = Math.round(clampNumber(source.targetKb, 256, 8192, SCREENSHOT_TUNING_DEFAULTS.targetKb));
+    const maxKb = Math.round(Math.max(targetKb, clampNumber(source.maxKb, 512, 9216, SCREENSHOT_TUNING_DEFAULTS.maxKb)));
+    const uploadLimitKb = Math.round(Math.max(maxKb, clampNumber(source.uploadLimitKb, 512, 10240, SCREENSHOT_TUNING_DEFAULTS.uploadLimitKb)));
+    const uploadFormat = ['auto', 'jpeg', 'png'].includes(source.uploadFormat) ? source.uploadFormat : SCREENSHOT_TUNING_DEFAULTS.uploadFormat;
+    const jpegQuality = Math.round(clampNumber(source.jpegQuality, 45, 94, SCREENSHOT_TUNING_DEFAULTS.jpegQuality));
+    return {
+      uploadFormat,
+      captureWidth: Math.round(clampNumber(source.captureWidth, 800, 3840, SCREENSHOT_TUNING_DEFAULTS.captureWidth)),
+      captureHeight: Math.round(clampNumber(source.captureHeight, 450, 2160, SCREENSHOT_TUNING_DEFAULTS.captureHeight)),
+      targetKb,
+      maxKb,
+      uploadLimitKb,
+      jpegQuality,
+      minQuality: Math.min(jpegQuality, Math.round(clampNumber(source.minQuality, 45, 92, SCREENSHOT_TUNING_DEFAULTS.minQuality))),
+      resizeFloor: Math.round(clampNumber(source.resizeFloor, 35, 100, SCREENSHOT_TUNING_DEFAULTS.resizeFloor)),
+    };
+  }
+
+  function setUiuxVar(name, value) {
+    document.documentElement.style.setProperty(name, value);
+    document.body?.style?.setProperty?.(name, value);
+  }
+
+  function rgbaForCurrentTheme(alpha) {
+    const light = document.documentElement.getAttribute('data-theme') === 'light';
+    return light ? `rgba(15, 23, 42, ${alpha})` : `rgba(255, 255, 255, ${alpha})`;
+  }
+
+  function applyUiuxTuning(tuning) {
+    const next = normalizedUiuxTuning(tuning);
+    const cardRadius = Math.round(next.radiusCard);
+    const buttonRadius = Math.round(next.radiusButton);
+    setUiuxVar('--radius-card', `${cardRadius}px`);
+    setUiuxVar('--radius-panel', `${Math.min(48, cardRadius + 8)}px`);
+    setUiuxVar('--radius-btn', `${buttonRadius}px`);
+    setUiuxVar('--radius-input', `${buttonRadius}px`);
+    setUiuxVar('--radius-chip', `${Math.min(999, buttonRadius + 2)}px`);
+    setUiuxVar('--radius-compact', `${Math.max(6, buttonRadius - 6)}px`);
+
+    const glassAlpha = Math.round(next.glassOpacity) / 100;
+    setUiuxVar('--glass-bg', `rgba(255, 255, 255, ${glassAlpha})`);
+    setUiuxVar('--glass-bg-hover', `rgba(255, 255, 255, ${Math.min(0.32, glassAlpha + 0.03)})`);
+    setUiuxVar('--surface-raised', `rgba(255, 255, 255, ${Math.min(0.34, glassAlpha + 0.02)})`);
+
+    const textAlpha = Math.round(next.textOpacity) / 100;
+    setUiuxVar('--text-secondary', rgbaForCurrentTheme(textAlpha));
+    setUiuxVar('--text-muted', rgbaForCurrentTheme(Math.max(0.22, textAlpha - 0.18)));
+
+    const fontScale = next.fontScale / 100;
+    setUiuxVar('--developer-font-scale-factor', String(fontScale));
+    if (document.body?.style) {
+      document.body.style.zoom = fontScale === 1 ? '' : String(fontScale);
+    }
+    Object.entries(TYPE_SIZE_BASE).forEach(([name, base]) => {
+      setUiuxVar(name, `${Math.round(base * fontScale * 10) / 10}px`);
+    });
+    return next;
   }
 
   function safeText(value, fallback = '--') {
@@ -206,6 +321,40 @@
     return parts.length ? parts.join(' | ') : 'static visual layer';
   }
 
+  function styleValue(style, name, fallback = '--') {
+    const value = style?.[name];
+    return value == null || value === '' ? fallback : String(value);
+  }
+
+  function uiuxMetrics(el) {
+    const style = window.getComputedStyle?.(el) || {};
+    return {
+      radius: styleValue(style, 'borderRadius'),
+      opacity: styleValue(style, 'opacity'),
+      fontSize: styleValue(style, 'fontSize'),
+      fontWeight: styleValue(style, 'fontWeight'),
+      lineHeight: styleValue(style, 'lineHeight'),
+      color: styleValue(style, 'color'),
+      background: styleValue(style, 'backgroundColor'),
+      padding: styleValue(style, 'padding'),
+      margin: styleValue(style, 'margin'),
+      display: styleValue(style, 'display'),
+      gap: styleValue(style, 'gap'),
+    };
+  }
+
+  function uiuxSummary(metrics) {
+    if (!metrics) return '--';
+    return [
+      `radius=${metrics.radius}`,
+      `opacity=${metrics.opacity}`,
+      `font=${metrics.fontSize}/${metrics.fontWeight}`,
+      `line=${metrics.lineHeight}`,
+      `padding=${metrics.padding}`,
+      `gap=${metrics.gap}`,
+    ].join(' | ');
+  }
+
   function textFeatureSummary(parent) {
     const style = window.getComputedStyle?.(parent) || {};
     const parts = ['text-node'];
@@ -227,6 +376,7 @@
       sourceFile: source.file,
       size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
       features: featureSummary(el),
+      uiux: uiuxMetrics(el),
     };
   }
 
@@ -241,6 +391,7 @@
       sourceFile: source.file,
       size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
       features: textFeatureSummary(parent),
+      uiux: uiuxMetrics(parent),
     };
   }
 
@@ -273,6 +424,9 @@
       inspectTargets: [],
       selectedBox: null,
       selectedInfo: null,
+      uiuxTuning: { ...UIUX_TUNING_DEFAULTS },
+      screenshotTuning: { ...SCREENSHOT_TUNING_DEFAULTS },
+      screenshotDebug: null,
       lastBackendSnapshot: null,
       diagnostics: [],
     };
@@ -364,6 +518,9 @@
         includeHidden: state.includeHidden,
         backend: state.lastBackendSnapshot,
         selectedInfo: state.selectedInfo,
+        uiuxTuning: state.uiuxTuning,
+        screenshotTuning: state.screenshotTuning,
+        screenshotDebug: state.screenshotDebug,
         diagnostics: state.diagnostics,
         theme: getPanelTheme(),
       });
@@ -492,6 +649,41 @@
           pushDiagnostic('缓存清理', 'error', error.message);
           api.addLogLine('ERROR', `开发者模式缓存清理失败: ${error.message}`);
         }
+        return;
+      }
+      if (action === 'set-uiux-token') {
+        const token = payload.token;
+        if (!Object.prototype.hasOwnProperty.call(UIUX_TUNING_DEFAULTS, token)) return;
+        state.uiuxTuning = applyUiuxTuning({
+          ...state.uiuxTuning,
+          [token]: payload.value,
+        });
+        await api.setConfig(CONFIG_KEYS.UIUX_TUNING, state.uiuxTuning);
+        sendPanelState();
+        return;
+      }
+      if (action === 'reset-uiux-tokens') {
+        state.uiuxTuning = applyUiuxTuning(UIUX_TUNING_DEFAULTS);
+        await api.setConfig(CONFIG_KEYS.UIUX_TUNING, state.uiuxTuning);
+        pushDiagnostic('UIUX 调试', 'ok', '已重置当前会话视觉参数');
+        return;
+      }
+      if (action === 'set-screenshot-token') {
+        const token = payload.token;
+        if (!Object.prototype.hasOwnProperty.call(SCREENSHOT_TUNING_DEFAULTS, token)) return;
+        state.screenshotTuning = normalizedScreenshotTuning({
+          ...state.screenshotTuning,
+          [token]: payload.value,
+        });
+        await api.setConfig(CONFIG_KEYS.SCREENSHOT_TUNING, state.screenshotTuning);
+        sendPanelState();
+        return;
+      }
+      if (action === 'reset-screenshot-tokens') {
+        state.screenshotTuning = normalizedScreenshotTuning(SCREENSHOT_TUNING_DEFAULTS);
+        await api.setConfig(CONFIG_KEYS.SCREENSHOT_TUNING, state.screenshotTuning);
+        pushDiagnostic('截图压缩', 'ok', '已重置当前会话截图策略');
+        return;
       }
     }
 
@@ -549,6 +741,12 @@
 
     function renderBackendSnapshot(snapshot) {
       state.lastBackendSnapshot = snapshot || {};
+      if (snapshot?.lastResult) {
+        state.screenshotDebug = snapshot.lastResult;
+        if (snapshot.lastResult.screenshotTuning) {
+          state.screenshotTuning = normalizedScreenshotTuning(snapshot.lastResult.screenshotTuning);
+        }
+      }
       sendPanelState();
       if (!backendList) return;
       const items = [
@@ -599,6 +797,7 @@
         ['来源', `${info.sourceOwner} -> ${info.sourceFile}`],
         ['尺寸', info.size],
         ['层级', info.features],
+        ['UIUX', uiuxSummary(info.uiux)],
       ].forEach(([label, value]) => {
         const row = document.createElement('div');
         const key = document.createElement('span');
@@ -633,6 +832,10 @@
         ['角色/类型', info.role],
         ['尺寸', info.size],
         ['CSS 层级', info.features],
+        ['圆角/透明度', info.uiux ? `${info.uiux.radius} / ${info.uiux.opacity}` : '--'],
+        ['字体', info.uiux ? `${info.uiux.fontSize} / ${info.uiux.fontWeight} / ${info.uiux.lineHeight}` : '--'],
+        ['间距', info.uiux ? `padding ${info.uiux.padding} / margin ${info.uiux.margin} / gap ${info.uiux.gap}` : '--'],
+        ['色彩', info.uiux ? `fg ${info.uiux.color} / bg ${info.uiux.background}` : '--'],
       ].forEach(([label, value]) => {
         const row = document.createElement('div');
         row.className = 'developer-mode-detail-row';
@@ -890,6 +1093,10 @@
       const themeObserver = new MutationObserver(schedulePanelThemeSync);
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style', 'class'] });
       themeObserver.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] });
+      document.addEventListener('neko:themeChange', () => {
+        state.uiuxTuning = applyUiuxTuning(state.uiuxTuning);
+        schedulePanelThemeSync();
+      });
       window.addEventListener('resize', requestScan);
       document.addEventListener('scroll', requestScan, true);
       document.addEventListener('keydown', (event) => {
@@ -906,20 +1113,25 @@
       ensureHost();
       bindControls();
       try {
-        const [mode, inspect, includeHidden] = await Promise.all([
+        const [mode, inspect, includeHidden, uiuxTuning, screenshotTuning] = await Promise.all([
           api.getConfig(CONFIG_KEYS.MODE),
           api.getConfig(CONFIG_KEYS.UI_INSPECT),
           api.getConfig(CONFIG_KEYS.INCLUDE_HIDDEN),
+          api.getConfig(CONFIG_KEYS.UIUX_TUNING),
+          api.getConfig(CONFIG_KEYS.SCREENSHOT_TUNING),
         ]);
         state.enabled = normalizeBool(mode);
         state.uiInspect = state.enabled && normalizeBool(inspect);
         state.includeHidden = normalizeBool(includeHidden);
+        state.uiuxTuning = normalizedUiuxTuning(uiuxTuning || UIUX_TUNING_DEFAULTS);
+        state.screenshotTuning = normalizedScreenshotTuning(screenshotTuning || SCREENSHOT_TUNING_DEFAULTS);
         if (!state.enabled && normalizeBool(inspect)) await api.setConfig(CONFIG_KEYS.UI_INSPECT, false);
       } catch {
         state.enabled = false;
         state.uiInspect = false;
       }
       render();
+      state.uiuxTuning = applyUiuxTuning(state.uiuxTuning);
       if (state.enabled) {
         await api.openPanel();
         sendPanelState();
@@ -928,16 +1140,31 @@
       return apiPublic;
     }
 
+    function updateScreenshotDebug(data = {}) {
+      state.screenshotDebug = data || null;
+      if (data?.screenshotTuning) {
+        state.screenshotTuning = normalizedScreenshotTuning(data.screenshotTuning);
+      }
+      sendPanelState();
+    }
+
     const apiPublic = {
       init,
       setEnabled,
       setUiInspect,
       setIncludeHidden,
       refreshBackend,
+      updateScreenshotDebug,
       requestScan,
       inspectElement,
       inspectTextNode,
-      getState: () => ({ enabled: state.enabled, uiInspect: state.uiInspect, includeHidden: state.includeHidden, boxes: state.boxes.length }),
+      getState: () => ({
+        enabled: state.enabled,
+        uiInspect: state.uiInspect,
+        includeHidden: state.includeHidden,
+        boxes: state.boxes.length,
+        screenshotTuning: state.screenshotTuning,
+      }),
       CONFIG_KEYS,
     };
 

@@ -75,10 +75,26 @@ test('developer mode payload validators keep sidecar commands controlled', () =>
     'run-health-check',
     'run-update-integrity',
     'clear-cache',
+    'reset-uiux-tokens',
+    'reset-screenshot-tokens',
   ].forEach((action) => {
     assert.equal(validateDeveloperModeCommandPayload({ action }).ok, true);
   });
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-uiux-token', token: 'radiusCard', value: 24 }).ok, true);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-uiux-token', token: 'radiusCard', value: 80 }).ok, false);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-uiux-token', token: 'unknown', value: 12 }).ok, false);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-screenshot-token', token: 'targetKb', value: 2048 }).ok, true);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-screenshot-token', token: 'uploadFormat', value: 'jpeg' }).ok, true);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-screenshot-token', token: 'uploadFormat', value: 'webp' }).ok, false);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-screenshot-token', token: 'targetKb', value: 128 }).ok, false);
+  assert.equal(validateDeveloperModeCommandPayload({ action: 'set-screenshot-token', token: 'unknown', value: 2048 }).ok, false);
   assert.equal(validateDeveloperModeCommandPayload({ action: 'run-shell' }).ok, false);
-  assert.equal(validateDeveloperModePanelStatePayload({ enabled: true, backend: { ipcReady: true } }).ok, true);
+  assert.equal(validateDeveloperModePanelStatePayload({
+    enabled: true,
+    backend: { ipcReady: true },
+    uiuxTuning: { radiusCard: 24 },
+    screenshotTuning: { targetKb: 2048 },
+    screenshotDebug: { hasScreenshot: true },
+  }).ok, true);
   assert.equal(validateDeveloperModePanelStatePayload({ includeHidden: 'true' }).ok, false);
 });

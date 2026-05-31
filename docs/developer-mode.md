@@ -7,6 +7,8 @@ Developer Mode is a global diagnostic mode for frontend UIUX inspection and back
 - State is persisted through the existing config IPC key `debugEnabled`.
 - The UIUX guide layer state is persisted through `developerUiInspectEnabled`.
 - The UIUX hidden/pre-rendered layer scan option is persisted through `developerUiInspectIncludeHidden`.
+- Developer visual tuning is persisted through `developerUiuxTuning`.
+- Developer screenshot tuning is persisted through `developerScreenshotTuning`.
 - Renderer code uses the existing service/client path only: page/component -> renderer service -> `IpcClient` -> preload bridge -> main IPC.
 - The mode never concatenates JavaScript, shell commands, PowerShell commands, or dynamic IPC channel names.
 
@@ -31,6 +33,8 @@ The sidecar receives the main window's current theme mode and core CSS variables
 The sidecar is fully localized in Chinese and provides:
 
 - `检查元素`: scans visible interactive/layout elements and draws guide boxes.
+- `UIUX 调试`: provides controlled tuning for visual CSS tokens such as card radius, button radius, glass opacity, font scale, and secondary text opacity. Values are saved and reapplied on the next Developer Mode session.
+- `截图压缩调试`: provides controlled tuning for screenshot capture resolution, upload format (`auto`/JPG/PNG), target size, resize threshold, upload limit, JPEG quality, minimum JPEG quality, and resize floor; it also shows the latest screenshot compression result. Values are saved through config IPC.
 - `刷新快照`: refreshes a backend snapshot using existing clients.
 - `重扫界面`: redraws guide boxes after layout changes.
 - `复制快照`: copies a text-only diagnostic snapshot containing Developer Mode state, runtime/backend/update status, diagnostics, and the selected UI locator.
@@ -47,6 +51,7 @@ The UIUX guide layer highlights targets such as buttons, links, inputs, text lab
 - source file hint
 - rendered size
 - CSS layer features such as position, z-index, transition, animation, mask, backdrop filter, and overflow
+- UIUX computed style details such as border radius, opacity, font size, font weight, line height, padding, margin, gap, foreground color, and background color
 
 The locked details panel must use text-only values and `navigator.clipboard.writeText()` with a DOM fallback. It must not write HTML from inspected element data.
 

@@ -4,6 +4,20 @@
  */
 const { execFile } = require('child_process');
 const { desktopCapturer } = require('electron');
+const {
+  DEVELOPER_SCREENSHOT_TUNING_DEFAULTS,
+} = require('../shared/screenshot-tuning');
+
+const SCREENSHOT_COMPRESSION_DEFAULTS = Object.freeze({
+  targetBytes: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.targetKb * 1024,
+  maxBytes: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.maxKb * 1024,
+  format: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.uploadFormat,
+  jpegQuality: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.jpegQuality,
+  minQuality: 64,
+  minScale: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.resizeFloor / 100,
+  captureWidth: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.captureWidth,
+  captureHeight: DEVELOPER_SCREENSHOT_TUNING_DEFAULTS.captureHeight,
+});
 
 /**
  * 运行 PowerShell 脚本，返回 stdout 字符串
@@ -338,17 +352,230 @@ try { [IdleDetector]::GetIdleMs() } catch { 0 }
  * 使用 Electron desktopCapturer 截取主屏幕
  * 返回 PNG Buffer 或 null
  */
-async function captureScreen() {
+function bufferBytes(buffer) {
+  return buffer && typeof buffer.length === 'number' ? buffer.length : 0;
+}
+
+function imageSize(image) {
+  const size = image?.getSize?.() || {};
+  return {
+    width: Math.max(1, Math.round(size.width || 1)),
+    height: Math.max(1, Math.round(size.height || 1)),
+  };
+}
+
+function compressionResult({
+  buffer,
+  mimeType,
+  format,
+  originalBytes,
+  width,
+  height,
+  quality = null,
+  scale = 1,
+}) {
+  const compressedBytes = bufferBytes(buffer);
+  return {
+    buffer,
+    mimeType,
+    format,
+    extension: format === 'jpeg' ? 'jpg' : 'png',
+    originalBytes,
+    compressedBytes,
+    compressionRatio: originalBytes > 0 ? Math.round((1 - compressedBytes / originalBytes) * 1000) / 1000 : 0,
+    width,
+    height,
+    quality,
+    scale,
+    wasCompressed: compressedBytes > 0 && originalBytes > 0 && compressedBytes < originalBytes,
+  };
+}
+
+function normalizeCompressionOptions(options = {}) {
+  const targetBytes = Math.max(256 * 1024, Number(options.targetBytes) || SCREENSHOT_COMPRESSION_DEFAULTS.targetBytes);
+  const maxBytes = Math.max(targetBytes, 512 * 1024, Number(options.maxBytes) || SCREENSHOT_COMPRESSION_DEFAULTS.maxBytes);
+  const format = ['auto', 'jpeg', 'png'].includes(options.format) ? options.format : SCREENSHOT_COMPRESSION_DEFAULTS.format;
+  const jpegQuality = Math.max(45, Math.min(94, Number(options.jpegQuality) || SCREENSHOT_COMPRESSION_DEFAULTS.jpegQuality));
+  const minQuality = Math.max(40, Math.min(jpegQuality, Number(options.minQuality) || SCREENSHOT_COMPRESSION_DEFAULTS.minQuality));
+  return {
+    format,
+    targetBytes,
+    maxBytes,
+    jpegQuality,
+    minQuality,
+    minScale: Math.max(0.35, Math.min(1, Number(options.minScale) || SCREENSHOT_COMPRESSION_DEFAULTS.minScale)),
+    captureWidth: Math.max(640, Math.min(3840, Math.round(Number(options.captureWidth) || SCREENSHOT_COMPRESSION_DEFAULTS.captureWidth))),
+    captureHeight: Math.max(360, Math.min(2160, Math.round(Number(options.captureHeight) || SCREENSHOT_COMPRESSION_DEFAULTS.captureHeight))),
+  };
+}
+
+function jpegQualitySteps(preferredQuality, minQuality, extra = []) {
+  const preferred = Math.round(preferredQuality);
+  const min = Math.round(minQuality);
+  return [...new Set([
+    preferred,
+    ...extra,
+    92,
+    88,
+    84,
+    80,
+    76,
+    72,
+    68,
+    min,
+  ])]
+    .filter((quality) => quality <= preferred && quality >= min)
+    .sort((a, b) => b - a);
+}
+
+function resizeScalesFor(minScale) {
+  if (minScale >= 1) return [];
+  const seed = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4].filter((scale) => scale >= minScale);
+  seed.push(minScale);
+  return [...new Set(seed.map((scale) => Math.round(scale * 100) / 100))]
+    .filter((scale) => scale > 0 && scale < 1)
+    .sort((a, b) => b - a);
+}
+
+function pushPngCandidate(candidates, image, originalBytes, scale = 1) {
+  const buffer = image?.toPNG?.();
+  if (!buffer || buffer.length === 0) return;
+  const size = imageSize(image);
+  candidates.push(compressionResult({
+    buffer,
+    mimeType: 'image/png',
+    format: 'png',
+    originalBytes,
+    width: size.width,
+    height: size.height,
+    scale,
+  }));
+}
+
+function pushJpegCandidate(candidates, image, originalBytes, quality, scale = 1) {
+  const buffer = image?.toJPEG?.(quality);
+  if (!buffer || buffer.length === 0) return;
+  const size = imageSize(image);
+  candidates.push(compressionResult({
+    buffer,
+    mimeType: 'image/jpeg',
+    format: 'jpeg',
+    originalBytes,
+    width: size.width,
+    height: size.height,
+    quality,
+    scale,
+  }));
+}
+
+function bestUnder(candidates, byteLimit) {
+  return candidates
+    .filter((candidate) => candidate.compressedBytes <= byteLimit)
+    .sort((a, b) => b.scale - a.scale || (b.quality || 100) - (a.quality || 100) || b.compressedBytes - a.compressedBytes)[0];
+}
+
+function optimizeScreenshotImage(image, options = {}) {
+  if (!image || image.isEmpty?.()) return null;
+  const opts = normalizeCompressionOptions(options);
+  const { width, height } = imageSize(image);
+  const pngBuffer = image.toPNG?.();
+  if (!pngBuffer || pngBuffer.length === 0) return null;
+
+  const original = compressionResult({
+    buffer: pngBuffer,
+    mimeType: 'image/png',
+    format: 'png',
+    originalBytes: pngBuffer.length,
+    width,
+    height,
+  });
+
+  if (opts.format === 'png') {
+    if (pngBuffer.length <= opts.targetBytes) return original;
+    const pngCandidates = [original];
+    for (const scale of resizeScalesFor(opts.minScale)) {
+      const resized = image.resize?.({
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale)),
+        quality: 'best',
+      });
+      if (!resized || resized.isEmpty?.()) continue;
+      pushPngCandidate(pngCandidates, resized, pngBuffer.length, scale);
+      const resizedTarget = bestUnder(pngCandidates, opts.targetBytes);
+      if (resizedTarget) return resizedTarget;
+      const resizedMax = bestUnder(pngCandidates, opts.maxBytes);
+      if (resizedMax) return resizedMax;
+    }
+    return pngCandidates
+      .filter((candidate) => candidate.compressedBytes > 0)
+      .sort((a, b) => a.compressedBytes - b.compressedBytes)[0] || original;
+  }
+
+  if (opts.format === 'auto' && pngBuffer.length <= opts.targetBytes) return original;
+
+  const candidates = opts.format === 'auto' ? [original] : [];
+  jpegQualitySteps(opts.jpegQuality, opts.minQuality)
+    .forEach((quality) => pushJpegCandidate(candidates, image, pngBuffer.length, quality, 1));
+
+  const target = bestUnder(candidates, opts.targetBytes);
+  if (target) return target;
+
+  const max = bestUnder(candidates.filter((candidate) => opts.format !== 'jpeg' || candidate.format === 'jpeg'), opts.maxBytes);
+  if (max) return max;
+  if (opts.format === 'auto' && original.compressedBytes <= opts.maxBytes) return original;
+
+  const scales = resizeScalesFor(opts.minScale);
+  for (const scale of scales) {
+    const resized = image.resize?.({
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale)),
+      quality: 'best',
+    });
+    if (!resized || resized.isEmpty?.()) continue;
+    jpegQualitySteps(Math.min(opts.jpegQuality, 84), opts.minQuality, [78])
+      .forEach((quality) => pushJpegCandidate(candidates, resized, pngBuffer.length, quality, scale));
+
+    const resizedTarget = bestUnder(candidates, opts.targetBytes);
+    if (resizedTarget) return resizedTarget;
+    const resizedMax = bestUnder(candidates, opts.maxBytes);
+    if (resizedMax) return resizedMax;
+  }
+
+  return candidates
+    .filter((candidate) => candidate.compressedBytes > 0)
+    .sort((a, b) => a.compressedBytes - b.compressedBytes)[0] || original;
+}
+
+function optimizeScreenshotBuffer(buffer, options = {}) {
+  if (!buffer || buffer.length === 0) return null;
+  const { nativeImage } = require('electron');
+  return optimizeScreenshotImage(nativeImage.createFromBuffer(buffer), options);
+}
+
+async function captureScreen(options = {}) {
   try {
+    const opts = normalizeCompressionOptions(options);
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 },
+      thumbnailSize: { width: opts.captureWidth, height: opts.captureHeight },
     });
     if (sources.length === 0) return null;
     // 首选主屏幕
     const source = sources[0];
-    const pngBuffer = source.thumbnail.toPNG();
-    return pngBuffer.length > 0 ? pngBuffer : null;
+    const result = options.optimize === false
+      ? (() => {
+        const pngBuffer = source.thumbnail.toPNG();
+        return compressionResult({
+          buffer: pngBuffer,
+          mimeType: 'image/png',
+          format: 'png',
+          originalBytes: pngBuffer.length,
+          ...imageSize(source.thumbnail),
+        });
+      })()
+      : optimizeScreenshotImage(source.thumbnail, opts);
+    if (!result?.buffer?.length) return null;
+    return options.includeMetadata ? result : result.buffer;
   } catch (e) {
     console.error('[Screenshot] 截图失败:', e.message);
     return null;
@@ -476,7 +703,7 @@ function shouldBlurIncognitoScreenshot(enabled, scope) {
   return !!enabled && (normalizedScope === 'screenshot' || normalizedScope === 'both');
 }
 
-function blurScreenshotBuffer(buffer) {
+function blurScreenshotBuffer(buffer, options = {}) {
   if (!buffer || buffer.length === 0) return null;
   const { nativeImage } = require('electron');
   const img = nativeImage.createFromBuffer(buffer);
@@ -487,7 +714,9 @@ function blurScreenshotBuffer(buffer) {
     width: Math.max(1, Math.round(width / 20)),
     height: Math.max(1, Math.round(height / 20)),
   });
-  return tiny.resize({ width, height }).toPNG();
+  const blurred = tiny.resize({ width, height, quality: 'best' });
+  const result = optimizeScreenshotImage(blurred, options);
+  return options.includeMetadata ? result : result?.buffer || null;
 }
 
 /**
@@ -599,5 +828,9 @@ module.exports = {
   shouldMaskIncognitoTitle,
   shouldBlurIncognitoScreenshot,
   blurScreenshotBuffer,
+  optimizeScreenshotImage,
+  optimizeScreenshotBuffer,
+  normalizeCompressionOptions,
+  SCREENSHOT_COMPRESSION_DEFAULTS,
   getSystemMetrics,
 };

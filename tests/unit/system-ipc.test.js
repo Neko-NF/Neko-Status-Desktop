@@ -36,7 +36,7 @@ function createMocks() {
       freemem: () => 50,
     },
     systemUtils: {
-      captureScreen: async () => Buffer.from([1, 2, 3]),
+      captureScreen: mock.fn(async () => Buffer.from([1, 2, 3])),
       getActiveWindow: async () => null,
       listVisibleWindows: async () => [],
       getBatteryInfo: async () => ({ level: 100 }),
@@ -44,6 +44,7 @@ function createMocks() {
     },
     statusService: {
       getDeviceFingerprint: () => 'fingerprint',
+      getScreenshotCaptureOptions: () => ({ targetBytes: 2048, captureWidth: 1280, captureHeight: 720 }),
     },
     metricsHistory: [],
     getMainWindow: () => ({ webContents: { session, setZoomFactor: mock.fn() }, hide: mock.fn(), show: mock.fn(), minimize: mock.fn() }),
@@ -91,5 +92,31 @@ describe('registerSystemIpc', () => {
     assert.equal(result.data.success, false);
     assert.equal(result.data.canceled, true);
     assert.equal(mocks.dialog.showSaveDialog.mock.callCount(), 1);
+  });
+
+  it('screenshot:capture returns renderer-friendly compression metadata', async () => {
+    mocks.systemUtils.captureScreen = mock.fn(async () => ({
+      buffer: Buffer.from([1, 2, 3]),
+      mimeType: 'image/jpeg',
+      format: 'jpeg',
+      extension: 'jpg',
+      originalBytes: 100,
+      compressedBytes: 3,
+      compressionRatio: 0.97,
+      quality: 84,
+      scale: 1,
+      width: 1280,
+      height: 720,
+    }));
+    const result = await handlers['screenshot:capture']();
+
+    assert.equal(result.ok, true);
+    assert.equal(mocks.systemUtils.captureScreen.mock.calls[0].arguments[0].targetBytes, 2048);
+    assert.equal(mocks.systemUtils.captureScreen.mock.calls[0].arguments[0].includeMetadata, true);
+    assert.deepEqual(result.data.data, [1, 2, 3]);
+    assert.equal(result.data.type, 'image/jpeg');
+    assert.equal(result.data.extension, 'jpg');
+    assert.equal(result.data.quality, 84);
+    assert.equal(result.data.width, 1280);
   });
 });

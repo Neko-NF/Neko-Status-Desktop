@@ -39,6 +39,88 @@
             </button>
         </section>
 
+        <section class="dev-panel-card dev-uiux-card" id="uiuxCard">
+            <div class="dev-section-head">
+                <span>UIUX 调试</span>
+                <small>实时调节当前会话视觉参数</small>
+            </div>
+            <div class="dev-uiux-control-list">
+                <label class="dev-uiux-control">
+                    <span>卡片圆角 <strong id="uiuxRadiusCardValue">24px</strong></span>
+                    <input id="uiuxRadiusCard" data-uiux-token="radiusCard" type="range" min="8" max="40" step="1" value="24">
+                </label>
+                <label class="dev-uiux-control">
+                    <span>按钮圆角 <strong id="uiuxRadiusButtonValue">18px</strong></span>
+                    <input id="uiuxRadiusButton" data-uiux-token="radiusButton" type="range" min="4" max="28" step="1" value="18">
+                </label>
+                <label class="dev-uiux-control">
+                    <span>玻璃透明度 <strong id="uiuxGlassOpacityValue">5%</strong></span>
+                    <input id="uiuxGlassOpacity" data-uiux-token="glassOpacity" type="range" min="2" max="24" step="1" value="5">
+                </label>
+                <label class="dev-uiux-control">
+                    <span>字体缩放 <strong id="uiuxFontScaleValue">100%</strong></span>
+                    <input id="uiuxFontScale" data-uiux-token="fontScale" type="range" min="85" max="120" step="1" value="100">
+                </label>
+                <label class="dev-uiux-control">
+                    <span>次级文字透明度 <strong id="uiuxTextOpacityValue">60%</strong></span>
+                    <input id="uiuxTextOpacity" data-uiux-token="textOpacity" type="range" min="40" max="95" step="1" value="60">
+                </label>
+            </div>
+            <button class="dev-tool-btn dev-uiux-reset" id="uiuxResetBtn" type="button">
+                <i class="ph ph-arrow-counter-clockwise"></i><span>重置 UIUX 参数</span>
+            </button>
+        </section>
+
+        <section class="dev-panel-card dev-screenshot-card" id="screenshotTuningCard">
+            <div class="dev-section-head">
+                <span>截图压缩调试</span>
+                <small>当前会话上报策略</small>
+            </div>
+            <div class="dev-screenshot-debug" id="screenshotDebugList"></div>
+            <div class="dev-format-toggle" role="group" aria-label="截图上传格式">
+                <button class="dev-format-btn active" id="screenshotFormatAuto" data-screenshot-format="auto" type="button">智能</button>
+                <button class="dev-format-btn" id="screenshotFormatJpeg" data-screenshot-format="jpeg" type="button">JPG</button>
+                <button class="dev-format-btn" id="screenshotFormatPng" data-screenshot-format="png" type="button">PNG</button>
+            </div>
+            <div class="dev-screenshot-control-list">
+                <label class="dev-screenshot-control">
+                    <span>采集宽度 <strong id="screenshotCaptureWidthValue">1920px</strong></span>
+                    <input id="screenshotCaptureWidth" data-screenshot-token="captureWidth" type="range" min="800" max="3840" step="80" value="1920">
+                </label>
+                <label class="dev-screenshot-control">
+                    <span>采集高度 <strong id="screenshotCaptureHeightValue">1080px</strong></span>
+                    <input id="screenshotCaptureHeight" data-screenshot-token="captureHeight" type="range" min="450" max="2160" step="45" value="1080">
+                </label>
+                <label class="dev-screenshot-control">
+                    <span>目标大小 <strong id="screenshotTargetKbValue">2253KB</strong></span>
+                    <input id="screenshotTargetKb" data-screenshot-token="targetKb" type="range" min="256" max="8192" step="128" value="2253">
+                </label>
+                <label class="dev-screenshot-control">
+                    <span>降级阈值 <strong id="screenshotMaxKbValue">4710KB</strong></span>
+                    <input id="screenshotMaxKb" data-screenshot-token="maxKb" type="range" min="512" max="9216" step="128" value="4710">
+                </label>
+                <label class="dev-screenshot-control">
+                    <span>上报上限 <strong id="screenshotUploadLimitKbValue">5120KB</strong></span>
+                    <input id="screenshotUploadLimitKb" data-screenshot-token="uploadLimitKb" type="range" min="512" max="10240" step="128" value="5120">
+                </label>
+                <label class="dev-screenshot-control" data-format-scope="jpeg">
+                    <span>JPEG 质量 <strong id="screenshotJpegQualityValue">88</strong></span>
+                    <input id="screenshotJpegQuality" data-screenshot-token="jpegQuality" type="range" min="45" max="94" step="1" value="88">
+                </label>
+                <label class="dev-screenshot-control" data-format-scope="jpeg">
+                    <span>JPEG 最低质量 <strong id="screenshotMinQualityValue">64</strong></span>
+                    <input id="screenshotMinQuality" data-screenshot-token="minQuality" type="range" min="45" max="92" step="1" value="64">
+                </label>
+                <label class="dev-screenshot-control">
+                    <span>分辨率下限 <strong id="screenshotResizeFloorValue">50%</strong></span>
+                    <input id="screenshotResizeFloor" data-screenshot-token="resizeFloor" type="range" min="35" max="100" step="5" value="50">
+                </label>
+            </div>
+            <button class="dev-tool-btn dev-screenshot-reset" id="screenshotResetBtn" type="button">
+                <i class="ph ph-arrow-counter-clockwise"></i><span>重置截图策略</span>
+            </button>
+        </section>
+
         <section class="dev-panel-card">
             <div class="dev-section-head">
                 <span>调试工具</span>

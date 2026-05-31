@@ -9,6 +9,7 @@ function createHarness() {
   const panelSends = [];
   const mainActions = [];
   const panelActions = [];
+  const screenshotActions = [];
   const deps = {
     ipcMain: {
       handle(channel, fn) { handlers[channel] = fn; },
@@ -33,10 +34,14 @@ function createHarness() {
     }),
     openDeveloperModeWindow: () => ({ id: 'panel' }),
     closeDeveloperModeWindow: () => { deps.closed = true; },
+    statusService: {
+      setScreenshotTuningToken: (token, value) => screenshotActions.push(['set', token, value]),
+      resetScreenshotTuning: () => screenshotActions.push(['reset']),
+    },
     closed: false,
   };
   registerDeveloperModeIpc(deps);
-  return { handlers, deps, mainSends, panelSends, mainActions, panelActions };
+  return { handlers, deps, mainSends, panelSends, mainActions, panelActions, screenshotActions };
 }
 
 test('developer mode IPC opens and closes the external panel through controlled handlers', async () => {
@@ -56,15 +61,38 @@ test('developer mode IPC opens and closes the external panel through controlled 
 });
 
 test('developer mode IPC forwards commands to main window and state to sidecar only', async () => {
-  const { handlers, mainSends, panelSends } = createHarness();
+  const { handlers, mainSends, panelSends, screenshotActions } = createHarness();
 
   await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'toggle-inspect' });
+  await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'set-uiux-token', token: 'radiusCard', value: 28 });
+  await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'set-screenshot-token', token: 'uploadFormat', value: 'png' });
+  await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'set-screenshot-token', token: 'targetKb', value: 2048 });
+  await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'reset-screenshot-tokens' });
   await handlers[IPC_CHANNELS.DEV_MODE_PANEL_STATE](null, { uiInspect: true });
 
-  assert.deepEqual(mainSends, [{
-    channel: IPC_EVENTS.DEV_MODE_PANEL_COMMAND,
-    payload: { action: 'toggle-inspect' },
-  }]);
+  assert.deepEqual(mainSends, [
+    {
+      channel: IPC_EVENTS.DEV_MODE_PANEL_COMMAND,
+      payload: { action: 'toggle-inspect' },
+    },
+    {
+      channel: IPC_EVENTS.DEV_MODE_PANEL_COMMAND,
+      payload: { action: 'set-uiux-token', token: 'radiusCard', value: 28 },
+    },
+    {
+      channel: IPC_EVENTS.DEV_MODE_PANEL_COMMAND,
+      payload: { action: 'set-screenshot-token', token: 'uploadFormat', value: 'png' },
+    },
+    {
+      channel: IPC_EVENTS.DEV_MODE_PANEL_COMMAND,
+      payload: { action: 'set-screenshot-token', token: 'targetKb', value: 2048 },
+    },
+    {
+      channel: IPC_EVENTS.DEV_MODE_PANEL_COMMAND,
+      payload: { action: 'reset-screenshot-tokens' },
+    },
+  ]);
+  assert.deepEqual(screenshotActions, [['set', 'uploadFormat', 'png'], ['set', 'targetKb', 2048], ['reset']]);
   assert.deepEqual(panelSends, [{
     channel: IPC_EVENTS.DEV_MODE_PANEL_STATE,
     payload: { uiInspect: true },
@@ -93,10 +121,19 @@ test('developer mode IPC rejects unknown commands and malformed state', async ()
   const { handlers, mainSends, panelSends } = createHarness();
 
   const badCommand = await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'run-shell' });
+  const badUiuxCommand = await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'set-uiux-token', token: 'radiusCard', value: 999 });
+  const badScreenshotCommand = await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'set-screenshot-token', token: 'targetKb', value: 99 });
+  const badFormatCommand = await handlers[IPC_CHANNELS.DEV_MODE_PANEL_COMMAND](null, { action: 'set-screenshot-token', token: 'uploadFormat', value: 'webp' });
   const badState = await handlers[IPC_CHANNELS.DEV_MODE_PANEL_STATE](null, { uiInspect: 'yes' });
 
   assert.equal(badCommand.ok, false);
   assert.equal(badCommand.error.code, 'INVALID_DEVELOPER_MODE_COMMAND');
+  assert.equal(badUiuxCommand.ok, false);
+  assert.equal(badUiuxCommand.error.code, 'INVALID_DEVELOPER_MODE_COMMAND');
+  assert.equal(badScreenshotCommand.ok, false);
+  assert.equal(badScreenshotCommand.error.code, 'INVALID_DEVELOPER_MODE_COMMAND');
+  assert.equal(badFormatCommand.ok, false);
+  assert.equal(badFormatCommand.error.code, 'INVALID_DEVELOPER_MODE_COMMAND');
   assert.equal(badState.ok, false);
   assert.equal(badState.error.code, 'INVALID_DEVELOPER_MODE_STATE');
   assert.deepEqual(mainSends, []);

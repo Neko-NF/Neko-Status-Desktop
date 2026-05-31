@@ -35,6 +35,8 @@ src/main/system-utils.js          截图、窗口、指标、系统信息等能�
 src/main/ipc/*.ipc.js             各领域 IPC handler
 ```
 
+截图能力由主进程统一采集和压缩。`system-utils.captureScreen({ includeMetadata: true })` 返回图片 Buffer、真实 MIME、扩展名和压缩统计；上报、IPC 预览和活动流必须使用这些元数据，不能在 renderer 侧假定截图永远是 PNG。Developer Mode 可以保存截图采集分辨率、上传格式（auto/JPG/PNG）、压缩目标、降级阈值、上报上限、JPEG 质量、JPEG 最低质量和分辨率下限，但实际采集与上报仍由主进程执行。状态上报客户端使用 multipart `screenshot` 字段并设置真实 MIME/扩展名；后端截图上传文档也声明文件支持 PNG/JPEG。
+
 IPC 模块按领域拆分：
 
 ```text

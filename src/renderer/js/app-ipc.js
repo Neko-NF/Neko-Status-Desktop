@@ -711,7 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function getDeveloperBackendSnapshot(options = {}) {
     const includeNetwork = options.includeNetwork === true;
-    const [version, serviceRunning, processInfo, metrics, cacheSize, config, pendingInstall] = await Promise.all([
+    const [version, serviceRunning, processInfo, metrics, cacheSize, config, pendingInstall, lastResult] = await Promise.all([
       callSystem('getVersion', 'getVersion').catch(() => null),
       callService('isRunning', 'isRunning').catch(() => false),
       callService('getProcessInfo', 'getProcessInfo').catch(() => null),
@@ -719,6 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
       callSystem('getCacheSize', 'getCacheSize').catch(() => 0),
       callConfig('getAll', 'getAllConfig').catch(() => ({})),
       callUpdate('getPendingInstall', 'getPendingInstall').catch(() => null),
+      callService('getLastResult', 'getLastResult').catch(() => null),
     ]);
     const snapshot = {
       ipcReady: !!ipcClient?.isReady?.(),
@@ -728,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
       processInfo,
       metrics,
       cacheSize,
+      lastResult,
       configMode: config?.serverMode || 'production',
       update: {
         channel: config?.updateChannel || 'stable',
@@ -947,7 +949,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 自动截图同步到 UI 预览卡片
     if (data.hasScreenshot && data.screenshotBase64) {
-      const url = `data:image/png;base64,${data.screenshotBase64}`;
+      const screenshotMime = data.screenshotMimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+      const screenshotExt = data.screenshotExtension || (screenshotMime === 'image/jpeg' ? 'jpg' : 'png');
+      const screenshotFormat = screenshotExt.toUpperCase();
+      const url = `data:${screenshotMime};base64,${data.screenshotBase64}`;
       const isBlurred = !!data.screenshotBlurred;
       const sizeKB = ((data.screenshotSize || 0) / 1024).toFixed(0);
       const captureTs = resolveEventTimestamp(data.timestamp || Date.now());
@@ -978,12 +983,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dashEmpty) dashEmpty.style.display = 'none';
       const dashName = document.getElementById('dashScreenshotName');
       const dashSize = document.getElementById('dashScreenshotSize');
-      if (dashName) dashName.innerHTML = `<i class="ph ph-hard-drive"></i> screenshot_${Date.now()}.png`;
+      if (dashName) dashName.innerHTML = `<i class="ph ph-hard-drive"></i> screenshot_${Date.now()}.${screenshotExt}`;
       if (dashSize) dashSize.innerHTML = `<i class="ph ph-arrows-out"></i> ${sizeKB} KB`;
       setScreenshotPreviewTime(captureTime);
 
       // 活动流追加截图记录
-      appendActivityItem('capture', isBlurred ? '自动截图（已模糊）' : '自动截图', `${sizeKB} KB · PNG`, formatTimeOnly(captureTs));
+      appendActivityItem('capture', isBlurred ? '自动截图（已模糊）' : '自动截图', `${sizeKB} KB · ${screenshotFormat}`, formatTimeOnly(captureTs));
     }
   }
 
@@ -1386,7 +1391,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return null;
     }
     const bytes = new Uint8Array(result.data);
-    const blob = new Blob([bytes], { type: result.type });
+    const screenshotMime = result.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const screenshotExt = result.extension || (screenshotMime === 'image/jpeg' ? 'jpg' : 'png');
+    const screenshotFormat = screenshotExt.toUpperCase();
+    const blob = new Blob([bytes], { type: screenshotMime });
     let url = URL.createObjectURL(blob);
     let isBlurred = false;
 
@@ -1421,7 +1429,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     addLogLine('SUCCESS', `截图完成${isBlurred ? '（已模糊）' : ''}，大小 ${(bytes.length / 1024).toFixed(1)} KB`);
     showNekoIsland(isBlurred ? '截图完成（隐私模糊）' : '截图完成', 'success', 2000);
-    appendActivityItem('capture', isBlurred ? '截图完成（已模糊）' : '截图完成', `${(bytes.length / 1024).toFixed(0)} KB · PNG`, formatTimeOnly(captureTs));
+    appendActivityItem('capture', isBlurred ? '截图完成（已模糊）' : '截图完成', `${(bytes.length / 1024).toFixed(0)} KB · ${screenshotFormat}`, formatTimeOnly(captureTs));
     setScreenshotPreviewTime(formatDateTime(captureTs));
 
     // 更新截图预览
@@ -1448,7 +1456,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dashEmpty) dashEmpty.style.display = 'none';
     const dashName = document.getElementById('dashScreenshotName');
     const dashSize = document.getElementById('dashScreenshotSize');
-    if (dashName) dashName.innerHTML = `<i class="ph ph-hard-drive"></i> screenshot_${Date.now()}.png`;
+    if (dashName) dashName.innerHTML = `<i class="ph ph-hard-drive"></i> screenshot_${Date.now()}.${screenshotExt}`;
     if (dashSize) dashSize.innerHTML = `<i class="ph ph-arrows-out"></i> ${(bytes.length / 1024).toFixed(0)} KB`;
 
     return { url, isBlurred };
@@ -3105,6 +3113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _lastTickSnapshot = data;
     updateDashboardCards(data);
     updateConsoleTickStatus(data);
+    developerMode?.updateScreenshotDebug?.(data);
     if (data.batteryLevel != null) {
       updatePowerKpi(data.batteryLevel, data.isCharging, data.hasBattery, null);
     }

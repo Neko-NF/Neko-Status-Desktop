@@ -50,6 +50,16 @@ class ConfigStore {
         ...DEFAULTS.streamConfig,
         ...(value || {}),
       };
+    } else if (key === 'developerUiuxTuning') {
+      this._data.developerUiuxTuning = {
+        ...DEFAULTS.developerUiuxTuning,
+        ...(value || {}),
+      };
+    } else if (key === 'developerScreenshotTuning') {
+      this._data.developerScreenshotTuning = {
+        ...DEFAULTS.developerScreenshotTuning,
+        ...(value || {}),
+      };
     } else {
       this._data[key] = value;
     }
@@ -63,6 +73,18 @@ class ConfigStore {
       this._data.streamConfig = {
         ...DEFAULTS.streamConfig,
         ...(obj.streamConfig || {}),
+      };
+    }
+    if (Object.prototype.hasOwnProperty.call(obj, 'developerUiuxTuning')) {
+      this._data.developerUiuxTuning = {
+        ...DEFAULTS.developerUiuxTuning,
+        ...(obj.developerUiuxTuning || {}),
+      };
+    }
+    if (Object.prototype.hasOwnProperty.call(obj, 'developerScreenshotTuning')) {
+      this._data.developerScreenshotTuning = {
+        ...DEFAULTS.developerScreenshotTuning,
+        ...(obj.developerScreenshotTuning || {}),
       };
     }
     this._save();

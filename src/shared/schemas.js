@@ -1,3 +1,8 @@
+const {
+  DEVELOPER_SCREENSHOT_FORMATS,
+  DEVELOPER_SCREENSHOT_TUNING_RANGES,
+} = require('./screenshot-tuning');
+
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -132,7 +137,19 @@ const DEVELOPER_MODE_COMMAND_ACTIONS = new Set([
   'run-health-check',
   'run-update-integrity',
   'clear-cache',
+  'set-uiux-token',
+  'reset-uiux-tokens',
+  'set-screenshot-token',
+  'reset-screenshot-tokens',
 ]);
+
+const DEVELOPER_UIUX_TOKENS = Object.freeze({
+  radiusCard: { min: 8, max: 40 },
+  radiusButton: { min: 4, max: 28 },
+  glassOpacity: { min: 2, max: 24 },
+  fontScale: { min: 85, max: 120 },
+  textOpacity: { min: 40, max: 95 },
+});
 
 function validateDeveloperModeCommandPayload(payload) {
   if (!isPlainObject(payload)) {
@@ -141,6 +158,32 @@ function validateDeveloperModeCommandPayload(payload) {
 
   if (!DEVELOPER_MODE_COMMAND_ACTIONS.has(payload.action)) {
     return { ok: false, reason: 'unsupported developer mode action' };
+  }
+
+  if (payload.action === 'set-uiux-token') {
+    const token = payload.token;
+    const value = Number(payload.value);
+    const range = DEVELOPER_UIUX_TOKENS[token];
+    if (!range) return { ok: false, reason: 'unsupported UIUX token' };
+    if (!Number.isFinite(value) || value < range.min || value > range.max) {
+      return { ok: false, reason: 'UIUX token value is out of range' };
+    }
+  }
+
+  if (payload.action === 'set-screenshot-token') {
+    const token = payload.token;
+    if (token === 'uploadFormat') {
+      if (!DEVELOPER_SCREENSHOT_FORMATS.includes(payload.value)) {
+        return { ok: false, reason: 'unsupported screenshot upload format' };
+      }
+      return { ok: true };
+    }
+    const value = Number(payload.value);
+    const range = DEVELOPER_SCREENSHOT_TUNING_RANGES[token];
+    if (!range) return { ok: false, reason: 'unsupported screenshot tuning token' };
+    if (!Number.isFinite(value) || value < range.min || value > range.max) {
+      return { ok: false, reason: 'screenshot tuning value is out of range' };
+    }
   }
 
   return { ok: true };
@@ -158,7 +201,7 @@ function validateDeveloperModePanelStatePayload(payload) {
     }
   }
 
-  const objectFields = ['backend', 'selectedInfo', 'theme'];
+  const objectFields = ['backend', 'selectedInfo', 'theme', 'uiuxTuning', 'screenshotTuning', 'screenshotDebug'];
   for (const field of objectFields) {
     if (payload[field] !== undefined && payload[field] !== null && !isPlainObject(payload[field])) {
       return { ok: false, reason: `${field} must be an object when provided` };

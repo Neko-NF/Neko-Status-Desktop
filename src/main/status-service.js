@@ -19,6 +19,11 @@ const apiService = require('./api-service');
 const configStore = require('./config-store');
 const os = require('os');
 const crypto = require('crypto');
+const {
+  DEVELOPER_SCREENSHOT_TUNING_DEFAULTS,
+  normalizeDeveloperScreenshotTuning,
+  developerScreenshotTuningToCaptureOptions,
+} = require('../shared/screenshot-tuning');
 
 // 设备指纹（SHA256 哈希，融合多维度硬件特征，稳定不变）
 const DEVICE_FINGERPRINT = crypto.createHash('sha256')
@@ -44,6 +49,8 @@ class StatusService {
     this._autoRestartCount = 0;
     this._watchdogTimer = null;
     this._startedAt = Date.now();
+    this._screenshotTuning = normalizeDeveloperScreenshotTuning(DEVELOPER_SCREENSHOT_TUNING_DEFAULTS);
+    this._screenshotTuningLoaded = false;
   }
 
   get isRunning() {
@@ -76,6 +83,43 @@ class StatusService {
   resetRecoveryCounters() {
     this._consecutiveFailures = 0;
     this._autoRestartCount = 0;
+  }
+
+  _ensureScreenshotTuningLoaded() {
+    if (this._screenshotTuningLoaded) return;
+    this._screenshotTuningLoaded = true;
+    try {
+      this._screenshotTuning = normalizeDeveloperScreenshotTuning(configStore.get('developerScreenshotTuning') || {});
+    } catch {
+      this._screenshotTuning = normalizeDeveloperScreenshotTuning(DEVELOPER_SCREENSHOT_TUNING_DEFAULTS);
+    }
+  }
+
+  getScreenshotTuning() {
+    this._ensureScreenshotTuningLoaded();
+    return { ...this._screenshotTuning };
+  }
+
+  getScreenshotCaptureOptions() {
+    this._ensureScreenshotTuningLoaded();
+    return developerScreenshotTuningToCaptureOptions(this._screenshotTuning);
+  }
+
+  setScreenshotTuningToken(token, value) {
+    this._ensureScreenshotTuningLoaded();
+    this._screenshotTuning = normalizeDeveloperScreenshotTuning({
+      ...this._screenshotTuning,
+      [token]: value,
+    });
+    configStore.set('developerScreenshotTuning', this._screenshotTuning);
+    return this.getScreenshotTuning();
+  }
+
+  resetScreenshotTuning() {
+    this._ensureScreenshotTuningLoaded();
+    this._screenshotTuning = normalizeDeveloperScreenshotTuning(DEVELOPER_SCREENSHOT_TUNING_DEFAULTS);
+    configStore.set('developerScreenshotTuning', this._screenshotTuning);
+    return this.getScreenshotTuning();
   }
 
   _log(level, msg) {
@@ -224,19 +268,50 @@ class StatusService {
 
       // 5b. 截图（若已启用，支持独立间隔）
       let screenshotBuffer = null;
+      let screenshotMimeType = 'image/png';
+      let screenshotExtension = 'png';
+      let screenshotCompression = null;
       let screenshotBlurred = false;
       let screenshotBlurReason = '';
+      let screenshotSkippedReason = '';
+      const screenshotOptions = this.getScreenshotCaptureOptions();
       if (configStore.get('enableScreenshot')) {
         const syncInterval = configStore.get('syncScreenshotInterval');
         const ssInterval = syncInterval ? configStore.get('reportInterval') : configStore.get('screenshotInterval');
         const now = Date.now();
         const elapsed = (now - this._lastScreenshotTime) / 1000;
         if (elapsed >= (ssInterval || 60)) {
-          screenshotBuffer = await captureScreen().catch(() => null);
+          const screenshotResult = await captureScreen({ ...screenshotOptions, includeMetadata: true }).catch(() => null);
+          screenshotBuffer = screenshotResult?.buffer || null;
+          screenshotMimeType = screenshotResult?.mimeType || 'image/png';
+          screenshotExtension = screenshotResult?.extension || 'png';
+          screenshotCompression = screenshotResult ? {
+            originalBytes: screenshotResult.originalBytes,
+            compressedBytes: screenshotResult.compressedBytes,
+            ratio: screenshotResult.compressionRatio,
+            format: screenshotResult.format,
+            quality: screenshotResult.quality,
+            scale: screenshotResult.scale,
+            width: screenshotResult.width,
+            height: screenshotResult.height,
+            uploadFormat: screenshotOptions.format,
+            jpegQuality: screenshotOptions.jpegQuality,
+            targetBytes: screenshotOptions.targetBytes,
+            maxBytes: screenshotOptions.maxBytes,
+            uploadLimitBytes: screenshotOptions.uploadLimitBytes,
+            minQuality: screenshotOptions.minQuality,
+            minScale: screenshotOptions.minScale,
+            captureWidth: screenshotOptions.captureWidth,
+            captureHeight: screenshotOptions.captureHeight,
+          } : null;
           if (!screenshotBuffer) this._lastScreenshotTime = now;
-          // 截图压缩：如果 PNG 超过 3MB，转为 JPEG 降质
-          if (screenshotBuffer && screenshotBuffer.length > 3 * 1024 * 1024) {
-            this._log('INFO', `截图 ${(screenshotBuffer.length / 1024 / 1024).toFixed(1)}MB 超限，已跳过压缩（需 sharp 库）`);
+          if (screenshotCompression?.originalBytes > screenshotCompression?.compressedBytes) {
+            const before = (screenshotCompression.originalBytes / 1024 / 1024).toFixed(1);
+            const after = (screenshotCompression.compressedBytes / 1024 / 1024).toFixed(1);
+            const encoder = screenshotCompression.quality
+              ? `${screenshotCompression.format} q${screenshotCompression.quality}`
+              : screenshotCompression.format;
+            this._log('INFO', `Screenshot optimized: ${before}MB -> ${after}MB (${encoder})`);
           }
           if (screenshotBuffer) this._lastScreenshotTime = now;
 
@@ -246,9 +321,30 @@ class StatusService {
 
           if (screenshotBuffer && shouldBlurScreenshot) {
             try {
-              const blurred = blurScreenshotBuffer(screenshotBuffer);
-              if (blurred) {
-                screenshotBuffer = blurred;
+              const blurred = blurScreenshotBuffer(screenshotBuffer, { ...screenshotOptions, includeMetadata: true });
+              if (blurred?.buffer) {
+                screenshotBuffer = blurred.buffer;
+                screenshotMimeType = blurred.mimeType || screenshotMimeType;
+                screenshotExtension = blurred.extension || screenshotExtension;
+                screenshotCompression = {
+                  originalBytes: blurred.originalBytes,
+                  compressedBytes: blurred.compressedBytes,
+                  ratio: blurred.compressionRatio,
+                  format: blurred.format,
+                  quality: blurred.quality,
+                  scale: blurred.scale,
+                  width: blurred.width,
+                  height: blurred.height,
+                  uploadFormat: screenshotOptions.format,
+                  jpegQuality: screenshotOptions.jpegQuality,
+                  targetBytes: screenshotOptions.targetBytes,
+                  maxBytes: screenshotOptions.maxBytes,
+                  uploadLimitBytes: screenshotOptions.uploadLimitBytes,
+                  minQuality: screenshotOptions.minQuality,
+                  minScale: screenshotOptions.minScale,
+                  captureWidth: screenshotOptions.captureWidth,
+                  captureHeight: screenshotOptions.captureHeight,
+                };
                 screenshotBlurred = true;
                 screenshotBlurReason = blurAll ? 'global' : 'rule';
                 this._log('INFO', blurAll
@@ -289,8 +385,10 @@ class StatusService {
         this._log('WARN', `应用图标 ${(iconBuffer.length / 1024 / 1024).toFixed(1)}MB 超过 1MB 限制，已跳过`);
         iconBuffer = null;
       }
-      if (screenshotBuffer && screenshotBuffer.length > 5 * 1024 * 1024) {
-        this._log('WARN', `截图 ${(screenshotBuffer.length / 1024 / 1024).toFixed(1)}MB 超过 5MB 限制，已跳过`);
+      if (screenshotBuffer && screenshotBuffer.length > screenshotOptions.uploadLimitBytes) {
+        const limitMb = (screenshotOptions.uploadLimitBytes / 1024 / 1024).toFixed(1);
+        screenshotSkippedReason = 'upload_limit';
+        this._log('WARN', `截图 ${(screenshotBuffer.length / 1024 / 1024).toFixed(1)}MB 超过 ${limitMb}MB 限制，已跳过`);
         screenshotBuffer = null;
       }
 
@@ -306,6 +404,8 @@ class StatusService {
         isCharging: battery.isCharging,
         status: this._userStatus,
         screenshotBuffer,
+        screenshotMimeType,
+        screenshotFilename: `screenshot.${screenshotExtension}`,
         music: maskTitle ? null : musicPayload,
         iconBuffer: maskTitle ? null : iconBuffer,
         captureEnabled: configStore.get('enableScreenshot') === true,
@@ -325,6 +425,11 @@ class StatusService {
         hasScreenshot: !!screenshotBuffer,
         screenshotSize: screenshotBuffer ? screenshotBuffer.length : 0,
         screenshotBase64: screenshotBuffer ? screenshotBuffer.toString('base64') : null,
+        screenshotMimeType,
+        screenshotExtension,
+        screenshotCompression,
+        screenshotTuning: this.getScreenshotTuning(),
+        screenshotSkippedReason,
         screenshotBlurred,
         screenshotBlurReason,
       };
