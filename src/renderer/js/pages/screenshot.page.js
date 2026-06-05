@@ -2,11 +2,32 @@
   window._nekoModules = window._nekoModules || {};
   window._nekoModules.pages = window._nekoModules.pages || {};
 
+  const $ = (id) => document.getElementById(id);
+
+  function defaultDeps() {
+      return {
+          addLogLine: () => {},
+          showNotice: () => {},
+          appendActivityItem: () => {},
+          formatDateTime: (value) => new Date(value).toLocaleString(),
+          formatTimeOnly: (value) => new Date(value).toLocaleTimeString(),
+          config: window._nekoModules?.services?.ConfigClient || null,
+          service: window._nekoModules?.services?.ServiceClient || null,
+          system: window._nekoModules?.services?.SystemClient || null,
+      };
+  }
+
   const ScreenshotPage = {
     _initialized: false,
+    _actionsBound: false,
+    _deps: defaultDeps(),
 
-    init() {
-      if (this._initialized) return;
+    init(deps = {}) {
+      this._deps = { ...this._deps, ...deps };
+      if (this._initialized) {
+        this.bindBackendControls();
+        return;
+      }
       this._initialized = true;
 
       const historyFilterGroup = document.getElementById('historyFilterGroup');
@@ -149,7 +170,7 @@
       }
       
       // ======== div 开关统一 click 处理（截图页 + 服务页 + 设置页） ======== //
-      // 只做 UI class 切换，具体配置持久化逻辑统一在 app-ipc.js 中
+      // 只做 UI class 切换，具体配置持久化逻辑统一在 ScreenshotPage 中
       [
           'uploadSwitch', 'autoStartSwitch', 'autoStartMinimizeSwitch', 'reportAutoStartSwitch', 'autoRestartSwitch',
           'stgAutoStartSwitch', 'stgTraySwitch', 'stgRestoreSwitch',
@@ -547,7 +568,7 @@
       });
       
       // ======== 活动流 - 空态管理 ======== //
-      // 暴露给 app-ipc 使用的辅助函数
+      // 暴露给 renderer runtime 使用的辅助函数
 
       window._nekoActivityHelpers = {
           hideEmpty() {
@@ -573,6 +594,161 @@
       };
       
       // ======== 服务与自启动 - 上报服务自启联动 ======== //
+      this.bindBackendControls();
+    },
+
+    config() {
+      return this._deps.config || window._nekoModules?.services?.ConfigClient || null;
+    },
+
+    service() {
+      return this._deps.service || window._nekoModules?.services?.ServiceClient || null;
+    },
+
+    system() {
+      return this._deps.system || window._nekoModules?.services?.SystemClient || null;
+    },
+
+    log(level, message) {
+      this._deps.addLogLine(level, message);
+    },
+
+    notice(message, type = 'info', durationMs = 3000) {
+      this._deps.showNotice(message, type, durationMs);
+    },
+
+    bindBackendControls() {
+      if (this._actionsBound) return;
+      if (!this.config() && !this.service() && !this.system()) return;
+      this._actionsBound = true;
+
+      $('toggleScreenshot')?.addEventListener('click', async function handleDashboardScreenshotToggle() {
+        const enabled = this.classList.contains('on');
+        await ScreenshotPage.config()?.set?.('enableScreenshot', enabled);
+        $('uploadSwitch')?.classList.toggle('on', enabled);
+        ScreenshotPage.log('INFO', `截图上报 -> ${enabled ? '已启用' : '已禁用'}`);
+        ScreenshotPage.service()?.syncMeta?.().catch(() => {});
+      });
+
+      $('uploadSwitch')?.addEventListener('click', async function handleUploadToggle() {
+        const enabled = this.classList.contains('on');
+        await ScreenshotPage.config()?.set?.('enableScreenshot', enabled);
+        $('toggleScreenshot')?.classList.toggle('on', enabled);
+        ScreenshotPage.service()?.syncMeta?.().catch(() => {});
+      });
+
+      $('captureNowBtn')?.addEventListener('click', () => this.triggerScreenshot());
+      $('dashCaptureNowBtn')?.addEventListener('click', () => this.triggerScreenshot());
+
+      $('screenshotModeGroup')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.toggle-btn');
+        if (!btn || !btn.dataset.mode) return;
+        await this.config()?.set?.('screenshotMode', btn.dataset.mode);
+        if (btn.dataset.mode === 'auto') {
+          await this.config()?.set?.('syncScreenshotInterval', true);
+        } else if (btn.dataset.mode === 'interval') {
+          await this.config()?.set?.('syncScreenshotInterval', false);
+        }
+      });
+
+      $('intervalSelector')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.interval-btn');
+        if (!btn || !btn.dataset.value) return;
+        const seconds = parseInt(btn.dataset.value, 10);
+        if (!Number.isNaN(seconds) && seconds >= 10) {
+          await this.config()?.set?.('screenshotInterval', seconds);
+        }
+      });
+
+      $('customIntervalValue')?.addEventListener('change', async function handleCustomIntervalChange() {
+        const raw = parseInt(this.value, 10);
+        const unit = $('customIntervalUnit')?.value || 's';
+        const seconds = unit === 'm' ? raw * 60 : unit === 'h' ? raw * 3600 : raw;
+        if (!Number.isNaN(seconds) && seconds >= 10) {
+          await ScreenshotPage.config()?.set?.('screenshotInterval', seconds);
+        }
+      });
+    },
+
+    async triggerScreenshot() {
+      this.log('INFO', '正在截图...');
+      const captureTs = Date.now();
+      const result = await this.system()?.captureScreen?.();
+      if (!result) {
+        this.log('ERROR', '截图失败或功能不可用');
+        this.notice('截图失败', 'error', 3000);
+        return null;
+      }
+
+      const bytes = new Uint8Array(result.data);
+      const screenshotMime = result.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+      const screenshotExt = result.extension || (screenshotMime === 'image/jpeg' ? 'jpg' : 'png');
+      const screenshotFormat = screenshotExt.toUpperCase();
+      const blob = new Blob([bytes], { type: screenshotMime });
+      const url = URL.createObjectURL(blob);
+      let isBlurred = false;
+
+      const helpers = window._nekoActivityHelpers;
+      const screenshotPrivacyOn = helpers?.isScreenshotPrivacyEnabled?.();
+      if (screenshotPrivacyOn) {
+        const blurAllEl = $('blurAllSwitch');
+        if (blurAllEl?.classList.contains('on')) {
+          isBlurred = true;
+          this.log('INFO', '全局截图模糊已启用，截图已模糊');
+          helpers?.incrementBlurCount?.();
+        }
+      }
+
+      if (!isBlurred && screenshotPrivacyOn) {
+        try {
+          const activeWin = await this.system()?.getActiveWindow?.();
+          const rules = helpers?.getPrivacyRules?.() || [];
+          if (activeWin?.processName && rules.length > 0) {
+            const procLower = helpers.normalizePrivacyRule(activeWin.processName).toLowerCase();
+            const matched = rules.some((rule) => procLower === helpers.normalizePrivacyRule(rule).toLowerCase());
+            if (matched) {
+              isBlurred = true;
+              this.log('INFO', `隐私规则命中: ${activeWin.processName}，截图已模糊`);
+              helpers?.incrementBlurCount?.();
+            }
+          }
+        } catch { /* 获取前台窗口失败，跳过模糊 */ }
+      }
+
+      this.log('SUCCESS', `截图完成${isBlurred ? '（已模糊）' : ''}，大小 ${(bytes.length / 1024).toFixed(1)} KB`);
+      this.notice(isBlurred ? '截图完成（隐私模糊）' : '截图完成', 'success', 2000);
+      this._deps.appendActivityItem('capture', isBlurred ? '截图完成（已模糊）' : '截图完成', `${(bytes.length / 1024).toFixed(0)} KB · ${screenshotFormat}`, this._deps.formatTimeOnly(captureTs));
+
+      const timeText = this._deps.formatDateTime(captureTs);
+      const timeEl = document.querySelector('.screenshot-preview-time');
+      if (timeEl) timeEl.textContent = timeText;
+
+      const frame = document.querySelector('.screenshot-frame');
+      if (frame) {
+        frame.style.backgroundImage = `url(${url})`;
+        frame.style.backgroundSize = 'cover';
+        frame.style.backgroundPosition = 'center';
+        frame.style.filter = isBlurred ? 'blur(20px)' : 'none';
+        const placeholder = frame.querySelector('.screenshot-placeholder');
+        if (placeholder) placeholder.style.display = 'none';
+        const overlay = frame.querySelector('.screenshot-frame-overlay');
+        if (overlay) overlay.style.display = 'flex';
+      }
+
+      const dashImg = $('dashScreenshotImg');
+      const dashEmpty = $('dashScreenshotEmpty');
+      if (dashImg) {
+        dashImg.src = url;
+        dashImg.style.display = '';
+        dashImg.style.filter = isBlurred ? 'blur(20px)' : 'none';
+      }
+      if (dashEmpty) dashEmpty.style.display = 'none';
+      const dashName = $('dashScreenshotName');
+      const dashSize = $('dashScreenshotSize');
+      if (dashName) dashName.innerHTML = `<i class="ph ph-hard-drive"></i> screenshot_${Date.now()}.${screenshotExt}`;
+      if (dashSize) dashSize.innerHTML = `<i class="ph ph-arrows-out"></i> ${(bytes.length / 1024).toFixed(0)} KB`;
+
+      return { url, isBlurred };
     },
   };
 

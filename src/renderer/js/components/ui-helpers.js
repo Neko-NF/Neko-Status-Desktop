@@ -165,11 +165,109 @@
         }
     }
 
+    function enhanceSelect(select, options = {}) {
+        if (!select || select._nekoSelect) return select?._nekoSelect || null;
+
+        const icons = options.icons || {};
+        const labels = options.labels || {};
+        const root = document.createElement('div');
+        const trigger = document.createElement('button');
+        const menu = document.createElement('div');
+        const iconEl = document.createElement('i');
+        const valueLabel = document.createElement('span');
+        const caret = document.createElement('i');
+
+        root.className = 'neko-select';
+        trigger.type = 'button';
+        trigger.className = 'neko-select-trigger';
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        menu.className = 'neko-select-menu';
+        menu.setAttribute('role', 'listbox');
+        iconEl.className = 'ph neko-select-leading';
+        valueLabel.className = 'neko-select-value';
+        caret.className = 'ph ph-caret-down neko-select-caret';
+
+        trigger.append(iconEl, valueLabel, caret);
+        root.append(trigger, menu);
+        select.classList.add('neko-select-source');
+        select.setAttribute('aria-hidden', 'true');
+        select.tabIndex = -1;
+        select.insertAdjacentElement('afterend', root);
+
+        const close = () => {
+            root.classList.remove('open');
+            trigger.setAttribute('aria-expanded', 'false');
+        };
+        const open = () => {
+            document.querySelectorAll('.neko-select.open').forEach((item) => {
+                if (item !== root) item.classList.remove('open');
+            });
+            root.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+        };
+        const sync = () => {
+            const selected = select.options[select.selectedIndex] || select.options[0];
+            const value = selected?.value || '';
+            valueLabel.textContent = labels[value] || selected?.textContent || '';
+            iconEl.className = `ph ${icons[value] || options.defaultIcon || 'ph-list'} neko-select-leading`;
+            menu.querySelectorAll('[data-value]').forEach((item) => {
+                const active = item.dataset.value === value;
+                item.classList.toggle('active', active);
+                item.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+        };
+        const render = () => {
+            menu.innerHTML = '';
+            Array.from(select.options).forEach((option) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'neko-select-option';
+                item.dataset.value = option.value;
+                item.setAttribute('role', 'option');
+                item.innerHTML = `<i class="ph ${icons[option.value] || options.defaultIcon || 'ph-circle'}"></i><span></span>`;
+                item.querySelector('span').textContent = labels[option.value] || option.textContent;
+                item.addEventListener('click', () => {
+                    select.value = option.value;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    sync();
+                    close();
+                });
+                menu.appendChild(item);
+            });
+            sync();
+        };
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            root.classList.contains('open') ? close() : open();
+        });
+        trigger.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                close();
+                return;
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                root.classList.contains('open') ? close() : open();
+            }
+        });
+        select.addEventListener('change', sync);
+        document.addEventListener('click', (event) => {
+            if (!root.contains(event.target)) close();
+        });
+
+        render();
+        select._nekoSelect = { root, trigger, menu, render, sync, close, open };
+        return select._nekoSelect;
+    }
+
     window._nekoUIHelpers = {
         ...(window._nekoUIHelpers || {}),
         setExpandableSectionState,
         applyUIFontProfile,
         resolveUIFontProfile,
         normalizeServiceHealthCheckCopy,
+        enhanceSelect,
     };
 })();

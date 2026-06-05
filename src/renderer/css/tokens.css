@@ -54,6 +54,7 @@
     --motion-mid: 280ms;
     /* 间距 */
     --spacing-base: 16px;
+    --sidebar-width: 240px;
     --sidebar-border: rgba(255, 255, 255, 0.1);
     /* 字体权重 */
     --fw-regular: 400;

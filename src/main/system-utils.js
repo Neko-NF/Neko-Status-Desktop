@@ -290,30 +290,48 @@ try {
 
 /**
  * 获取电池状态
- * 返回 { level: number, isCharging: boolean, hasBattery: boolean }
+ * 返回 { level: number, isCharging: boolean, hasBattery: boolean, deviceType: string, powerSource: string }
  */
 async function getBatteryInfo() {
   const script = `
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 try {
+  $chassis = Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue | Select-Object -First 1
+  $types = @()
+  if ($chassis -and $chassis.ChassisTypes) { $types = @($chassis.ChassisTypes) }
+  $portableTypes = @(8, 9, 10, 11, 12, 14, 18, 21, 30, 31, 32)
+  $isPortable = $false
+  foreach ($type in $types) {
+    if ($portableTypes -contains [int]$type) { $isPortable = $true }
+  }
+  $deviceType = if ($isPortable) { 'laptop' } else { 'desktop' }
   $b = Get-WmiObject Win32_Battery -ErrorAction SilentlyContinue
   if ($b) {
     # BatteryStatus: 1=放电, 2=交流供电充电, 3=充满, 4=低, 5=临界, 6=AC(充电中), 7=AC(充电中), 8=AC(充电中)
     $charging = ($b.BatteryStatus -eq 2) -or ($b.BatteryStatus -ge 6)
-    @{ level = [int]$b.EstimatedChargeRemaining; isCharging = [bool]$charging; hasBattery = $true } | ConvertTo-Json -Compress
+    $source = if ($charging) { 'ac' } else { 'battery' }
+    @{ level = [int]$b.EstimatedChargeRemaining; isCharging = [bool]$charging; hasBattery = $true; deviceType = $deviceType; powerSource = $source; description = 'Battery detected' } | ConvertTo-Json -Compress
   } else {
-    @{ level = 100; isCharging = $true; hasBattery = $false } | ConvertTo-Json -Compress
+    @{ level = 100; isCharging = $true; hasBattery = $false; deviceType = $deviceType; powerSource = 'ac'; description = 'No battery detected' } | ConvertTo-Json -Compress
   }
 } catch {
-  @{ level = 100; isCharging = $true; hasBattery = $false } | ConvertTo-Json -Compress
+  @{ level = 100; isCharging = $true; hasBattery = $false; deviceType = 'desktop'; powerSource = 'ac'; description = 'Battery detection failed' } | ConvertTo-Json -Compress
 }
 `.trim();
 
   try {
     const raw = await runPowerShell(script);
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      level: Number.isFinite(Number(parsed.level)) ? Number(parsed.level) : 100,
+      isCharging: parsed.isCharging !== false,
+      hasBattery: parsed.hasBattery === true,
+      deviceType: parsed.deviceType === 'laptop' ? 'laptop' : 'desktop',
+      powerSource: parsed.powerSource === 'battery' ? 'battery' : 'ac',
+      description: parsed.description || '',
+    };
   } catch {
-    return { level: 100, isCharging: true, hasBattery: false };
+    return { level: 100, isCharging: true, hasBattery: false, deviceType: 'desktop', powerSource: 'ac', description: 'Battery detection failed' };
   }
 }
 

@@ -53,6 +53,7 @@ const {
   registerServiceIpc,
   registerUpdateIpc,
   registerDeveloperModeIpc,
+  registerAnnouncementIpc,
 } = require('./ipc');
 const {
   runStartupUpdateGate,
@@ -510,6 +511,8 @@ function setupIPC() {
     closeDeveloperModeWindow,
     statusService,
   });
+
+  registerAnnouncementIpc({ ipcMain, configStore, apiService });
 }
 
 // ═══════════════════════════════════════════════════════════════════════

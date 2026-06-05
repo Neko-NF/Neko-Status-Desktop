@@ -2,7 +2,7 @@
  * state/app-state.js
  * 轻量全局可观察状态
  *
- * 集中管理散落在 app-ipc.js 中的全局变量，
+ * 集中管理跨页面运行时状态，
  * 提供 get/set/subscribe 接口
  *
  * 依赖：core/event-bus.js

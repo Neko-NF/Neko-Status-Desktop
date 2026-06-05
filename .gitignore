@@ -12,6 +12,7 @@ dist/
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 
@@ -22,6 +23,7 @@ Desktop.ini
 
 # Debug
 npm-debug.log*
+.codex-dev-logs/
 
 # Temp files
 temp.css
@@ -29,6 +31,9 @@ split_css.js
 test.js
 tmp-*.log
 tmp-*.pid
+code_artifact.tsx
+参考.txt
+参考2.txt
 
 # Local-only workspace/archive files
 _archive_local/

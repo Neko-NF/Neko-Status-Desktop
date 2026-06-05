@@ -43,6 +43,7 @@
         desc.textContent = labels[mode] || '';
       }
       bus?.emit('theme:mode-changed', { mode: actual, isDark });
+      document.dispatchEvent(new CustomEvent('neko:themeChange', { detail: { mode: actual, isDark } }));
     }
 
     if (mode === 'dark') { setDark(true); return; }

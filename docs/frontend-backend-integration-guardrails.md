@@ -129,6 +129,7 @@
 ```bash
 node --check src/preload/index.js
 node --check src/renderer/js/app-ipc.js
+node --check src/renderer/js/core/app-runtime.js
 npm run lint
 node --test --test-concurrency=1 "tests/unit/*.test.js"
 ```

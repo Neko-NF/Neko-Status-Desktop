@@ -41,6 +41,7 @@
             <a class="nav-item conditional-nav" id="navStream" data-target="page-stream"><i class="ph ph-broadcast"></i>直播推流</a>
             <a class="nav-item" data-target="page-services"><i class="ph ph-cpu"></i>服务与自启动</a>
             <a class="nav-item" data-target="page-update"><i class="ph ph-cloud-arrow-down"></i>更新中心</a>
+            <a class="nav-item conditional-nav" id="navAnnouncement" data-target="page-announcement" aria-hidden="true" tabindex="-1"><i class="ph ph-megaphone"></i>公告管理</a>
             <!-- 隐藏的控制台入口，默认不显示 -->
             <a class="nav-item console-nav" id="navConsole" data-target="consoleArea" style="display: flex; color: var(--theme-color);"><i class="ph ph-terminal-window"></i>控制台</a>
             <a class="nav-item" data-target="page-settings"><i class="ph ph-gear"></i>设置</a>
@@ -664,11 +665,11 @@
                     </div>
 
                     <!-- 底部：隐私防护横幅（紧凑单行） -->
-                    <div class="glass-card privacy-bar-card">
-                        <div class="privacy-bar-icon" id="privacyBarIcon"><i class="ph ph-shield-check"></i></div>
+                    <div class="glass-card privacy-bar-card disabled">
+                        <div class="privacy-bar-icon" id="privacyBarIcon"><i class="ph ph-shield-slash"></i></div>
                         <div class="privacy-bar-content">
-                            <div class="privacy-bar-title" id="privacyBarTitle">隐私防护已启用</div>
-                            <div class="privacy-bar-desc" id="privacyBarDesc">匹配隐私规则的前台应用截图将自动模糊后再上传，截图仅上传至已配置的自有服务器。</div>
+                            <div class="privacy-bar-title" id="privacyBarTitle">隐私防护未启用</div>
+                            <div class="privacy-bar-desc" id="privacyBarDesc">隐身模式未开启，截图将正常上传。开启后可配置隐私规则。</div>
                         </div>
                         <button class="action-btn" id="openPrivacyRulesBtn">设置隐私规则</button>
                         <div class="privacy-bar-stats">
@@ -1349,6 +1350,204 @@
                     </div>
                 </div>
 
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 公告管理 ========== -->
+    <div class="page" id="page-announcement" style="display: none; animation: fadeIn 0.3s ease;">
+        <div class="content-safe-area">
+            <div class="announcement-header">
+                <div class="announcement-header-left">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="announcement-page-subtitle">管理公告内容、弹窗策略与过期状态</span>
+                        <span class="announcement-mock-badge" id="announcementMockBadge" style="display: none;">
+                            <i class="ph ph-sparkles"></i> 模拟数据模式
+                        </span>
+                    </div>
+                </div>
+                <div class="announcement-header-actions">
+                </div>
+            </div>
+
+            <div class="announcement-form-wrapper" id="announcementFormWrapper">
+                <div class="glass-card announcement-form-card" id="announcementForm">
+                    <div class="announcement-form-head">
+                        <div class="announcement-form-title-text" id="announcementFormTitleWrap">
+                            <i class="ph ph-megaphone-simple" id="announcementFormTitleIcon" style="color: var(--theme-color); font-size: 18px;"></i>
+                            <span id="announcementFormTitle">创建公告</span>
+                        </div>
+                    </div>
+                    <div class="announcement-form-body announcement-form-layout">
+                        <div class="announcement-form-main">
+                            <div class="form-group">
+                                <label>标题</label>
+                                <input type="text" class="glass-input" id="announcementTitle" placeholder="公告标题">
+                            </div>
+                            <div class="form-group announcement-content-group">
+                                <label>内容</label>
+                                <textarea class="glass-input" id="announcementContent" rows="5" placeholder="公告内容..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>类型</label>
+                                <div class="announcement-type-segmented" id="announcementTypeSegment">
+                                    <div class="segment-btn active" data-value="info"><i class="ph ph-info"></i>信息</div>
+                                    <div class="segment-btn" data-value="warning"><i class="ph ph-warning-circle"></i>提醒</div>
+                                    <div class="segment-btn" data-value="urgent"><i class="ph ph-warning"></i>紧急</div>
+                                </div>
+                                <input type="text" id="announcementType" style="display: none;" value="info">
+                            </div>
+                        </div>
+                        <aside class="announcement-form-side">
+                            <input type="hidden" id="announcementCategory" value="system">
+                            <div class="announcement-side-grid">
+                                <div class="form-group">
+                                    <label>触达范围</label>
+                                    <select class="glass-input" id="announcementAudience">
+                                        <option value="all">全员</option>
+                                        <option value="users">普通用户</option>
+                                        <option value="admins">仅管理员</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>发布状态</label>
+                                    <select class="glass-input" id="announcementStatus">
+                                        <option value="published">发布</option>
+                                        <option value="draft">草稿</option>
+                                        <option value="archived">归档</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>优先级</label>
+                                <div class="neko-stepper" id="announcementPriorityStepper">
+                                    <button type="button" class="neko-stepper-btn" id="announcementPriorityDown"><i class="ph ph-minus"></i></button>
+                                    <input type="number" id="announcementPriority" class="neko-stepper-input" value="1" min="1" max="10" readonly>
+                                    <button type="button" class="neko-stepper-btn" id="announcementPriorityUp"><i class="ph ph-plus"></i></button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>过期时间</label>
+                                <div class="announcement-expiry-presets" aria-label="过期时间快捷选择">
+                                    <button type="button" data-announcement-expiry="1"><i class="ph ph-sun"></i><span>明天</span><small>1 天</small></button>
+                                    <button type="button" data-announcement-expiry="7"><i class="ph ph-calendar-check"></i><span>一周</span><small>7 天</small></button>
+                                    <button type="button" data-announcement-expiry="30"><i class="ph ph-calendar"></i><span>一月</span><small>30 天</small></button>
+                                    <button type="button" data-announcement-expiry="never"><i class="ph ph-infinity"></i><span>永久</span><small>不自动过期</small></button>
+                                </div>
+                                <div class="announcement-expiry-field">
+                                    <input type="text" class="glass-input" id="announcementExpiresAt" placeholder="永久生效" readonly>
+                                    <button type="button" class="announcement-input-icon-btn" id="announcementExpiresAtClear" title="清除过期时间">
+                                        <i class="ph ph-x"></i>
+                                    </button>
+                                </div>
+                                <div class="announcement-expiry-picker" aria-label="选择过期日期和时间">
+                                    <div class="announcement-expiry-date-grid" id="announcementExpiryDateGrid"></div>
+                                    <div class="announcement-expiry-time-row" id="announcementExpiryTimeRow">
+                                        <button type="button" data-announcement-expiry-time="09:00">09:00</button>
+                                        <button type="button" data-announcement-expiry-time="12:00">12:00</button>
+                                        <button type="button" data-announcement-expiry-time="18:00">18:00</button>
+                                        <button type="button" data-announcement-expiry-time="23:59">23:59</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>发布策略</label>
+                                <div class="announcement-form-toggles">
+                                    <div class="announcement-toggle-group">
+                                        <span class="announcement-toggle-label">弹窗显示</span>
+                                        <div class="toggle-switch on" id="announcementShowPopupToggle"></div>
+                                        <input type="checkbox" id="announcementShowPopup" style="display: none;" checked>
+                                    </div>
+                                    <div class="announcement-toggle-group">
+                                        <span class="announcement-toggle-label">推送通知</span>
+                                        <div class="toggle-switch" id="announcementPushNotificationToggle"></div>
+                                        <input type="checkbox" id="announcementPushNotification" style="display: none;">
+                                    </div>
+                                    <div class="announcement-toggle-group">
+                                        <span class="announcement-toggle-label">置顶公告</span>
+                                        <div class="toggle-switch" id="announcementPinnedToggle"></div>
+                                        <input type="checkbox" id="announcementPinned" style="display: none;">
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+                        <div class="announcement-form-error" id="announcementFormError" style="display: none;"></div>
+                    </div>
+                    <div class="announcement-form-footer">
+                        <button class="action-btn" id="announcementCancelBtn">取消</button>
+                        <button class="action-btn primary" id="announcementSaveBtn">保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card announcement-board">
+                <div class="announcement-toolbar">
+                    <div class="announcement-toolbar-row">
+                        <div class="announcement-status-tabs" role="group" aria-label="公告状态筛选">
+                            <button class="announcement-tab active" data-announcement-filter="published">
+                                <i class="ph ph-check-circle"></i> 已发布
+                            </button>
+                            <button class="announcement-tab" data-announcement-filter="draft">
+                                <i class="ph ph-inbox"></i> 草稿
+                            </button>
+                            <button class="announcement-tab" data-announcement-filter="archived">
+                                <i class="ph ph-archive-box"></i> 归档
+                            </button>
+                            <button class="announcement-tab" data-announcement-filter="all">
+                                <i class="ph ph-stack"></i> 全部
+                            </button>
+                        </div>
+                        <div class="announcement-search">
+                            <i class="ph ph-magnifying-glass"></i>
+                            <input type="search" id="announcementSearchInput" placeholder="搜索标题、正文、发布人或触达范围">
+                        </div>
+                        <div class="announcement-toolbar-actions">
+                            <button class="action-btn" id="announcementMockToggleBtn">
+                                <i class="ph ph-sparkles"></i> 本地模拟
+                            </button>
+                            <button class="action-btn announcement-refresh-btn" id="announcementRefreshBtn">
+                                <i class="ph ph-arrow-clockwise"></i> 刷新
+                            </button>
+                            <button class="action-btn primary" id="announcementCreateBtn">
+                                <i class="ph ph-plus"></i> 新建公告
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="announcement-filter-strip">
+                        <div class="announcement-type-tabs" role="group" aria-label="公告类型筛选">
+                            <button class="announcement-type-dot active" data-announcement-type-filter="all">全部类型</button>
+                            <button class="announcement-type-dot" data-announcement-type-filter="info">信息</button>
+                            <button class="announcement-type-dot" data-announcement-type-filter="warning">提醒</button>
+                            <button class="announcement-type-dot" data-announcement-type-filter="urgent">紧急</button>
+                        </div>
+                        <span class="announcement-filter-stats">
+                            <span><i class="ph ph-warning"></i><strong id="announcementStatUrgent">0</strong> 紧急</span>
+                            <span><i class="ph ph-bell-ringing"></i><strong id="announcementStatPopup">0</strong> 弹窗</span>
+                            <span><i class="ph ph-archive"></i><strong id="announcementStatExpired">0</strong> 归档/过期</span>
+                            <span class="announcement-stat-hidden"><strong id="announcementStatActive">0</strong></span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="announcement-workspace">
+                    <main class="announcement-feed-area">
+                        <div class="announcement-feed-kicker">
+                            <span><i class="ph ph-push-pin"></i> 公告列表</span>
+                            <small id="announcementResultHint">--</small>
+                        </div>
+                        <div class="announcement-list-panel" id="announcementList">
+                            <div class="announcement-loading">加载中...</div>
+                        </div>
+                    </main>
+
+                    <aside class="announcement-detail-panel" id="announcementDetail">
+                        <div class="announcement-detail-empty">
+                            <i class="ph ph-megaphone"></i>
+                            <span>选择公告查看详情</span>
+                        </div>
+                    </aside>
+                </div>
             </div>
         </div>
     </div>
@@ -2314,6 +2513,25 @@
         </div>
     </div>
 
+    <!-- ========== 公告弹窗模态框 ========== -->
+    <div class="modal-overlay" id="announcementPopupOverlay">
+        <div class="glass-card modal-container announcement-popup-container">
+            <div class="announcement-popup-icon" id="announcementPopupIcon">
+                <i class="ph ph-info"></i>
+            </div>
+            <div class="announcement-popup-body">
+                <h3 class="announcement-popup-title" id="announcementPopupTitle">--</h3>
+                <div class="announcement-popup-content" id="announcementPopupContent">--</div>
+                <div class="announcement-popup-meta" id="announcementPopupMeta"></div>
+            </div>
+            <div class="modal-footer announcement-popup-footer">
+                <button class="action-btn primary" id="announcementPopupCloseBtn">
+                    <i class="ph ph-check"></i> 我知道了
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         (() => {
             const reportRendererError = (payload) => {
@@ -2394,26 +2612,37 @@
     <script src="./js/services/system-client.js"></script>
     <script src="./js/services/stream-client.js"></script>
     <script src="./js/services/update-client.js"></script>
+    <script src="./js/services/announcement-client.js"></script>
     <script src="./js/components/ui-helpers.js"></script>
     <!-- 1.5 模块化基础设施（core → components → state，在 app.js 之前加载） -->
     <script src="./js/core/event-bus.js"></script>
     <script src="./js/core/theme.js"></script>
     <script src="./js/core/router.js"></script>
+    <script src="./js/core/app-init-runtime.js"></script>
+    <script src="./js/core/app-event-runtime.js"></script>
+    <script src="./js/core/app-runtime.js"></script>
     <script src="./js/components/neko-island.js"></script>
     <script src="./js/components/expandable-section.js"></script>
     <script src="./js/components/modal.js"></script>
     <script src="./js/components/developer-console.js"></script>
     <script src="./js/components/developer-mode.js"></script>
+    <script src="./js/components/console-runtime.js"></script>
+    <script src="./js/components/experimental-features.js"></script>
+    <script src="./js/components/security-dialogs.js"></script>
+    <script src="./js/components/app-shell-controls.js"></script>
     <script src="./js/state/app-state.js"></script>
     <!-- 1.8 页面组装（在 app.js 前加载，供后续全面替换） -->
     <script src="./js/pages/settings.page.js"></script>
     <script src="./js/pages/config.page.js"></script>
+    <script src="./js/pages/service.page.js"></script>
     <script src="./js/pages/stream.page.js"></script>
     <script src="./js/pages/dashboard.page.js"></script>
     <script src="./js/pages/device-status.page.js"></script>
     <script src="./js/pages/screenshot.page.js"></script>
     <script src="./js/pages/update.page.js"></script>
     <script src="./js/pages/auth.page.js"></script>
+    <script src="./js/pages/announcement.page.js"></script>
+    <script src="./js/pages/about.page.js"></script>
     <!-- 2. 原有 UI 交互逻辑 -->
     <script src="./js/app.js"></script>
     <!-- 3. 后端功能接入层（覆盖模拟逻辑，绑定真实 IPC） -->

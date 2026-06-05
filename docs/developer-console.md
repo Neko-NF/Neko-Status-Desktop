@@ -7,11 +7,11 @@
 - `src/renderer/js/components/developer-console.js`
   - 负责命令注册、别名、参数拆分、帮助输出和统一错误处理。
   - 暴露 `window._nekoModules.components.DeveloperConsole.createCommandRegistry()`。
-- `src/renderer/js/app-ipc.js`
+- `src/renderer/js/core/app-runtime.js`
   - 负责注入真实 IPC、日志输出函数和页面状态 helper。
   - 不再直接维护长串 `if/else` 命令分支。
 - `src/renderer/index.html`
-  - 必须在 `app-ipc.js` 之前加载 `components/developer-console.js`。
+  - 必须在 `core/app-runtime.js` 启动前加载 `components/developer-console.js`。
 
 ## 命令设计规则
 

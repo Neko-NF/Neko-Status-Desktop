@@ -86,6 +86,12 @@ const IPC_CHANNELS = Object.freeze({
   CACHE_CLEAR: 'cache:clear',
   CACHE_GET_SIZE: 'cache:getSize',
 
+  ANNOUNCEMENT_FETCH: 'announcement:fetch',
+  ANNOUNCEMENT_CREATE: 'announcement:create',
+  ANNOUNCEMENT_UPDATE: 'announcement:update',
+  ANNOUNCEMENT_DELETE: 'announcement:delete',
+  ANNOUNCEMENT_RECEIPT: 'announcement:receipt',
+
   DEV_RENDERER_ERROR: 'dev:rendererError',
   DEV_MODE_PANEL_OPEN: 'dev:modePanel:open',
   DEV_MODE_PANEL_CLOSE: 'dev:modePanel:close',
@@ -106,6 +112,7 @@ const IPC_EVENTS = Object.freeze({
   UPDATE_AUTO_DOWNLOAD_FAILED: 'update:autoDownloadFailed',
   STARTUP_UPDATE_STATUS: 'startup-update:status',
   SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
+  ANNOUNCEMENT_RECEIVED: 'announcement:received',
   DEV_MODE_PANEL_COMMAND: 'dev:modePanel:command',
   DEV_MODE_PANEL_STATE: 'dev:modePanel:state',
 });

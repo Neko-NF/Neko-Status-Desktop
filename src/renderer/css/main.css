@@ -1,5 +1,5 @@
+@import url('./legacy.css');
 @import url('./components.css');
 @import url('./pages.css');
-@import url('./legacy.css');
 
-/* main.css is now just a router */
+/* main.css is now just a router. Legacy provides the migration base; modules loaded after it own migrated UI. */

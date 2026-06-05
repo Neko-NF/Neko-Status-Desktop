@@ -39,6 +39,16 @@
       .replace(/(?:<li>.*?<\/li>)+/gs, (items) => `<ul>${items}</ul>`);
   }
 
+  function getInstalledChannel(version) {
+    const value = String(version || '').toLowerCase();
+    if (value.includes('-nightly')) return 'nightly';
+    if (value.includes('-beta')) return 'beta';
+    return 'stable';
+  }
+
+  const installedChannelNameMap = { stable: '稳定版', beta: 'Beta', nightly: 'Nightly' };
+  const installedChannelTagMap = { stable: 'Stable', beta: 'Beta', nightly: 'Nightly' };
+
   function setBadge(kind, html) {
     const badge = $('updateStatusBadge');
     if (!badge) return;
@@ -289,7 +299,10 @@
   }
 
   const UpdatePage = {
-    init() {
+    init(deps = {}) {
+      this._deps = { ...(this._deps || {}), ...deps };
+      this.bindBackendControls();
+      this.bindUpdateActions();
       if (this._inited) return;
       this._inited = true;
       document.querySelector('.nav-item[data-target="page-update"]')?.addEventListener('click', (event) => {
@@ -942,6 +955,256 @@
       this.startSourceDiagnosticsCheck();
     },
 
+    bindUpdateActions() {
+      if (this._updateActionsBound) return;
+      this._updateActionsBound = true;
+
+      $('checkUpdateBtn')?.addEventListener('click', () => this.checkForUpdates());
+      $('forceUpdateBtn')?.addEventListener('click', () => this.forceUpdate());
+      $('rollbackBtn')?.addEventListener('click', () => this.rollbackVersion());
+    },
+
+    async checkForUpdates() {
+      const {
+        addLogLine = () => {},
+        showNotice = () => {},
+        update,
+        config,
+      } = this._deps || {};
+      const btn = $('checkUpdateBtn');
+      const icon = $('checkUpdateIcon');
+      const label = $('checkUpdateLabel');
+      if (!btn || btn.disabled) return null;
+
+      if (btn._updateMode === 'install-pending') {
+        return this.installPendingUpdate();
+      }
+
+      if (btn._updateMode === 'download' && this._lastUpdateResult?.hasUpdate) {
+        btn.disabled = true;
+        if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+        if (label) label.textContent = '下载中...';
+        await this.downloadAndInstall(this._lastUpdateResult);
+        btn.disabled = false;
+        if (icon) { icon.className = 'ph ph-download-simple'; icon.style.animation = ''; }
+        if (label) label.textContent = '立刻更新';
+        return this._lastUpdateResult;
+      }
+
+      if (btn._updateMode === 'rollback-install' && btn._rollbackData) {
+        btn.disabled = true;
+        if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+        if (label) label.textContent = '安装中...';
+        await this.downloadAndInstall(btn._rollbackData);
+        return btn._rollbackData;
+      }
+
+      this.showCheckingProgress();
+      btn.disabled = true;
+      btn._updateMode = 'check';
+      if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+      if (label) label.textContent = '检查中...';
+      this.startSourceDiagnosticsCheck();
+
+      try {
+        const result = await update?.check?.();
+        this._lastUpdateResult = result;
+        this.finishSourceDiagnosticsCheck(result);
+        btn.disabled = false;
+        this.hideProgress();
+
+        if (result?.error) {
+          const isConfigError = String(result.error).includes('未配置');
+          this.setError(result.error, {
+            isConfigError,
+            badgeHtml: isConfigError
+              ? '<i class="ph ph-gear"></i> 请先配置更新源'
+              : '<i class="ph ph-warning"></i> 检查失败',
+          });
+          showNotice(isConfigError ? '请先在右侧配置 GitHub 仓库地址' : `检查更新失败: ${result.error}`, 'error', 4000);
+          addLogLine('ERROR', `检查更新失败: ${result.error}`);
+          return result;
+        }
+
+        if (result?.hasUpdate && result.forceUpdate) {
+          if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+          if (label) label.textContent = '强制安装中...';
+          setBadge('error', `<i class="ph ph-warning"></i> 强制更新 v${escapeHtml(result.latestVersion || '')}`);
+          showNotice(`检测到强制更新 v${result.latestVersion}，正在自动下载...`, 'warn', 6000);
+          addLogLine('WARN', `检测到强制更新 v${result.latestVersion}，必须安装`);
+          this.renderReleaseNotes(result);
+          btn.disabled = true;
+          await this.downloadAndInstall(result);
+          return result;
+        }
+
+        const skipped = await config?.get?.('skippedVersion');
+        if (result?.hasUpdate && skipped === result.latestVersion) {
+          this.setSkipped(result.latestVersion);
+          addLogLine('INFO', `已跳过版本 v${result.latestVersion}`);
+          this.renderReleaseNotes(result);
+          return result;
+        }
+
+        if (result?.hasUpdate) {
+          this.setAvailable(result);
+          showNotice(`发现新版本 v${result.latestVersion}，点击「立刻更新」下载安装`, 'info', 5000);
+          addLogLine('INFO', `发现新版本 v${result.latestVersion}（当前 v${result.currentVersion}）`);
+        } else {
+          this.setLatest();
+          showNotice(`当前已是最新版本 v${result?.currentVersion || ''}`, 'success', 2500);
+          addLogLine('INFO', `当前已是最新版本 v${result?.currentVersion || ''}`);
+          setTimeout(() => {
+            if (btn._updateMode !== 'check') return;
+            if (icon) icon.className = 'ph ph-arrows-clockwise';
+            if (label) label.textContent = '检查更新';
+          }, 5000);
+        }
+
+        const versionNumber = document.querySelector('.update-ver-number');
+        if (versionNumber && result?.currentVersion) versionNumber.textContent = `v${result.currentVersion}`;
+        this.renderReleaseNotes(result);
+        return result;
+      } catch (e) {
+        btn.disabled = false;
+        if (icon) { icon.className = 'ph ph-arrows-clockwise'; icon.style.animation = ''; }
+        if (label) label.textContent = '检查更新';
+        this.hideProgress();
+        this.failSourceDiagnosticsCheck(e);
+        addLogLine('ERROR', `检查更新异常: ${e.message}`);
+        return { error: e.message };
+      }
+    },
+
+    async forceUpdate() {
+      const {
+        addLogLine = () => {},
+        update,
+        config,
+      } = this._deps || {};
+      const btn = $('forceUpdateBtn');
+      if (!btn) return null;
+      btn.disabled = true;
+      const originalHtml = btn.innerHTML;
+      const label = btn.querySelector('.update-ctrl-label');
+      if (label) label.textContent = '检查中...';
+
+      try {
+        let result = this._lastUpdateResult;
+        if (!result || !result.hasUpdate) {
+          result = await update?.check?.();
+          this._lastUpdateResult = result;
+          this.renderSourceDiagnostics(result);
+        }
+
+        if (result?.error) {
+          addLogLine('ERROR', `强制更新检查失败: ${result.error}`);
+          return result;
+        }
+
+        if (!result?.hasUpdate) {
+          addLogLine('INFO', '当前已是最新版本，无需强制更新');
+          return result;
+        }
+
+        await config?.set?.('skippedVersion', '');
+        const nextLabel = btn.querySelector('.update-ctrl-label');
+        if (nextLabel) nextLabel.textContent = '下载中...';
+        await this.downloadAndInstall(result);
+        return result;
+      } catch (e) {
+        addLogLine('ERROR', `强制更新失败: ${e.message}`);
+        return { error: e.message };
+      } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+      }
+    },
+
+    async installPendingUpdate() {
+      const {
+        addLogLine = () => {},
+        update,
+      } = this._deps || {};
+      const btn = $('checkUpdateBtn');
+      const label = $('checkUpdateLabel');
+      if (!btn || btn.disabled) return null;
+
+      btn.disabled = true;
+      if (label) label.textContent = '安装中...';
+      try {
+        const result = await update?.installPending?.();
+        if (!result?.success) {
+          addLogLine('ERROR', `安装失败: ${result?.error || 'unknown'}`);
+          btn.disabled = false;
+          if (label) label.textContent = '立即安装';
+          return result;
+        }
+        addLogLine('SUCCESS', '安装程序已启动，应用即将关闭');
+        return result;
+      } catch (e) {
+        addLogLine('ERROR', `安装失败: ${e.message}`);
+        btn.disabled = false;
+        if (label) label.textContent = '立即安装';
+        return { success: false, error: e.message };
+      }
+    },
+
+    async rollbackVersion() {
+      const {
+        addLogLine = () => {},
+        showNotice = () => {},
+        update,
+      } = this._deps || {};
+      const btn = $('rollbackBtn');
+      if (!btn) return null;
+      const icon = btn.querySelector('i');
+      const label = btn.querySelector('span');
+
+      if (!btn.classList.contains('confirming')) {
+        btn.classList.add('confirming');
+        if (label) label.textContent = '确认回滚？';
+        btn._confirmTimer = setTimeout(() => {
+          btn.classList.remove('confirming');
+          if (label) label.textContent = '版本回滚';
+        }, 3500);
+        return { confirming: true };
+      }
+
+      clearTimeout(btn._confirmTimer);
+      btn.classList.remove('confirming');
+      btn.disabled = true;
+      if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+      if (label) label.textContent = '查询中...';
+
+      try {
+        const result = await update?.rollbackInfo?.();
+        if (!result?.success) {
+          showNotice(`无法查询回滚版本: ${result?.error || 'unknown'}`, 'error', 4000);
+          addLogLine('ERROR', `无法回滚: ${result?.error || 'unknown'}`);
+          return result;
+        }
+
+        addLogLine('INFO', `找到历史版本 v${result.version}，开始下载...`);
+        showNotice(`正在下载回滚版本 v${result.version}...`, 'warn', 4000);
+        if (label) label.textContent = '下载中...';
+        await this.downloadAndInstall({
+          latestVersion: result.version,
+          exeDownloadUrl: result.exeDownloadUrl || result.downloadUrl,
+          zipDownloadUrl: result.zipDownloadUrl || null,
+        });
+        return result;
+      } catch (e) {
+        showNotice(`版本回滚失败: ${e.message}`, 'error', 4000);
+        addLogLine('ERROR', `版本回滚失败: ${e.message}`);
+        return { error: e.message };
+      } finally {
+        btn.disabled = false;
+        if (icon) { icon.className = 'ph ph-arrow-counter-clockwise'; icon.style.animation = ''; }
+        if (label) label.textContent = '版本回滚';
+      }
+    },
+
     setLatest() {
       const btn = $('checkUpdateBtn');
       if (btn) {
@@ -991,10 +1254,94 @@
       setBadge('success', `<i class="ph ph-check-circle"></i> 已跳过 v${escapeHtml(version || '')}`);
     },
 
+    renderReleaseNotes(result = {}) {
+      if (!result?.latestVersion) return false;
+
+      const channelBadge = document.querySelector('.update-channel-badge');
+      if (channelBadge) {
+        const installedChannel = getInstalledChannel(result.currentVersion);
+        channelBadge.className = `update-channel-badge ${installedChannel}`;
+        channelBadge.textContent = installedChannelNameMap[installedChannel] || '稳定版';
+      }
+
+      const versionTag = document.querySelector('.update-ver-tag');
+      if (versionTag) {
+        const installedChannel = getInstalledChannel(result.currentVersion || result.latestVersion);
+        versionTag.textContent = installedChannelTagMap[installedChannel] || 'Stable';
+      }
+
+      return true;
+    },
+
+    renderChangelogEntries(entries = []) {
+      const timeline = document.querySelector('.update-timeline');
+      if (!timeline || !entries.length) return false;
+
+      timeline.innerHTML = '';
+      const entry = entries[0] || {};
+      const lines = String(entry.notes || '')
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => line.replace(/^#+\s*|^[-*•]\s*/g, '').trim())
+        .filter(Boolean)
+        .slice(0, 20);
+      const item = document.createElement('div');
+      item.className = 'update-tl-item';
+      item.innerHTML = `
+        <div class="update-tl-track">
+          <div class="update-tl-dot current"></div>
+          <div class="update-tl-line last"></div>
+        </div>
+        <div class="update-tl-body">
+          <div class="update-tl-header">
+            <span class="update-tl-ver">v${escapeHtml(entry.version)}</span>
+            <span class="update-tl-badge latest">CURRENT</span>
+            ${entry.isPreRelease ? '<span class="update-tl-badge pre">PRE</span>' : ''}
+            <span class="update-tl-date">${escapeHtml(entry.date)}</span>
+          </div>
+          <div class="update-tl-block">
+            <ul class="update-tl-list">
+              ${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('') || '<li>（暂无说明）</li>'}
+            </ul>
+          </div>
+        </div>`;
+      timeline.appendChild(item);
+      return true;
+    },
+
+    syncInstalledVersion({ version, cfg = {}, runtimeVersions = {} } = {}) {
+      if (!version) return false;
+
+      const installedChannel = getInstalledChannel(version);
+      const channelBadge = document.querySelector('.update-channel-badge');
+      if (channelBadge) {
+        channelBadge.className = `update-channel-badge ${installedChannel}`;
+        channelBadge.textContent = installedChannelNameMap[installedChannel] || '稳定版';
+      }
+
+      const versionTag = document.querySelector('.update-ver-tag');
+      if (versionTag) versionTag.textContent = installedChannelTagMap[installedChannel] || 'Stable';
+
+      const versionNumber = $('updateVerNumber');
+      if (versionNumber) versionNumber.textContent = `v${version}`;
+
+      const versionDesc = $('updateVerDesc');
+      if (versionDesc) {
+        const lastCheck = cfg.lastUpdateCheck;
+        const lastCheckText = lastCheck
+          ? `上次检查：${new Date(lastCheck).toLocaleDateString()}`
+          : '尚未检查更新';
+        versionDesc.textContent = `运行在 Electron ${runtimeVersions.electron || 'N/A'} · Node ${runtimeVersions.node || 'N/A'}。${lastCheckText}。`;
+      }
+
+      return true;
+    },
+
     setPendingInstall(version) {
       const btn = $('checkUpdateBtn');
       if (btn) {
         btn._updateMode = 'install-pending';
+        btn._pendingVersion = version;
         btn.classList.remove('rollback-install-btn');
         btn.classList.add('primary');
       }
@@ -1038,6 +1385,262 @@
       const overlay = $('updateDialogOverlay');
       if (!overlay) return false;
       overlay.classList.remove('show');
+      return true;
+    },
+
+    bindBackendControls() {
+      this.bindChannelControls();
+      this.bindIntegrityControls();
+      if (this._backendControlsBound) return;
+      const localInstallBtn = $('localInstallBtn');
+      if (!localInstallBtn) return;
+      this._backendControlsBound = true;
+      localInstallBtn.addEventListener('click', () => this.installLocalPackage());
+    },
+
+    bindChannelControls() {
+      if (this._channelControlsBound) return;
+      const radios = typeof document.querySelectorAll === 'function'
+        ? Array.from(document.querySelectorAll('input[name="updateChannel"]') || [])
+        : [];
+      if (!radios.length) return;
+      this._channelControlsBound = true;
+      radios.forEach((radio) => {
+        radio.addEventListener('change', async () => {
+          if (!radio.checked) return;
+          await this.setChannel(radio.value);
+        });
+      });
+    },
+
+    syncChannel(channel = 'stable') {
+      const value = channel || 'stable';
+      if (typeof document.querySelectorAll !== 'function') return;
+      document.querySelectorAll('input[name="updateChannel"]').forEach((radio) => {
+        radio.checked = radio.value === value;
+      });
+    },
+
+    async setChannel(channel) {
+      const {
+        addLogLine = () => {},
+        update,
+      } = this._deps || {};
+      const ok = await update?.setChannel?.(channel);
+      if (ok) addLogLine('INFO', `更新通道已切换为 ${channel}`);
+      return !!ok;
+    },
+
+    bindIntegrityControls() {
+      if (this._integrityControlsBound) return;
+      const btn = $('updateIntegrityBtn');
+      if (!btn) return;
+      this._integrityControlsBound = true;
+      btn.addEventListener('click', () => this.checkIntegrity());
+    },
+
+    async checkIntegrity() {
+      const {
+        addLogLine = () => {},
+        showNotice = () => {},
+        update,
+      } = this._deps || {};
+      const btn = $('updateIntegrityBtn');
+      const labelSpan = btn?.querySelector?.('span') || null;
+      if (btn) btn.disabled = true;
+      if (labelSpan) labelSpan.textContent = '检查中...';
+
+      try {
+        const results = await update?.checkIntegrity?.() || [];
+        const failures = results.filter((item) => !item.ok);
+        if (!failures.length) {
+          showNotice('系统完整性正常，所有项目通过检查', 'success', 3500);
+        } else {
+          const detail = failures.length === 1
+            ? `${failures[0].name}: ${failures[0].text}`
+            : `${failures[0].name} 等 ${failures.length} 项`;
+          showNotice(`完整性检查异常: ${detail}`, 'error', 5000);
+        }
+
+        setBadge(failures.length ? 'warn' : 'success', failures.length
+          ? `<i class="ph ph-warning"></i> ${failures.length} 项异常`
+          : '<i class="ph ph-seal-check"></i> 完整性正常');
+        results.forEach((item) => addLogLine(item.ok ? 'INFO' : 'WARN', `[完整性] ${item.name}: ${item.text}`));
+        return { success: true, failures };
+      } catch (e) {
+        showNotice(`完整性检查失败: ${e.message}`, 'error', 4000);
+        addLogLine('ERROR', `完整性检查失败: ${e.message}`);
+        return { success: false, error: e.message };
+      } finally {
+        if (labelSpan) labelSpan.textContent = '完整性检查';
+        if (btn) btn.disabled = false;
+      }
+    },
+
+    async installLocalPackage() {
+      const {
+        addLogLine = () => {},
+        system,
+        update,
+      } = this._deps || {};
+
+      try {
+        const filePath = await system?.selectFile?.({
+          title: '选择更新安装包',
+          filters: [{ name: '安装包', extensions: ['exe', 'zip', '7z'] }],
+        });
+        if (!filePath) return false;
+
+        addLogLine('INFO', `选择本地安装包: ${filePath}`);
+        const result = await update?.install?.(filePath, null, { manual: true });
+        if (result?.success) {
+          addLogLine('SUCCESS', '安装程序已启动');
+          return true;
+        }
+
+        addLogLine('ERROR', `安装失败: ${result?.error || '未知错误'}`);
+        return false;
+      } catch (e) {
+        addLogLine('ERROR', `本地安装失败: ${e.message}`);
+        return false;
+      }
+    },
+
+    async downloadAndInstall(result = {}) {
+      const {
+        addLogLine = () => {},
+        showNotice = () => {},
+        update,
+      } = this._deps || {};
+
+      if (this._isDownloading) {
+        showNotice('已有下载任务正在进行中，请稍候', 'warn', 3000);
+        addLogLine('WARN', '已有下载任务进行中，已阻止重复触发');
+        return false;
+      }
+
+      const downloadUrl = result.exeDownloadUrl || result.zipDownloadUrl;
+      if (!downloadUrl) {
+        addLogLine('ERROR', '没有找到可用的下载链接');
+        return false;
+      }
+
+      this._isDownloading = true;
+      this.resetProgress('下载中...');
+      addLogLine('INFO', `开始下载更新 v${result.latestVersion || result.version || ''}...`);
+
+      try {
+        const dlResult = await update?.download?.(downloadUrl);
+        if (!dlResult?.success) {
+          addLogLine('ERROR', `下载失败: ${dlResult?.error || 'unknown'}`);
+          this.setProgressLabel('下载失败');
+          return false;
+        }
+
+        addLogLine('SUCCESS', `下载完成，SHA256: ${String(dlResult.sha256 || '').slice(0, 12)}...`);
+        this.updateProgress({ pct: 100 });
+        this.setProgressLabel('校验完成');
+
+        addLogLine('INFO', '正在启动安装...');
+        const installResult = await update?.install?.(dlResult.filePath, dlResult.sha256);
+        if (!installResult?.success) {
+          addLogLine('ERROR', `安装失败: ${installResult?.error || 'unknown'}`);
+          this.setProgressLabel('安装失败');
+          return false;
+        }
+
+        addLogLine('SUCCESS', '安装程序已启动，应用即将关闭');
+        return true;
+      } finally {
+        this._isDownloading = false;
+      }
+    },
+
+    resetProgress(label = '下载中...') {
+      const progressRow = $('updateProgressRow');
+      const progressBar = $('updateProgressBar');
+      const progressLabel = $('updateProgressLabel');
+      const progressPct = $('updateProgressPct');
+      const progressFill = $('updateProgressFill');
+      if (progressRow) progressRow.style.display = '';
+      if (progressBar) {
+        progressBar.style.display = '';
+        progressBar.classList.remove('indeterminate');
+      }
+      if (progressLabel) progressLabel.textContent = label;
+      if (progressPct) progressPct.textContent = '0%';
+      if (progressFill) progressFill.style.width = '0%';
+    },
+
+    showCheckingProgress(label = '检查中...') {
+      const progressRow = $('updateProgressRow');
+      const progressBar = $('updateProgressBar');
+      const progressLabel = $('updateProgressLabel');
+      if (progressRow) progressRow.style.display = '';
+      if (progressBar) {
+        progressBar.style.display = '';
+        progressBar.classList.add('indeterminate');
+      }
+      if (progressLabel) progressLabel.textContent = label;
+    },
+
+    hideProgress() {
+      const progressRow = $('updateProgressRow');
+      const progressBar = $('updateProgressBar');
+      if (progressBar) {
+        progressBar.style.display = 'none';
+        progressBar.classList.remove('indeterminate');
+      }
+      if (progressRow) progressRow.style.display = 'none';
+    },
+
+    setProgressLabel(label) {
+      const progressLabel = $('updateProgressLabel');
+      if (progressLabel) progressLabel.textContent = label;
+    },
+
+    updateProgress(data = {}) {
+      const progressRow = $('updateProgressRow');
+      const progressBar = $('updateProgressBar');
+      const progressPct = $('updateProgressPct');
+      const progressFill = $('updateProgressFill');
+      const progressLabel = $('updateProgressLabel');
+      if (progressRow) progressRow.style.display = '';
+      if (progressBar) {
+        progressBar.style.display = '';
+        progressBar.classList.remove('indeterminate');
+      }
+      if (data.pct < 0) return;
+
+      if (progressPct) progressPct.textContent = `${data.pct}%`;
+      if (progressFill) progressFill.style.width = `${data.pct}%`;
+      if (!progressLabel) return;
+
+      if (data.speed > 0 && data.received > 0 && data.total > 0) {
+        progressLabel.textContent = `下载中... (${formatFileSize(data.received)} / ${formatFileSize(data.total)}, ${formatFileSize(data.speed)}/s)`;
+      } else if (data.received > 0) {
+        progressLabel.textContent = `下载中... (${formatFileSize(data.received)}${data.total > 0 ? ` / ${formatFileSize(data.total)}` : ''})`;
+      } else {
+        progressLabel.textContent = '下载中...';
+      }
+    },
+
+    markAutoDownloaded(data = {}) {
+      setBadge('info', `<i class="ph ph-download-simple"></i> 已下载 v${escapeHtml(data.version || '')}，下次启动时安装`);
+      document.querySelector('.nav-item[data-target="page-update"]')?.classList.add('has-update');
+    },
+
+    markForceInstallStarted(data = {}) {
+      setBadge('error', `<i class="ph ph-warning"></i> 强制更新安装中...`);
+      document.querySelector('.nav-item[data-target="page-update"]')?.classList.add('has-update');
+      return data;
+    },
+
+    markAvailable(result = {}) {
+      if (!result?.hasUpdate) return false;
+      this._lastUpdateResult = result;
+      this.setAvailable(result);
+      this.showDialog(result);
       return true;
     },
 

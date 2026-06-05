@@ -7,6 +7,8 @@ const {
   validateConfigValuesPayload,
   validateDeveloperModeCommandPayload,
   validateDeveloperModePanelStatePayload,
+  validateAnnouncementPayload,
+  validateAnnouncementReceiptPayload,
   validateStreamConfigPayload,
   validateUpdateDownloadPayload,
   validateUpdateInstallPayload,
@@ -59,6 +61,39 @@ test('validateStreamConfigPayload validates port-shaped fields', () => {
   assert.equal(validateStreamConfigPayload({ srsHost: 'example.com', srsRtmpPort: 1935 }).ok, true);
   assert.equal(validateStreamConfigPayload({ obsWsPort: 70000 }).ok, false);
   assert.equal(validateStreamConfigPayload({ srsHost: 123 }).ok, false);
+});
+
+test('validateAnnouncementPayload validates create and partial update payloads', () => {
+  assert.deepEqual(validateAnnouncementPayload({
+    title: 'Maintenance',
+    content: 'Window starts at 02:00',
+    type: 'warning',
+    category: 'it',
+    targetAudience: 'All staff',
+    status: 'published',
+    pinned: true,
+    priority: 8,
+    showPopup: true,
+    pushNotification: false,
+    totalAudience: 120,
+    expiresAt: '2026-06-03T12:00:00.000Z',
+  }), { ok: true });
+
+  assert.equal(validateAnnouncementPayload({ title: 'Only title' }).ok, false);
+  assert.equal(validateAnnouncementPayload({ title: 'Only title' }, { partial: true }).ok, true);
+  assert.equal(validateAnnouncementPayload({ priority: 11 }, { partial: true }).ok, false);
+  assert.equal(validateAnnouncementPayload({ category: 'unknown' }, { partial: true }).ok, false);
+  assert.equal(validateAnnouncementPayload({ status: 'deleted' }, { partial: true }).ok, false);
+  assert.equal(validateAnnouncementPayload({ showPopup: 'yes' }, { partial: true }).ok, false);
+  assert.equal(validateAnnouncementPayload({ acknowledges: -1 }, { partial: true }).ok, false);
+  assert.equal(validateAnnouncementPayload({ expiresAt: 'not-a-date' }, { partial: true }).ok, false);
+});
+
+test('validateAnnouncementReceiptPayload validates id and action', () => {
+  assert.equal(validateAnnouncementReceiptPayload({ id: 1, action: 'view' }).ok, true);
+  assert.equal(validateAnnouncementReceiptPayload({ id: '2', action: 'ack' }).ok, true);
+  assert.equal(validateAnnouncementReceiptPayload({ id: '' }).ok, false);
+  assert.equal(validateAnnouncementReceiptPayload({ id: 1, action: 'dismiss' }).ok, false);
 });
 
 test('developer mode payload validators keep sidecar commands controlled', () => {

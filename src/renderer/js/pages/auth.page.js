@@ -72,6 +72,7 @@
       if (profileAvatar) profileAvatar.src = avatarUrl;
       if (settingsName) settingsName.textContent = displayName;
       if (settingsSub) settingsSub.textContent = `已登录 · ${user.role === 'admin' ? '管理员' : '普通用户'}`;
+      document.dispatchEvent(new CustomEvent('neko:authChange', { detail: { loggedIn: true, user } }));
     } else {
       if (avatar) avatar.src = 'https://api.dicebear.com/7.x/notionists/svg?seed=Guest&backgroundColor=0f172a';
       if (nameEl) nameEl.textContent = '未登录';
@@ -83,6 +84,7 @@
       if (profileAvatar) profileAvatar.src = 'https://ui-avatars.com/api/?name=User&background=0ea5e9&color=fff';
       if (settingsName) settingsName.textContent = 'Neko User';
       if (settingsSub) settingsSub.textContent = '设备监控本地账户';
+      document.dispatchEvent(new CustomEvent('neko:authChange', { detail: { loggedIn: false, user: null } }));
     }
   }
 

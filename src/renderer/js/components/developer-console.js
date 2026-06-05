@@ -397,6 +397,49 @@
       },
     });
 
+    register({
+      name: 'announcement:list',
+      aliases: ['announcements'],
+      usage: 'announcement list',
+      description: 'fetch and display active announcements',
+      run: async () => {
+        const result = normalizeResult(await requireMethod('fetchAnnouncements')({}));
+        const list = result?.announcements || [];
+        if (!list.length) {
+          addLogLine('INFO', 'no active announcements');
+          return;
+        }
+        addLogLine('INFO', `共 ${list.length} 条公告:`);
+        list.forEach((a) => {
+          addLogLine('INFO', `[#${a.id}] ${a.type || 'info'} | ${a.title} | popup=${a.showPopup} push=${a.pushNotification}`);
+        });
+      },
+    });
+
+    register({
+      name: 'announcement:create',
+      usage: 'announcement create <json>',
+      description: 'create a test announcement (admin only). JSON keys: title, content, type, showPopup, pushNotification',
+      run: async ({ args }) => {
+        const raw = args.join(' ');
+        if (!raw) {
+          addLogLine('WARN', 'Usage: announcement create {"title":"...","content":"...","type":"info"}');
+          return;
+        }
+        let payload;
+        try { payload = JSON.parse(raw); } catch {
+          addLogLine('ERROR', 'Invalid JSON body');
+          return;
+        }
+        const result = normalizeResult(await requireMethod('createAnnouncement')(payload));
+        if (result?.announcement) {
+          addLogLine('SUCCESS', `announcement created: id=${result.announcement.id}`);
+        } else {
+          addLogLine('ERROR', stringify(result));
+        }
+      },
+    });
+
     async function execute(input) {
       const tokens = tokenize(input);
       if (!tokens.length) return;

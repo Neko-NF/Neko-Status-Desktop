@@ -211,6 +211,98 @@ function validateDeveloperModePanelStatePayload(payload) {
   return { ok: true };
 }
 
+function validateAnnouncementPayload(payload, options = {}) {
+  if (!isPlainObject(payload)) {
+    return { ok: false, reason: 'payload must be an object' };
+  }
+
+  const partial = options.partial === true;
+
+  if (!partial && (typeof payload.title !== 'string' || payload.title.trim() === '')) {
+    return { ok: false, reason: 'title is required' };
+  }
+
+  if (!partial && (typeof payload.content !== 'string' || payload.content.trim() === '')) {
+    return { ok: false, reason: 'content is required' };
+  }
+
+  if (payload.title !== undefined && (typeof payload.title !== 'string' || payload.title.trim() === '')) {
+    return { ok: false, reason: 'title must be a non-empty string when provided' };
+  }
+
+  if (payload.content !== undefined && (typeof payload.content !== 'string' || payload.content.trim() === '')) {
+    return { ok: false, reason: 'content must be a non-empty string when provided' };
+  }
+
+  if (payload.type !== undefined && !['info', 'warning', 'urgent'].includes(payload.type)) {
+    return { ok: false, reason: 'type must be info, warning, or urgent' };
+  }
+
+  if (
+    payload.category !== undefined &&
+    !['system', 'it', 'hr', 'security', 'event', 'finance'].includes(payload.category)
+  ) {
+    return { ok: false, reason: 'category is unsupported' };
+  }
+
+  if (
+    payload.status !== undefined &&
+    !['draft', 'published', 'archived'].includes(payload.status)
+  ) {
+    return { ok: false, reason: 'status must be draft, published, or archived' };
+  }
+
+  if (payload.targetAudience !== undefined && typeof payload.targetAudience !== 'string') {
+    return { ok: false, reason: 'targetAudience must be a string when provided' };
+  }
+
+  if (payload.priority !== undefined) {
+    const priority = Number(payload.priority);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 10) {
+      return { ok: false, reason: 'priority must be an integer from 1 to 10' };
+    }
+  }
+
+  for (const field of ['showPopup', 'pushNotification', 'pinned', 'isActive']) {
+    if (payload[field] !== undefined && typeof payload[field] !== 'boolean') {
+      return { ok: false, reason: `${field} must be a boolean when provided` };
+    }
+  }
+
+  for (const field of ['views', 'acknowledges', 'totalAudience']) {
+    if (payload[field] !== undefined) {
+      const value = Number(payload[field]);
+      if (!Number.isInteger(value) || value < 0) {
+        return { ok: false, reason: `${field} must be a non-negative integer when provided` };
+      }
+    }
+  }
+
+  if (payload.expiresAt !== undefined && payload.expiresAt !== null) {
+    if (typeof payload.expiresAt !== 'string' || Number.isNaN(new Date(payload.expiresAt).getTime())) {
+      return { ok: false, reason: 'expiresAt must be a valid ISO date string when provided' };
+    }
+  }
+
+  return { ok: true };
+}
+
+function validateAnnouncementReceiptPayload(payload) {
+  if (!isPlainObject(payload)) {
+    return { ok: false, reason: 'payload must be an object' };
+  }
+
+  if (payload.id === undefined || payload.id === null || String(payload.id).trim() === '') {
+    return { ok: false, reason: 'announcement id is required' };
+  }
+
+  if (payload.action !== undefined && !['view', 'ack'].includes(payload.action)) {
+    return { ok: false, reason: 'action must be view or ack' };
+  }
+
+  return { ok: true };
+}
+
 module.exports = {
   isPlainObject,
   validateUpdateInstallPayload,
@@ -222,4 +314,6 @@ module.exports = {
   validateStreamConfigPayload,
   validateDeveloperModeCommandPayload,
   validateDeveloperModePanelStatePayload,
+  validateAnnouncementPayload,
+  validateAnnouncementReceiptPayload,
 };

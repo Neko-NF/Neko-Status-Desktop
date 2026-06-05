@@ -6,11 +6,26 @@
 
 当前项目已经达到任务文档期望的“团队化 Electron 桌面端工程”基线，可以支持多人协作、PR 检查、基础测试、打包验证和持续拆分。
 
-但它还不是“完全重写后的理想终态”。最主要的剩余工作是继续收敛 renderer 历史入口：
+但它还不是“完全重写后的理想终态”。最主要的剩余工作是继续收敛 renderer 历史协调层：
 
-- `src/renderer/js/app.js` 仍保留部分历史初始化与兼容逻辑。
-- `src/renderer/js/app-ipc.js` 仍是主进程事件协调与迁移兼容层。
-- 部分页面逻辑已经拆出，但还可以继续把更多业务绑定迁入 `pages/*` 和 `services/*`。
+- `src/renderer/js/app.js` 已瘦身为启动装配入口。
+- `src/renderer/js/app-ipc.js` 已退成兼容启动器，只负责在 DOM ready 后启动 `core/app-runtime.js`。
+- `src/renderer/js/core/app-runtime.js` 承担 renderer 运行时装配，负责连接 services、pages、components、启动同步和事件 runtime。
+- `src/renderer/js/components/app-shell-controls.js` 承担 shell 层 DOM 绑定，并委托 router/theme/modal 等基础模块。
+- `src/renderer/js/pages/service.page.js` 已接管上报服务、自启动、自动恢复和服务体检页面绑定。
+- `src/renderer/js/pages/screenshot.page.js` 已接管截图开关、手动捕获、截图模式和间隔持久化。
+- `src/renderer/js/pages/dashboard.page.js` 已接管仪表盘运行时卡片刷新、活动流、自动截图预览同步、趋势图和指标历史缓冲。
+- `src/renderer/js/pages/device-status.page.js` 已接管设备状态指标渲染、权限折叠和权限诊断按钮。
+- `src/renderer/js/pages/settings.page.js` 已接管核心设置开关、上报间隔、通知/勿扰、隐身范围、主题、缩放和缓存清理。
+- `src/renderer/js/pages/update.page.js` 已接管更新弹窗、更新通道、更新源控件、来源诊断、完整性检查、本地安装入口、下载/安装进度、手动检查、强制更新、版本回滚和更新日志渲染。
+- `src/renderer/js/pages/about.page.js` 已接管关于页版本、运行时、仓库链接和仓库元数据渲染。
+- `src/renderer/js/components/security-dialogs.js` 已接管密钥接管/撤销警告与确认弹窗。
+- `src/renderer/js/components/console-runtime.js` 已接管控制台日志、状态卡、导出、命令输入和开发者模式后端快照装配。
+- `src/renderer/js/core/app-init-runtime.js` 已接管 `APP_INIT` 启动态同步、设置页 hydration、更新页初始同步、设备状态与权限摘要初始化。
+- `src/renderer/js/core/app-event-runtime.js` 已接管主进程推送事件转发、更新弹窗动作绑定、更新中心 release 链接和主题变更联动。
+- `src/renderer/js/components/experimental-features.js` 已接管实验性设置区挂载、stream 入口显隐和实验功能说明文案。
+- 服务状态 DOM glue 已继续下沉到 `dashboard.page.js` 与 `service.page.js`，隐身范围 segmented UI 已下沉到 `settings.page.js`。
+- `legacy.css` 已移除重复 design tokens/base 块，并把服务/自启动页面、截图间隔输入、自定义复选框等可明确归属样式迁入 `pages.css` / `components.css`；剩余 legacy 样式主要是壳层、仪表盘和历史通用视觉基底。
 
 换句话说：工程基线达标，renderer 终态拆薄仍可继续优化。
 
@@ -20,7 +35,7 @@
 | --- | --- | --- |
 | 明确前后端边界 | 达成 | 主进程作为本地后端，renderer 通过 preload/IPC 访问能力 |
 | 主进程结构规范化 | 达成 | IPC 已按 `config/api/auth/stream/system/service/update` 拆分 |
-| Renderer 分层 | 基本达成 | 已有 `pages/services/components/core/state`，但旧入口仍需继续瘦身 |
+| Renderer 分层 | 基本达成 | `app.js` 和 `app-ipc.js` 已瘦身为启动入口，运行时装配位于 `core/app-runtime.js`；shell 控制、公告 runtime、关于页、密钥安全弹窗、控制台 runtime、实验性入口组件、APP_INIT 启动态同步、主进程事件 runtime、仪表盘运行时与趋势图、设备状态诊断、服务/自启/体检页面绑定、截图控制、核心设置持久化、缓存清理、更新中心按钮/弹窗/进度/日志渲染已迁出；`legacy.css` 已继续拆薄，剩余样式后续按壳层/仪表盘/组件逐块迁移 |
 | IPC 契约集中管理 | 达成 | `IPC_CHANNELS` / `IPC_EVENTS` 集中在 `src/shared/ipc-contracts.js` |
 | 组件规范 | 基本达成 | 已有通用组件和页面模块，后续新 UI 应继续遵守 |
 | 测试体系 | 达成 | 单测、renderer VM 测试、Electron smoke test 均已存在 |
@@ -64,8 +79,8 @@ npm run build:zip
 ### Renderer
 
 - 领域 service 已覆盖 config、auth、service、system、stream、update、api。
-- 页面模块已覆盖 auth、config、dashboard、device-status、screenshot、settings、stream、update。
-- 开发者控制台已组件化。
+- 页面模块已覆盖 auth、config、dashboard、device-status、screenshot、settings、service、stream、update。
+- 开发者控制台和控制台运行时已组件化。
 - 主题、路由、事件总线已进入 core。
 
 ### 测试 / CI
@@ -78,11 +93,10 @@ npm run build:zip
 
 优先级从高到低：
 
-1. 继续拆薄 `app-ipc.js`：把页面专属事件绑定迁入对应 `pages/*`，把 IPC 调用迁入 `services/*`。
-2. 继续拆薄 `app.js`：只保留启动装配、全局初始化和兼容入口。
-3. 细分 CSS：后续可把 `pages.css` 按页面拆分。
-4. 增加更贴近用户路径的 smoke / UI 验收：例如登录弹窗、配置保存、更新弹窗、截图隐私规则。
-5. 清理旧归档和重复文档：`docs/RELEASE_GUIDE.md`、`docs/RELEASE_WORKFLOW.md`、`docs/BUILD_AND_DEPLOY.md` 后续可以合并为更统一的发布文档。
+1. 继续细分 shell 控制：把能复用的全局控件从 `app-shell-controls.js` 继续沉淀到更小组件。
+2. 细分 CSS：后续可把 `pages.css` 和 `legacy.css` 按页面拆分。
+3. 增加更贴近用户路径的 smoke / UI 验收：例如登录弹窗、配置保存、更新弹窗、截图隐私规则。
+4. 清理旧归档和重复文档：`docs/RELEASE_GUIDE.md`、`docs/RELEASE_WORKFLOW.md`、`docs/BUILD_AND_DEPLOY.md` 后续可以合并为更统一的发布文档。
 
 ## 团队协作建议
 
@@ -98,9 +112,10 @@ npm run build:zip
 - 智能模式会探测已保存更新源，并按延迟和安装资产可用性选择结果。
 - 个人仓库 `https://git.koirin.com:39520/NF/Neko` 的发布规则已明确：只需发布新版本安装资产和更新说明。
 - 个人仓库根目录兜底模式支持读取 `release_notes.txt` 作为更新说明。
-- 启动自动检查、后台检查、手动检查、强制更新、手动下载和本地安装共享同一套更新源选择与 URL 级鉴权逻辑。
+- 启动自动检查、后台检查、手动检查、强制更新、版本回滚、手动下载和本地安装共享同一套更新源选择与 URL 级鉴权逻辑。
+- 更新页模块已接管手动检查、强制更新、待安装更新、下载/安装进度、回滚和更新日志渲染，主进程事件转发由 `core/app-event-runtime.js` 处理，运行时依赖注入由 `core/app-runtime.js` 处理。
 - 手动本地安装支持 `.exe`、`.zip` 和 `.7z`；`.zip` 由主进程解压后拉起可执行文件。
-- 开发者控制台提供配置写入、后端连通性、更新源检查和本地安装包交接等实机联调命令。
+- 开发者控制台提供配置写入、后端连通性、更新源检查和本地安装包交接等实机联调命令；控制台日志、状态卡、导出和命令输入由 `console-runtime.js` 统一装配。
 
 后续建议：
 

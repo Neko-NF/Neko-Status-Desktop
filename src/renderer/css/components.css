@@ -781,7 +781,7 @@
             font-size: 14px;
         }
         .action-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--surface-raised-hover);
             transform: translateY(-1px);
             box-shadow: var(--shadow-sm);
         }
@@ -816,7 +816,7 @@
             align-items: center;
             gap: 16px;
             padding: 12px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--border-color);
         }
         .event-item:last-child {
             border-bottom: none;
@@ -845,8 +845,8 @@
         /* 滚动条美化 */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+        ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-main) 14%, transparent); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-main) 24%, transparent); }
 
         /* ------------------ 模态框 (服务器配置) ------------------ */
         .modal-overlay {
@@ -904,7 +904,7 @@
         }
         .glass-input {
             background: var(--glass-bg);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            border: 1px solid var(--border-color);
             border-radius: var(--radius-input);
             padding: 12px 14px;
             color: var(--text-main);
@@ -939,7 +939,7 @@
             justify-content: flex-end;
             gap: 12px;
             padding-top: 16px;
-            border-top: 1px solid rgba(255,255,255,0.05);
+            border-top: 1px solid var(--border-color);
         }
 
         /* ------------------ 个人设置模态框 (液态高斯调色) ------------------ */
@@ -1972,7 +1972,7 @@
 }
 .auth-form-group input {
     background: var(--glass-bg);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 11px 14px;
     color: var(--text-main);
@@ -2093,6 +2093,133 @@
     background: color-mix(in srgb, var(--warning-amber) 25%, transparent);
 }
 
+/* ========== Reusable custom select ========== */
+.neko-select-source {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.neko-select {
+    position: relative;
+    width: 100%;
+}
+
+.neko-select-trigger {
+    width: 100%;
+    min-height: 42px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 16px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-raised);
+    color: var(--text-main);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+
+.neko-select-trigger:hover,
+.neko-select.open .neko-select-trigger {
+    border-color: color-mix(in srgb, var(--theme-color) 44%, transparent);
+    background: color-mix(in srgb, var(--theme-color) 9%, var(--surface-raised));
+}
+
+.neko-select.open .neko-select-trigger {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-color) 13%, transparent);
+}
+
+.neko-select-leading {
+    color: var(--theme-color);
+    font-size: 16px;
+}
+
+.neko-select-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: var(--fw-semibold);
+}
+
+.neko-select-caret {
+    color: var(--text-secondary);
+    font-size: 14px;
+    transition: transform var(--motion-fast) var(--motion-smooth), color var(--motion-fast) ease;
+}
+
+.neko-select.open .neko-select-caret {
+    color: var(--theme-color);
+    transform: rotate(180deg);
+}
+
+.neko-select-menu {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 5000;
+    display: none;
+    padding: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--glass-bg-solid) 96%, var(--theme-color) 4%);
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.26);
+}
+
+.neko-select.open .neko-select-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.neko-select-option {
+    min-height: 36px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+}
+
+.neko-select-option i {
+    color: var(--theme-color);
+    font-size: 15px;
+}
+
+.neko-select-option span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: var(--fw-medium);
+}
+
+.neko-select-option:hover,
+.neko-select-option.active {
+    color: var(--text-main);
+    border-color: color-mix(in srgb, var(--theme-color) 28%, transparent);
+    background: color-mix(in srgb, var(--theme-color) 12%, transparent);
+}
+
+html[data-theme="light"] .neko-select-menu {
+    background: color-mix(in srgb, #ffffff 94%, var(--theme-color) 6%);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.14);
+}
+
 
 /* ========== 首次引导弹窗 ========== */
 .first-time-container {
@@ -2145,7 +2272,7 @@
     width: 100%;
     box-sizing: border-box;
     background: var(--glass-bg);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 11px 14px;
     color: var(--text-main);
@@ -2986,3 +3113,101 @@
         justify-content: center;
     }
 }
+
+/* ================== 公告弹窗 ================== */
+.announcement-popup-container {
+    width: 480px;
+    padding: 28px;
+    text-align: center;
+}
+
+.announcement-popup-icon {
+    margin-bottom: 12px;
+    font-size: 40px;
+}
+
+.announcement-popup-icon i {
+    color: var(--theme-color);
+}
+
+.announcement-popup-icon.urgent i {
+    color: var(--error-coral);
+}
+
+.announcement-popup-icon.warning i {
+    color: var(--warning-amber);
+}
+
+.announcement-popup-body {
+    margin-bottom: 16px;
+}
+
+.announcement-popup-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0 0 10px;
+}
+
+.announcement-popup-content {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    white-space: pre-wrap;
+}
+
+.announcement-popup-meta {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.announcement-popup-footer {
+    justify-content: center;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--text-main) 8%, transparent);
+}
+
+/* ------------------ 自定义复选框组件（从 legacy.css 迁移） ------------------ */
+.neko-checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+        }
+        .neko-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid color-mix(in srgb, var(--text-main) 30%, transparent);
+            border-radius: 50%;
+            background-color: transparent;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .neko-checkbox:hover {
+            border-color: color-mix(in srgb, var(--theme-color) 70%, transparent);
+            background-color: color-mix(in srgb, var(--theme-color) 10%, transparent);
+        }
+        .neko-checkbox:checked {
+            border-color: var(--theme-color);
+            background-color: var(--theme-color);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+            background-size: 70% 70%;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        /* 隐藏之前纯CSS画的直角勾 */
+        .neko-checkbox::after {
+            display: none;
+        }

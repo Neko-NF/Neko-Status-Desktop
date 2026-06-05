@@ -15,6 +15,10 @@
     lastCpuWarn: 0,
     deps: {
       notify: async () => {},
+      addLogLine: () => {},
+      showNotice: () => {},
+      config: null,
+      service: null,
       escapeHtml: (value) => String(value ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -61,12 +65,13 @@
     return clampNumber(latencyScore + trafficBoost, 0, 100);
   }
 
-  function getBatteryLevelInfo(level, isCharging, hasBattery) {
-    if (hasBattery === false) return { text: 'AC', icon: 'ph-plug-charging', level: 'ok' };
-    if (isCharging) return { text: 'AC', icon: 'ph-plug-charging', level: 'ok' };
-    if (level <= 20) return { text: 'Low', icon: 'ph-battery-low', level: 'error' };
-    if (level <= 50) return { text: 'Battery', icon: 'ph-battery-medium', level: 'warn' };
-    return { text: 'Battery', icon: 'ph-battery-full', level: 'ok' };
+  function getBatteryLevelInfo(level, isCharging, hasBattery, powerInfo = {}) {
+    const isDesktopPower = hasBattery === false || powerInfo.deviceType === 'desktop';
+    if (isDesktopPower) return { text: '桌面供电', icon: 'ph-plug-charging', level: 'ok', footer: '台式机 / 外接电源 · 无电池读数' };
+    if (isCharging) return { text: '交流电', icon: 'ph-plug-charging', level: 'ok', footer: '笔记本 · 交流电已连接' };
+    if (level <= 20) return { text: '低电量', icon: 'ph-battery-low', level: 'error', footer: '笔记本 · 使用电池供电' };
+    if (level <= 50) return { text: '电池', icon: 'ph-battery-medium', level: 'warn', footer: '笔记本 · 使用电池供电' };
+    return { text: '电池', icon: 'ph-battery-full', level: 'ok', footer: '笔记本 · 使用电池供电' };
   }
 
   function getSparklineThemeColor() {
@@ -177,23 +182,24 @@
     setSparklineData('net', getNetworkTrendValue(metrics));
   }
 
-  function updatePowerKpi(level, isCharging, hasBattery, footerText) {
+  function updatePowerKpi(level, isCharging, hasBattery, footerText, powerInfo = {}) {
     const kpiCards = document.querySelectorAll('#page-device-status .kpi-card');
     const card = kpiCards[3];
     if (!card) return;
 
-    const displayLevel = hasBattery === false ? 100 : clampNumber(level, 0, 100);
+    const isDesktopPower = hasBattery === false || powerInfo.deviceType === 'desktop';
+    const displayLevel = isDesktopPower ? 100 : clampNumber(level, 0, 100);
     const batValue = card.querySelector('.kpi-value');
     const batBadge = card.querySelector('.kpi-badge');
     const batFooter = card.querySelector('.kpi-footer');
-    const info = getBatteryLevelInfo(displayLevel, isCharging, hasBattery);
+    const info = getBatteryLevelInfo(displayLevel, isCharging, hasBattery, powerInfo);
 
-    if (batValue) batValue.textContent = hasBattery === false ? 'AC' : `${displayLevel.toFixed(0)}%`;
+    if (batValue) batValue.textContent = isDesktopPower ? 'AC' : `${displayLevel.toFixed(0)}%`;
     if (batBadge) {
       batBadge.className = `kpi-badge ${info.level}`;
       batBadge.innerHTML = `<i class="ph ${info.icon}"></i> ${info.text}`;
     }
-    if (batFooter && footerText) batFooter.textContent = footerText;
+    if (batFooter) batFooter.textContent = footerText || info.footer;
     updateBatterySparkline(displayLevel);
   }
 
@@ -256,7 +262,9 @@
       const hr = Math.floor(metrics.uptime / 3600);
       const min = Math.floor((metrics.uptime % 3600) / 60);
       const batFooter = kpiCards[3].querySelector('.kpi-footer');
-      if (batFooter) batFooter.textContent = `系统运行: ${hr}h ${min}m`;
+      if (batFooter && !batFooter.textContent.includes('供电') && !batFooter.textContent.includes('电池')) {
+        batFooter.textContent = `系统运行: ${hr}h ${min}m`;
+      }
     }
 
     const metaOSEl = $('metaOS');
@@ -367,6 +375,162 @@
     });
   }
 
+  function syncAuthExpandedState() {
+    const authList = $('metaAuthList');
+    const grid = document.querySelector('#page-device-status .device-status-grid');
+    if (grid && authList) {
+      grid.classList.toggle('auth-expanded', !authList.classList.contains('collapsed'));
+    }
+  }
+
+  function bindAuthListToggle() {
+    const toggle = $('authListToggle');
+    if (!toggle || toggle.dataset.deviceStatusAuthBound === '1') return;
+    toggle.dataset.deviceStatusAuthBound = '1';
+    toggle.addEventListener('click', () => {
+      const authList = $('metaAuthList');
+      const collapseIcon = $('authCollapseIcon');
+      if (authList) authList.classList.toggle('collapsed');
+      if (collapseIcon) collapseIcon.classList.toggle('collapsed');
+      requestAnimationFrame(syncAuthExpandedState);
+      const isCollapsed = authList ? authList.classList.contains('collapsed') : false;
+      state.deps.config?.set?.('authListCollapsed', isCollapsed)?.catch?.(() => {});
+    });
+    syncAuthExpandedState();
+  }
+
+  async function runPermissionDiagnosis() {
+    const service = state.deps.service;
+    const [perms, running, autoStart] = await Promise.all([
+      service?.checkPermissions?.() || {},
+      service?.isRunning?.() || false,
+      service?.isAutoStartEnabled?.() || false,
+    ]);
+
+    let grantedCount = 0;
+    const deniedNames = [];
+    const permUI = {
+      metaAuthScreenCapture: perms.screenCapture,
+      metaAuthProcessEnum: perms.processEnum,
+      metaAuthPowerControl: perms.powerControl,
+      metaAuthNetwork: perms.network,
+      metaAuthFileIO: perms.fileIO,
+    };
+    const permNameMap = {
+      metaAuthScreenCapture: '屏幕捕获',
+      metaAuthProcessEnum: '进程遍历',
+      metaAuthPowerControl: '电源控制',
+      metaAuthNetwork: '网络访问',
+      metaAuthFileIO: '文件读写',
+    };
+    const totalPerm = Object.keys(permUI).length + 1;
+
+    for (const [elId, status] of Object.entries(permUI)) {
+      const el = $(elId);
+      if (!el) continue;
+      const icon = el.querySelector('i');
+      if (!icon) continue;
+      if (status === 'granted') {
+        icon.className = 'ph ph-check-circle text-theme';
+        el.classList.add('granted');
+        grantedCount++;
+      } else {
+        icon.className = 'ph ph-x-circle text-error';
+        el.classList.remove('granted');
+        deniedNames.push(permNameMap[elId] || elId);
+      }
+    }
+
+    const autoStartEl = $('metaAuthAutoStart');
+    if (autoStartEl) {
+      const icon = autoStartEl.querySelector('i');
+      if (icon) {
+        if (autoStart) {
+          icon.className = 'ph ph-check-circle text-theme';
+          autoStartEl.classList.add('granted');
+          grantedCount++;
+        } else {
+          icon.className = 'ph ph-warning text-warn';
+          autoStartEl.classList.remove('granted');
+          deniedNames.push('开机自启');
+        }
+      }
+    }
+
+    const denied = totalPerm - grantedCount;
+    const countEl = $('authGrantedCount');
+    if (countEl) {
+      if (denied === 0) {
+        countEl.textContent = '已全部授权';
+        countEl.className = 'auth-count-ok';
+      } else {
+        countEl.textContent = `${denied}项未授权`;
+        countEl.className = 'auth-count-warn';
+      }
+    }
+
+    const ratingBadge = document.querySelector('.rating-badge');
+    if (ratingBadge) {
+      if (grantedCount >= totalPerm) ratingBadge.textContent = '评级: S';
+      else if (grantedCount >= totalPerm - 1) ratingBadge.textContent = '评级: A';
+      else if (grantedCount >= totalPerm - 2) ratingBadge.textContent = '评级: B';
+      else ratingBadge.textContent = '评级: C';
+    }
+
+    const permDescEl = $('dashPermDesc');
+    if (permDescEl) {
+      permDescEl.textContent = denied === 0
+        ? '所需权限均已授予并检测通过。'
+        : `有 ${denied} 项权限未授权，可能影响部分功能。点击下方按钮重新诊断。`;
+    }
+
+    const deniedListEl = $('dashDeniedList');
+    const deniedItemsEl = $('dashDeniedItems');
+    if (deniedListEl && deniedItemsEl) {
+      if (denied > 0) {
+        const displayNames = deniedNames.length > 3
+          ? deniedNames.slice(0, 3).concat(`+${deniedNames.length - 3} 项`)
+          : deniedNames;
+        deniedItemsEl.innerHTML = displayNames.map((name) =>
+          `<span class="denied-tag">${state.deps.escapeHtml(name)}</span>`
+        ).join('');
+        deniedListEl.style.display = '';
+      } else {
+        deniedListEl.style.display = 'none';
+      }
+    }
+
+    requestAnimationFrame(syncAuthExpandedState);
+    return { grantedCount, totalPerm, denied, running };
+  }
+
+  function bindPermissionDiagnosisButton() {
+    const btn = $('dashDiagBtn');
+    if (!btn || btn.dataset.deviceStatusDiagBound === '1') return;
+    btn.dataset.deviceStatusDiagBound = '1';
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const origHTML = btn.innerHTML;
+      btn.innerHTML = '<i class="ph ph-circle-notch diag-spinner"></i> 诊断中...';
+      btn.classList.add('diag-running');
+
+      try {
+        const { grantedCount, totalPerm, denied, running } = await runPermissionDiagnosis();
+        state.deps.addLogLine('INFO', `权限诊断完成: ${grantedCount}/${totalPerm} 已授权，服务${running ? '运行中' : '已停止'}`);
+        addDiagnosticEntry('权限诊断', denied === 0 ? 'success' : 'warn', `${grantedCount}/${totalPerm} 权限已授权`);
+        state.deps.showNotice(denied === 0 ? '权限诊断通过' : `${denied} 项权限未授权`, denied === 0 ? 'success' : 'warn', 2500);
+
+        btn.innerHTML = '<i class="ph ph-check-circle"></i> 诊断完成';
+        setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; btn.classList.remove('diag-running'); }, 2000);
+      } catch (error) {
+        state.deps.addLogLine('ERROR', `权限诊断失败: ${error.message}`);
+        btn.innerHTML = '<i class="ph ph-x-circle"></i> 诊断失败';
+        setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; btn.classList.remove('diag-running'); }, 2000);
+      }
+    });
+  }
+
   const DeviceStatusPage = {
     init(deps = {}) {
       state.deps = { ...state.deps, ...deps };
@@ -374,10 +538,14 @@
       state.initialized = true;
       bindNavSparklineWarmup();
       bindHistoryFilter();
+      bindAuthListToggle();
+      bindPermissionDiagnosisButton();
     },
     updateMetrics,
     updatePowerKpi,
     addDiagnosticEntry,
+    runPermissionDiagnosis,
+    syncAuthExpandedState,
     applySparklineTheme,
     initSparklines,
     syncBatterySparklineFromCard,

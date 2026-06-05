@@ -420,6 +420,8 @@ class StatusService {
         batteryLevel: battery.level,
         isCharging: battery.isCharging,
         hasBattery: battery.hasBattery,
+        deviceType: battery.deviceType,
+        powerSource: battery.powerSource,
         userStatus: this._userStatus,
         music: musicPayload,
         hasScreenshot: !!screenshotBuffer,

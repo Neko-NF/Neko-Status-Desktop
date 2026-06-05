@@ -74,7 +74,7 @@ function createAppShell(deps) {
 
   function sendToRenderer(channel, data) {
     const mainWindow = getMainWindow();
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send(channel, data);
     }
   }
@@ -90,6 +90,27 @@ function createAppShell(deps) {
       processName: path.basename(process.execPath),
       pid: process.pid,
       isAdmin: isRunAsAdmin(),
+    });
+  }
+
+  function isDevToolsShortcut(input = {}) {
+    if (input.type !== 'keyDown') return false;
+    const key = String(input.key || '').toLowerCase();
+    const code = String(input.code || '').toLowerCase();
+    const primary = !!(input.control || input.meta);
+    if (key === 'f12' || code === 'f12') return true;
+    if (primary && input.shift && (key === 'i' || code === 'keyi')) return true;
+    if (primary && input.shift && (key === 'j' || code === 'keyj')) return true;
+    if (primary && input.shift && (key === 'c' || code === 'keyc')) return true;
+    return false;
+  }
+
+  function attachMainWindowShortcutPolicy(win) {
+    if (!win?.webContents) return;
+    win.webContents.on('before-input-event', (event, input) => {
+      if (isDevToolsShortcut(input)) {
+        event.preventDefault();
+      }
     });
   }
 
@@ -198,7 +219,7 @@ function createAppShell(deps) {
     developerModeWindow.on('closed', () => {
       developerModeWindow = null;
       const currentMainWindow = getMainWindow();
-      if (currentMainWindow && !currentMainWindow.isDestroyed()) {
+      if (currentMainWindow && !currentMainWindow.isDestroyed() && currentMainWindow.webContents && !currentMainWindow.webContents.isDestroyed()) {
         currentMainWindow.webContents.send(IPC_EVENTS.DEV_MODE_PANEL_COMMAND, { action: 'panel-closed' });
       }
     });
@@ -236,6 +257,7 @@ function createAppShell(deps) {
     }
 
     setMainWindow(mainWindow);
+    attachMainWindowShortcutPolicy(mainWindow);
     mainWindow.setMenuBarVisibility(false);
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 

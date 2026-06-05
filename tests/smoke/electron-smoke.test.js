@@ -8,9 +8,12 @@ test('electron smoke boots preload bridge in an isolated renderer', async () => 
   const appPath = path.resolve(__dirname, 'electron-smoke-app.js');
 
   const result = await new Promise((resolve) => {
-    const child = spawn(electron, ['--disable-gpu', '--disable-gpu-compositing', appPath], {
+    const childEnv = { ...process.env, ELECTRON_ENABLE_LOGGING: '1' };
+    delete childEnv.ELECTRON_RUN_AS_NODE;
+
+    const child = spawn(electron, [appPath], {
       cwd: path.resolve(__dirname, '..', '..'),
-      env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });

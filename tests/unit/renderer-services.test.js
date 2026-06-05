@@ -225,6 +225,475 @@ test('renderer domain clients delegate config auth service and system IPC method
   ]);
 });
 
+test('renderer announcement client delegates announcement IPC methods', async () => {
+  const calls = [];
+  const context = {
+    window: {
+      nekoIPC: {
+        fetchAnnouncements: async (options) => {
+          calls.push(['fetchAnnouncements', options]);
+          return { announcements: [] };
+        },
+        createAnnouncement: async (payload) => {
+          calls.push(['createAnnouncement', payload]);
+          return { id: 1 };
+        },
+        updateAnnouncement: async (id, payload) => {
+          calls.push(['updateAnnouncement', id, payload]);
+          return { id, ...payload };
+        },
+        deleteAnnouncement: async (id) => {
+          calls.push(['deleteAnnouncement', id]);
+          return { success: true };
+        },
+        recordAnnouncementReceipt: async (id, action) => {
+          calls.push(['recordAnnouncementReceipt', id, action]);
+          return { success: true };
+        },
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+
+  loadBrowserScript(context, 'src/renderer/js/services/ipc-client.js');
+  loadBrowserScript(context, 'src/renderer/js/services/announcement-client.js');
+
+  const client = context.window._nekoModules.services.AnnouncementClient;
+  assert.equal(client.isReady(), true);
+  assert.deepEqual(await client.fetch({ all: true }), { announcements: [] });
+  assert.deepEqual(await client.create({ title: 'A', content: 'B' }), { id: 1 });
+  assert.deepEqual(await client.update(1, { pinned: true }), { id: 1, pinned: true });
+  assert.deepEqual(await client.delete(1), { success: true });
+  assert.deepEqual(await client.recordReceipt(1, 'ack'), { success: true });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['fetchAnnouncements', { all: true }],
+    ['createAnnouncement', { title: 'A', content: 'B' }],
+    ['updateAnnouncement', 1, { pinned: true }],
+    ['deleteAnnouncement', 1],
+    ['recordAnnouncementReceipt', 1, 'ack'],
+  ]);
+});
+
+test('announcement page owns unread popup polling and receipt state', async () => {
+  function makeElement(id) {
+    const listeners = {};
+    return {
+      id,
+      innerHTML: '',
+      textContent: '',
+      style: {},
+      dataset: {},
+      className: '',
+      classList: {
+        values: new Set(),
+        add(value) { this.values.add(value); },
+        remove(value) { this.values.delete(value); },
+        toggle(value, enabled) {
+          const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+          if (shouldAdd) this.values.add(value);
+          else this.values.delete(value);
+        },
+        contains(value) { return this.values.has(value); },
+      },
+      addEventListener(type, handler) {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      removeEventListener(type, handler) {
+        listeners[type] = (listeners[type] || []).filter((item) => item !== handler);
+      },
+      dispatch(type, event = {}) {
+        return Promise.all((listeners[type] || []).map((handler) => handler.call(this, {
+          target: this,
+          currentTarget: this,
+          ...event,
+        })));
+      },
+    };
+  }
+
+  const elements = new Map([
+    'announcementPopupOverlay',
+    'announcementPopupTitle',
+    'announcementPopupContent',
+    'announcementPopupMeta',
+    'announcementPopupIcon',
+    'announcementPopupCloseBtn',
+  ].map((id) => [id, makeElement(id)]));
+  const calls = [];
+  const context = {
+    window: {
+      _nekoModules: {
+        services: {
+          AnnouncementClient: {
+            isReady: () => true,
+            fetch: async () => ({
+              announcements: [{
+                id: 7,
+                title: 'Urgent maintenance',
+                content: 'Restart window at 23:00',
+                type: 'urgent',
+                showPopup: true,
+                pushNotification: true,
+                createdAt: '2026-06-04T12:00:00Z',
+              }],
+            }),
+            recordReceipt: async (id, action) => {
+              calls.push(['receipt', id, action]);
+              return { success: true };
+            },
+          },
+          ConfigClient: {
+            getAll: async () => ({ readAnnouncementIds: [] }),
+            set: async (key, value) => {
+              calls.push(['set', key, value]);
+              return true;
+            },
+          },
+          SystemClient: {
+            notify: async (title, body) => {
+              calls.push(['notify', title, body]);
+              return true;
+            },
+          },
+        },
+      },
+    },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {},
+      removeItem() {},
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/announcement.page.js');
+
+  const page = context.window._nekoModules.pages.AnnouncementPage;
+  await page.checkUnreadPopups();
+
+  assert.equal(elements.get('announcementPopupOverlay').classList.contains('show'), true);
+  assert.equal(elements.get('announcementPopupTitle').textContent, 'Urgent maintenance');
+  assert.deepEqual(calls.slice(0, 2), [
+    ['notify', 'Urgent maintenance', 'Restart window at 23:00'],
+    ['receipt', 7, 'view'],
+  ]);
+
+  await elements.get('announcementPopupCloseBtn').dispatch('click');
+  assert.equal(elements.get('announcementPopupOverlay').classList.contains('show'), false);
+  assert.deepEqual(calls.at(-2), ['set', 'readAnnouncementIds', [7]]);
+  assert.deepEqual(calls.at(-1), ['receipt', 7, 'ack']);
+});
+
+test('about page owns version rendering and repository links', async () => {
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    return {
+      id,
+      href: extra.href || '',
+      textContent: extra.textContent || '',
+      dataset: {},
+      classList: {
+        values: new Set(),
+        add(value) { this.values.add(value); },
+        remove(value) { this.values.delete(value); },
+        contains(value) { return this.values.has(value); },
+      },
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      dispatch(type, event = {}) {
+        return listeners[type]?.({ target: this, currentTarget: this, preventDefault() {}, ...event });
+      },
+      ...extra,
+    };
+  }
+
+  function makeAboutCard(labelText) {
+    const label = makeElement(`${labelText}-label`, { textContent: labelText });
+    const value = makeElement(`${labelText}-value`);
+    const sub = makeElement(`${labelText}-sub`);
+    return {
+      label,
+      value,
+      sub,
+      querySelector(selector) {
+        if (selector === '.about-info-label') return label;
+        if (selector === '.about-info-value') return value;
+        if (selector === '.about-info-sub') return sub;
+        return null;
+      },
+    };
+  }
+
+  const runtimeCard = makeAboutCard('运行环境');
+  const developerCardInfo = makeAboutCard('开发者');
+  const licenseCard = makeAboutCard('开源协议');
+  const calls = [];
+  const elements = new Map([
+    ['aboutVersionValue', makeElement('aboutVersionValue')],
+    ['aboutVersionSub', makeElement('aboutVersionSub')],
+    ['aboutGithubBtn', makeElement('aboutGithubBtn')],
+    ['aboutReleaseBtn', makeElement('aboutReleaseBtn')],
+    ['aboutDeveloperCard', makeElement('aboutDeveloperCard')],
+  ]);
+  const context = {
+    window: { _nekoModules: { pages: {} } },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '.about-info-card') return [runtimeCard, developerCardInfo, licenseCard];
+        return [];
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/about.page.js');
+
+  const page = context.window._nekoModules.pages.AboutPage;
+  page.init({
+    openExternal: (url) => calls.push(['open', url]),
+    fetchRepo: async () => ({
+      owner: { login: 'Neko-NF', html_url: 'https://github.com/Neko-NF' },
+      organization: { login: 'Neko Lab' },
+      license: { spdx_id: 'MIT' },
+    }),
+  });
+  page.sync({
+    version: '1.3.0-beta.3',
+    cfg: { githubOwner: 'Neko-NF', githubRepo: 'Neko-Status-Desktop' },
+    runtimeVersions: { electron: '35.0.0', node: '22.0.0', chrome: '134.0.0' },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(elements.get('aboutVersionValue').textContent, 'v1.3.0-beta.3');
+  assert.match(elements.get('aboutVersionSub').textContent, /Beta/);
+  assert.equal(elements.get('aboutGithubBtn').href, 'https://github.com/Neko-NF/Neko-Status-Desktop');
+  assert.equal(elements.get('aboutReleaseBtn').href, 'https://github.com/Neko-NF/Neko-Status-Desktop/releases');
+  assert.equal(runtimeCard.value.textContent, 'Electron 35.0.0');
+  assert.equal(runtimeCard.sub.textContent, 'Node.js 22.0.0 · Chromium 134.0.0');
+  assert.equal(developerCardInfo.value.textContent, 'Neko-NF');
+  assert.equal(developerCardInfo.sub.textContent, 'Neko Lab');
+  assert.equal(licenseCard.value.textContent, 'MIT');
+
+  elements.get('aboutGithubBtn').dispatch('click');
+  elements.get('aboutDeveloperCard').dispatch('click');
+  assert.deepEqual(calls, [
+    ['open', 'https://github.com/Neko-NF/Neko-Status-Desktop'],
+    ['open', 'https://github.com/Neko-NF'],
+  ]);
+});
+
+test('security dialogs own takeover warning and confirm flow', async () => {
+  function makeElement(id) {
+    const listeners = {};
+    return {
+      id,
+      textContent: '',
+      innerHTML: '',
+      style: {},
+      dataset: {},
+      classList: {
+        values: new Set(),
+        add(value) { this.values.add(value); },
+        remove(value) { this.values.delete(value); },
+        contains(value) { return this.values.has(value); },
+      },
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      removeEventListener(type, handler) {
+        if (listeners[type] === handler) delete listeners[type];
+      },
+      dispatch(type, event = {}) {
+        return listeners[type]?.({ target: this, currentTarget: this, ...event });
+      },
+    };
+  }
+
+  const elements = new Map([
+    'takeoverWarningModal',
+    'takeoverWarningTitle',
+    'takeoverWarningDesc',
+    'takeoverDetailBox',
+    'takeoverWarningActionBtn',
+    'takeoverWarningDismissBtn',
+    'takeoverWarningCloseBtn',
+    'takeoverConfirmModal',
+    'takeoverConfirmOkBtn',
+    'takeoverConfirmCancelBtn',
+    'takeoverConfirmCloseBtn',
+  ].map((id) => [id, makeElement(id)]));
+  const calls = [];
+  const context = {
+    window: { _nekoModules: { components: {} } },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/components/security-dialogs.js');
+
+  const dialogs = context.window._nekoModules.components.SecurityDialogs.create({
+    showNotice: (title, type, duration) => calls.push(['notice', title, type, duration]),
+    openConfig: () => calls.push(['openConfig']),
+  });
+
+  assert.equal(dialogs.showWarning('Key revoked', 'Please reset', '<unsafe>', true), true);
+  assert.equal(elements.get('takeoverWarningModal').classList.contains('show'), true);
+  assert.equal(elements.get('takeoverWarningTitle').textContent, 'Key revoked');
+  assert.equal(elements.get('takeoverWarningDesc').textContent, 'Please reset');
+  assert.match(elements.get('takeoverDetailBox').innerHTML, /&lt;unsafe&gt;/);
+  assert.equal(elements.get('takeoverWarningActionBtn').style.display, '');
+
+  elements.get('takeoverWarningActionBtn').dispatch('click');
+  assert.equal(elements.get('takeoverWarningModal').classList.contains('show'), false);
+  assert.deepEqual(calls.slice(0, 2), [
+    ['notice', 'Key revoked', 'error', 5000],
+    ['openConfig'],
+  ]);
+
+  const confirmPromise = dialogs.confirmTakeover();
+  elements.get('takeoverConfirmOkBtn').dispatch('click');
+  assert.equal(await confirmPromise, true);
+  assert.equal(elements.get('takeoverConfirmModal').classList.contains('show'), false);
+});
+
+test('experimental features component owns settings mount and stream gate state', () => {
+  function makeElement(id, extra = {}) {
+    const el = {
+      id,
+      dataset: extra.dataset || {},
+      style: {},
+      children: [],
+      parentNode: null,
+      clicked: 0,
+      className: '',
+      innerHTML: '',
+      textContent: '',
+      attributes: {},
+      classList: {
+        values: new Set(),
+        add(...names) { names.forEach((name) => this.values.add(name)); },
+        remove(...names) { names.forEach((name) => this.values.delete(name)); },
+        toggle(name, force) {
+          const next = force === undefined ? !this.values.has(name) : !!force;
+          if (next) this.values.add(name);
+          else this.values.delete(name);
+          return next;
+        },
+        contains(name) { return this.values.has(name); },
+      },
+      appendChild(child) {
+        child.parentNode = el;
+        el.children.push(child);
+        return child;
+      },
+      remove() {
+        if (el.parentNode) el.parentNode.children = el.parentNode.children.filter((child) => child !== el);
+        el.parentNode = null;
+        el.removed = true;
+      },
+      setAttribute(name, value) {
+        el.attributes[name] = String(value);
+      },
+      removeAttribute(name) {
+        delete el.attributes[name];
+      },
+      click() {
+        el.clicked += 1;
+      },
+    };
+    return el;
+  }
+
+  const elements = new Map([
+    ['settingsExperimentalZone', makeElement('settingsExperimentalZone')],
+    ['settingsExperimentalLabel', makeElement('settingsExperimentalLabel')],
+    ['settings-experimental', makeElement('settings-experimental')],
+    ['streamSettingsLabel', makeElement('streamSettingsLabel')],
+    ['settings-stream', makeElement('settings-stream')],
+    ['streamSettingsDisabledNotice', makeElement('streamSettingsDisabledNotice')],
+    ['stgExperimentalDesc', makeElement('stgExperimentalDesc')],
+    ['streamExperimentalGate', makeElement('streamExperimentalGate')],
+    ['streamExperimentalContent', makeElement('streamExperimentalContent')],
+    ['page-stream', makeElement('page-stream')],
+    ['stgExperimentalSwitch', makeElement('stgExperimentalSwitch')],
+    ['navStream', makeElement('navStream')],
+  ]);
+  const activeStreamNav = makeElement('activeStreamNav');
+  const dashboardNav = makeElement('dashboardNav');
+  const calls = [];
+  const context = {
+    window: {
+      _nekoSyncNavIndicator: () => calls.push('syncNav'),
+      stopStreamStatusPolling: () => calls.push('stopStream'),
+    },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      createElement(tag) {
+        return makeElement(tag);
+      },
+      querySelector(selector) {
+        if (selector === '.nav-item.active[data-target="page-stream"]') return activeStreamNav;
+        if (selector === '.nav-item[data-target="mainDashboardArea"]') return dashboardNav;
+        return null;
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/components/experimental-features.js');
+  const expanded = [];
+  const runtime = context.window._nekoModules.components.ExperimentalFeatures.create({
+    setExpandableSectionState: (el, state, options) => expanded.push([el?.id, state, options?.display]),
+  });
+
+  runtime.mountSettingsZone();
+  assert.equal(elements.get('settingsExperimentalZone').dataset.mounted, '1');
+  assert.ok(elements.get('settings-experimental').classList.contains('settings-experimental-shell'));
+  assert.equal(elements.get('streamSettingsDisabledNotice').removed, true);
+
+  runtime.applyState({ enableExperimentalFeatures: true });
+  assert.equal(elements.get('navStream').attributes['aria-hidden'], 'false');
+  assert.ok(elements.get('navStream').classList.contains('show'));
+
+  runtime.applyState({ enableExperimentalFeatures: false });
+  assert.equal(elements.get('navStream').attributes['aria-hidden'], 'true');
+  assert.equal(elements.get('navStream').attributes.tabindex, '-1');
+  assert.equal(elements.get('page-stream').style.display, 'none');
+  assert.equal(dashboardNav.clicked, 1);
+  assert.deepEqual(calls, ['syncNav', 'syncNav', 'stopStream']);
+  assert.ok(expanded.some((entry) => entry[0] === 'settings-stream' && entry[1] === false));
+});
+
 test('config page loads modal values and saves through ConfigClient', async () => {
   function makeElement(id, extra = {}) {
     const listeners = {};
@@ -317,7 +786,7 @@ test('config page loads modal values and saves through ConfigClient', async () =
         return elements.get(id) || null;
       },
     },
-    setTimeout(fn) { fn(); return 1; },
+    setTimeout() { return 1; },
     console,
   };
   context.window.window = context.window;
@@ -351,6 +820,181 @@ test('config page loads modal values and saves through ConfigClient', async () =
     }],
   ]);
   assert.equal(logs.some(([level]) => level === 'SUCCESS'), true);
+});
+
+test('service page owns health check rendering and init state', async () => {
+  const elements = new Map();
+
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    return {
+      id,
+      innerHTML: extra.innerHTML || '',
+      textContent: extra.textContent || '',
+      value: extra.value || '',
+      disabled: false,
+      dataset: extra.dataset || {},
+      style: {},
+      children: [],
+      className: extra.className || '',
+      classList: {
+        values: new Set(extra.classes || []),
+        add(value) { this.values.add(value); },
+        remove(value) { this.values.delete(value); },
+        toggle(value, enabled) {
+          const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+          if (shouldAdd) this.values.add(value);
+          else this.values.delete(value);
+        },
+        contains(value) { return this.values.has(value); },
+      },
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      appendChild(child) {
+        this.children.push(child);
+      },
+      cloneNode() {
+        return makeElement(id, {
+          ...extra,
+          className: this.className,
+          innerHTML: this.innerHTML,
+          textContent: this.textContent,
+          value: this.value,
+        });
+      },
+      dispatch(type, event = {}) {
+        return listeners[type]?.({ target: this, currentTarget: this, ...event });
+      },
+      parentNode: {
+        replaceChild(next) {
+          elements.set(id, next);
+        },
+      },
+      ...extra,
+    };
+  }
+
+  [
+    'runHealthCheckBtn',
+    'healthResultsList',
+    'daemonProcessName',
+    'daemonPidBadge',
+    'daemonStatus',
+    'privLevelBadge',
+    'permScreenCapture',
+    'permProcessEnum',
+    'permPowerControl',
+    'permNetwork',
+    'permFileIO',
+    'captureStatus',
+    'reportAutoDelayInput',
+    'startDelayInput',
+    'maxRestartsInput',
+    'restartIntervalInput',
+    'restartIntervalUnit',
+    'watchdogTimeoutInput',
+    'watchdogUnit',
+    'reportAutoStartSwitch',
+    'reportAutoDelayRow',
+    'autoRestartSwitch',
+    'autoStartMinimizeSwitch',
+  ].forEach((id) => elements.set(id, makeElement(id)));
+  elements.get('restartIntervalUnit').value = 'm';
+
+  const calls = [];
+  const context = {
+    window: {
+      _nekoModules: {
+        pages: {},
+        services: {
+          ServiceClient: {
+            runHealthCheck: async () => [
+              { name: 'service', text: 'running', ok: true },
+              { name: 'network', text: 'slow', ok: 'warn' },
+            ],
+            checkPermissions: async () => ({
+              screenCapture: 'granted',
+              processEnum: 'granted',
+              powerControl: 'denied',
+              network: 'granted',
+              fileIO: 'granted',
+            }),
+          },
+          ConfigClient: {
+            set: async (key, value) => {
+              calls.push(['set', key, value]);
+              return true;
+            },
+          },
+        },
+      },
+      _nekoUIHelpers: {
+        setExpandableSectionState(el, expanded) {
+          if (el) el.dataset.expanded = String(expanded);
+        },
+      },
+    },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      createElement(tag) {
+        return makeElement(tag);
+      },
+    },
+    setTimeout(fn) {
+      fn();
+      return 1;
+    },
+    clearTimeout() {},
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/service.page.js');
+
+  const page = context.window._nekoModules.pages.ServicePage;
+  page.init({
+    service: context.window._nekoModules.services.ServiceClient,
+    config: context.window._nekoModules.services.ConfigClient,
+    setExpandableSectionState: context.window._nekoUIHelpers.setExpandableSectionState,
+  });
+
+  await elements.get('runHealthCheckBtn').dispatch('click');
+  assert.equal(elements.get('runHealthCheckBtn').disabled, false);
+  assert.equal(elements.get('healthResultsList').children.length, 3);
+  assert.match(elements.get('healthResultsList').children[0].innerHTML, /2/);
+
+  page.initFromAppInit({
+    processName: 'NekoStatus',
+    pid: 42,
+    isAdmin: true,
+    config: {
+      minimizeOnAutoStart: true,
+      enableAutoRestart: false,
+      reportInterval: 12,
+      startupDelayMs: 7000,
+      maxRestarts: 5,
+      restartIntervalSec: 45,
+      watchdogTimeoutSec: 90,
+      enableAutoServiceStart: true,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(elements.get('daemonProcessName').textContent, 'NekoStatus');
+  assert.equal(elements.get('daemonPidBadge').textContent, 'PID 42');
+  assert.equal(elements.get('reportAutoDelayInput').value, 12);
+  assert.equal(elements.get('startDelayInput').value, 7);
+  assert.equal(elements.get('reportAutoDelayRow').dataset.expanded, 'true');
+  assert.equal(elements.get('permScreenCapture').className, 'perm-status success');
+  assert.equal(elements.get('permPowerControl').className, 'perm-status error');
+
+  elements.get('restartIntervalInput').value = '3';
+  await elements.get('restartIntervalInput').dispatch('change');
+  assert.deepEqual(calls.at(-1), ['set', 'restartIntervalSec', 180]);
 });
 
 test('update page renders update dialog state without direct IPC access', () => {
@@ -447,6 +1091,444 @@ test('update page renders update dialog state without direct IPC access', () => 
     ['skip', '1.2.9'],
     ['install', '1.2.9'],
     'close',
+  ]);
+});
+
+test('update page owns local package install through injected clients', async () => {
+  function makeElement(id) {
+    const listeners = {};
+    return {
+      id,
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      dispatch(type, event = {}) {
+        if (!listeners[type]) return undefined;
+        return listeners[type]({ target: this, ...event });
+      },
+    };
+  }
+
+  const localInstallBtn = makeElement('localInstallBtn');
+  const calls = [];
+  const logs = [];
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) {
+        return id === 'localInstallBtn' ? localInstallBtn : null;
+      },
+      querySelector() {
+        return null;
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+
+  const page = context.window._nekoModules.pages.UpdatePage;
+  page.init();
+  page.init({
+    addLogLine: (level, message) => logs.push([level, message]),
+    system: {
+      selectFile: async (options) => {
+        calls.push(['selectFile', options]);
+        return 'C:\\tmp\\NekoStatus-Setup.exe';
+      },
+    },
+    update: {
+      install: async (filePath, sha256, options) => {
+        calls.push(['install', filePath, sha256, options]);
+        return { success: true };
+      },
+    },
+  });
+
+  await localInstallBtn.dispatch('click');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['selectFile', {
+      title: '选择更新安装包',
+      filters: [{ name: '安装包', extensions: ['exe', 'zip', '7z'] }],
+    }],
+    ['install', 'C:\\tmp\\NekoStatus-Setup.exe', null, { manual: true }],
+  ]);
+  assert.deepEqual(logs, [
+    ['INFO', '选择本地安装包: C:\\tmp\\NekoStatus-Setup.exe'],
+    ['SUCCESS', '安装程序已启动'],
+  ]);
+});
+
+test('update page owns download progress and background update state', async () => {
+  function makeClassList() {
+    return {
+      values: new Set(),
+      add(value) { this.values.add(value); },
+      remove(value) { this.values.delete(value); },
+      contains(value) { return this.values.has(value); },
+    };
+  }
+
+  function makeElement(id) {
+    const listeners = {};
+    return {
+      id,
+      innerHTML: '',
+      textContent: '',
+      className: '',
+      disabled: false,
+      _updateMode: '',
+      style: {},
+      dataset: {},
+      classList: makeClassList(),
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      dispatch(type, event = {}) {
+        if (listeners[type]) return listeners[type]({ target: this, currentTarget: this, ...event });
+        return undefined;
+      },
+      querySelector() {
+        return null;
+      },
+    };
+  }
+
+  const ids = [
+    'updateProgressRow',
+    'updateProgressBar',
+    'updateProgressPct',
+    'updateProgressFill',
+    'updateProgressLabel',
+    'updateStatusBadge',
+    'checkUpdateBtn',
+    'checkUpdateLabel',
+    'checkUpdateIcon',
+    'forceUpdateBtn',
+    'rollbackBtn',
+    'updateDialogOverlay',
+    'updateDialogCurrentVer',
+    'updateDialogNewVer',
+    'updateDialogSize',
+    'updateDialogDate',
+    'updateDialogChannel',
+    'updateDialogNotes',
+    'updateDialogForceBanner',
+    'updateDialogClose',
+    'updateDialogSkipBtn',
+    'updateVerNumber',
+    'updateVerDesc',
+  ];
+  const elements = new Map(ids.map((id) => [id, makeElement(id)]));
+  const navUpdate = makeElement('navUpdate');
+  const forceLabel = makeElement('forceLabel');
+  const rollbackIcon = makeElement('rollbackIcon');
+  const rollbackLabel = makeElement('rollbackLabel');
+  elements.get('forceUpdateBtn').querySelector = (selector) => (selector === '.update-ctrl-label' ? forceLabel : null);
+  elements.get('rollbackBtn').querySelector = (selector) => {
+    if (selector === 'i') return rollbackIcon;
+    if (selector === 'span') return rollbackLabel;
+    return null;
+  };
+  const channelBadge = makeElement('channelBadge');
+  const versionTag = makeElement('versionTag');
+  const timeline = makeElement('timeline');
+  timeline.children = [];
+  timeline.appendChild = (child) => {
+    timeline.children.push(child);
+  };
+  const calls = [];
+  const logs = [];
+  const notices = [];
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelector(selector) {
+        if (selector === '.nav-item[data-target="page-update"]') return navUpdate;
+        if (selector === '.update-channel-badge') return channelBadge;
+        if (selector === '.update-ver-tag') return versionTag;
+        if (selector === '.update-timeline') return timeline;
+        return null;
+      },
+      createElement: makeElement,
+    },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    setInterval() { return 1; },
+    clearInterval() {},
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+
+  const page = context.window._nekoModules.pages.UpdatePage;
+  page.init({
+    addLogLine: (level, message) => logs.push([level, message]),
+    showNotice: (message, type) => notices.push([message, type]),
+    update: {
+      check: async () => {
+        calls.push(['check']);
+        return {
+          hasUpdate: true,
+          currentVersion: '1.2.9',
+          latestVersion: '1.3.2',
+          exeDownloadUrl: 'https://example.com/NekoStatus-1.3.2.exe',
+        };
+      },
+      download: async (url) => {
+        calls.push(['download', url]);
+        return {
+          success: true,
+          filePath: 'C:\\tmp\\NekoStatus-Setup.exe',
+          sha256: 'abcdef0123456789',
+        };
+      },
+      install: async (filePath, sha256) => {
+        calls.push(['install', filePath, sha256]);
+        return { success: true };
+      },
+      installPending: async () => {
+        calls.push(['installPending']);
+        return { success: true };
+      },
+      rollbackInfo: async () => {
+        calls.push(['rollbackInfo']);
+        return {
+          success: true,
+          version: '1.2.8',
+          exeDownloadUrl: 'https://example.com/NekoStatus-1.2.8.exe',
+        };
+      },
+    },
+    config: {
+      get: async (key) => {
+        calls.push(['get', key]);
+        return '';
+      },
+      set: async (key, value) => {
+        calls.push(['set', key, value]);
+        return true;
+      },
+    },
+  });
+
+  assert.equal(await page.downloadAndInstall({
+    latestVersion: '1.2.9',
+    exeDownloadUrl: 'https://example.com/NekoStatus-Setup.exe',
+  }), true);
+  assert.deepEqual(calls, [
+    ['download', 'https://example.com/NekoStatus-Setup.exe'],
+    ['install', 'C:\\tmp\\NekoStatus-Setup.exe', 'abcdef0123456789'],
+  ]);
+  assert.equal(elements.get('updateProgressRow').style.display, '');
+  assert.equal(elements.get('updateProgressPct').textContent, '100%');
+  assert.equal(elements.get('updateProgressFill').style.width, '100%');
+  assert.equal(elements.get('updateProgressLabel').textContent, '校验完成');
+  assert.equal(logs.some(([level]) => level === 'SUCCESS'), true);
+
+  page.updateProgress({ pct: 42, received: 1024, total: 2048, speed: 512 });
+  assert.equal(elements.get('updateProgressPct').textContent, '42%');
+  assert.equal(elements.get('updateProgressFill').style.width, '42%');
+  assert.match(elements.get('updateProgressLabel').textContent, /1\.0 KB \/ 2\.0 KB/);
+
+  page.markAutoDownloaded({ version: '1.3.0' });
+  assert.equal(navUpdate.classList.contains('has-update'), true);
+  assert.match(elements.get('updateStatusBadge').innerHTML, /1\.3\.0/);
+
+  assert.equal(page.markAvailable({
+    hasUpdate: true,
+    currentVersion: '1.2.9',
+    latestVersion: '1.3.1',
+    releaseNotes: '- update runtime',
+  }), true);
+  assert.equal(elements.get('checkUpdateBtn')._updateMode, 'download');
+  assert.equal(elements.get('updateDialogOverlay').classList.contains('show'), true);
+  assert.match(elements.get('updateStatusBadge').innerHTML, /1\.3\.1/);
+
+  assert.equal(page.renderReleaseNotes({
+    currentVersion: '1.2.9-beta.1',
+    latestVersion: '1.3.1',
+  }), true);
+  assert.equal(channelBadge.className, 'update-channel-badge beta');
+  assert.equal(versionTag.textContent, 'Beta');
+
+  assert.equal(page.syncInstalledVersion({
+    version: '1.3.1-nightly.2',
+    cfg: { lastUpdateCheck: '2026-06-05T00:00:00.000Z' },
+    runtimeVersions: { electron: '37.0.0', node: '24.0.0' },
+  }), true);
+  assert.equal(channelBadge.className, 'update-channel-badge nightly');
+  assert.equal(elements.get('updateVerNumber').textContent, 'v1.3.1-nightly.2');
+  assert.match(elements.get('updateVerDesc').textContent, /Electron 37\.0\.0/);
+
+  assert.equal(page.renderChangelogEntries([{
+    version: '1.3.1',
+    date: '2026-06-05',
+    notes: '## Added\n- update page rendering',
+    isPreRelease: false,
+  }]), true);
+  assert.equal(timeline.children.length, 1);
+  assert.match(timeline.children[0].innerHTML, /update page rendering/);
+
+  elements.get('checkUpdateBtn')._updateMode = 'check';
+  assert.equal((await page.checkForUpdates()).latestVersion, '1.3.2');
+  assert.equal(elements.get('checkUpdateBtn')._updateMode, 'download');
+  assert.equal(calls.some((call) => call[0] === 'check'), true);
+  assert.equal(calls.some((call) => call[0] === 'get' && call[1] === 'skippedVersion'), true);
+
+  page.setPendingInstall('1.3.3');
+  assert.equal((await page.checkForUpdates()).success, true);
+  assert.equal(calls.some((call) => call[0] === 'installPending'), true);
+
+  assert.equal((await page.forceUpdate()).latestVersion, '1.3.2');
+  assert.equal(calls.some((call) => call[0] === 'set' && call[1] === 'skippedVersion'), true);
+
+  assert.equal((await page.rollbackVersion()).confirming, true);
+  assert.equal((await page.rollbackVersion()).version, '1.2.8');
+  assert.equal(calls.some((call) => call[0] === 'rollbackInfo'), true);
+  assert.equal(notices.some(([message]) => message.includes('发现新版本')), true);
+  assert.equal(notices.some(([message]) => message.includes('正在下载回滚版本')), true);
+});
+
+test('update page owns update channel controls through injected update client', async () => {
+  function makeRadio(value) {
+    const listeners = {};
+    return {
+      value,
+      checked: false,
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      dispatch(type, event = {}) {
+        if (!listeners[type]) return undefined;
+        return listeners[type]({ target: this, ...event });
+      },
+    };
+  }
+
+  const stable = makeRadio('stable');
+  const beta = makeRadio('beta');
+  const calls = [];
+  const logs = [];
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById() {
+        return null;
+      },
+      querySelector() {
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === 'input[name="updateChannel"]') return [stable, beta];
+        return [];
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+
+  const page = context.window._nekoModules.pages.UpdatePage;
+  page.init({
+    addLogLine: (level, message) => logs.push([level, message]),
+    update: {
+      setChannel: async (channel) => {
+        calls.push(['setChannel', channel]);
+        return true;
+      },
+    },
+  });
+
+  beta.checked = true;
+  await beta.dispatch('change');
+  page.syncChannel('stable');
+
+  assert.deepEqual(calls, [['setChannel', 'beta']]);
+  assert.deepEqual(logs, [['INFO', '更新通道已切换为 beta']]);
+  assert.equal(stable.checked, true);
+  assert.equal(beta.checked, false);
+});
+
+test('update page owns integrity check button rendering and logging', async () => {
+  function makeButton(id) {
+    const listeners = {};
+    const label = { textContent: '完整性检查' };
+    return {
+      id,
+      disabled: false,
+      querySelector(selector) {
+        return selector === 'span' ? label : null;
+      },
+      addEventListener(type, handler) {
+        listeners[type] = handler;
+      },
+      dispatch(type, event = {}) {
+        if (!listeners[type]) return undefined;
+        return listeners[type]({ target: this, ...event });
+      },
+      label,
+    };
+  }
+
+  const integrityBtn = makeButton('updateIntegrityBtn');
+  const badge = { className: '', innerHTML: '' };
+  const logs = [];
+  const notices = [];
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      getElementById(id) {
+        if (id === 'updateIntegrityBtn') return integrityBtn;
+        if (id === 'updateStatusBadge') return badge;
+        return null;
+      },
+      querySelector() {
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/update.page.js');
+
+  const page = context.window._nekoModules.pages.UpdatePage;
+  page.init({
+    addLogLine: (level, message) => logs.push([level, message]),
+    showNotice: (message, type, duration) => notices.push([message, type, duration]),
+    update: {
+      checkIntegrity: async () => [
+        { name: 'package', ok: true, text: 'OK' },
+        { name: 'installer', ok: false, text: 'missing' },
+      ],
+    },
+  });
+
+  await integrityBtn.dispatch('click');
+
+  assert.equal(integrityBtn.disabled, false);
+  assert.equal(integrityBtn.label.textContent, '完整性检查');
+  assert.deepEqual(notices, [['完整性检查异常: installer: missing', 'error', 5000]]);
+  assert.match(badge.className, /warn/);
+  assert.match(badge.innerHTML, /1 项异常/);
+  assert.deepEqual(logs, [
+    ['INFO', '[完整性] package: OK'],
+    ['WARN', '[完整性] installer: missing'],
   ]);
 });
 
@@ -859,6 +1941,326 @@ test('screenshot page exposes activity helpers after page initialization', () =>
   assert.deepEqual(Array.from(context.window._nekoActivityHelpers.getPrivacyRules()), ['Code.exe', 'chrome.exe']);
 });
 
+test('screenshot page owns capture controls and persistence', async () => {
+  const elements = new Map();
+
+  function makeClassList(classes = []) {
+    return {
+      values: new Set(classes),
+      add(value) { this.values.add(value); },
+      remove(value) { this.values.delete(value); },
+      toggle(value, enabled) {
+        const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+        if (shouldAdd) this.values.add(value);
+        else this.values.delete(value);
+      },
+      contains(value) { return this.values.has(value); },
+    };
+  }
+
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    const el = {
+      id,
+      value: extra.value || '',
+      dataset: extra.dataset || {},
+      style: {},
+      className: extra.className || '',
+      innerHTML: '',
+      textContent: '',
+      src: '',
+      classList: makeClassList(extra.classes),
+      addEventListener(type, handler) {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      dispatch(type, event = {}) {
+        return Promise.all((listeners[type] || []).map((handler) => handler.call(this, {
+          target: this,
+          currentTarget: this,
+          ...event,
+        })));
+      },
+      closest() { return null; },
+      querySelector(selector) {
+        if (selector === '.screenshot-placeholder') return elements.get('screenshotPlaceholder');
+        if (selector === '.screenshot-frame-overlay') return elements.get('screenshotOverlay');
+        return null;
+      },
+      querySelectorAll() { return []; },
+      ...extra,
+    };
+    elements.set(id, el);
+    return el;
+  }
+
+  const toggleScreenshot = makeElement('toggleScreenshot');
+  const uploadSwitch = makeElement('uploadSwitch', { classes: ['on'] });
+  const captureNowBtn = makeElement('captureNowBtn');
+  const dashCaptureNowBtn = makeElement('dashCaptureNowBtn');
+  const screenshotModeGroup = makeElement('screenshotModeGroup');
+  const intervalSelector = makeElement('intervalSelector');
+  const customIntervalValue = makeElement('customIntervalValue', { value: '2' });
+  makeElement('customIntervalUnit', { value: 'm' });
+  makeElement('intervalCustomGroup');
+  makeElement('intervalAutoHint');
+  makeElement('screenshotPreviewTime');
+  makeElement('screenshotFrame');
+  makeElement('screenshotPlaceholder');
+  makeElement('screenshotOverlay');
+  makeElement('dashScreenshotImg');
+  makeElement('dashScreenshotEmpty');
+  makeElement('dashScreenshotName');
+  makeElement('dashScreenshotSize');
+
+  const calls = [];
+  const activities = [];
+  const logs = [];
+  const context = {
+    window: {
+      _nekoModules: { pages: {} },
+      addEventListener() {},
+      requestAnimationFrame(fn) { fn(); },
+    },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelector(selector) {
+        if (selector === '.screenshot-preview-time') return elements.get('screenshotPreviewTime');
+        if (selector === '.screenshot-frame') return elements.get('screenshotFrame');
+        return null;
+      },
+      querySelectorAll() {
+        return [];
+      },
+      addEventListener() {},
+    },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {},
+    },
+    requestAnimationFrame(fn) { fn(); },
+    Blob,
+    URL: {
+      createObjectURL() { return 'blob:screenshot'; },
+    },
+    Date,
+    Uint8Array,
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/screenshot.page.js');
+
+  const page = context.window._nekoModules.pages.ScreenshotPage;
+  page.init({
+    addLogLine: (level, message) => logs.push([level, message]),
+    showNotice: (message, type) => calls.push(['notice', message, type]),
+    appendActivityItem: (...args) => activities.push(args),
+    formatDateTime: () => '2026-06-05 12:00:00',
+    formatTimeOnly: () => '12:00',
+    config: {
+      set: async (key, value) => {
+        calls.push(['set', key, value]);
+        return true;
+      },
+    },
+    service: {
+      syncMeta: async () => {
+        calls.push(['syncMeta']);
+        return true;
+      },
+    },
+    system: {
+      captureScreen: async () => ({
+        data: [1, 2, 3, 4],
+        type: 'image/png',
+        extension: 'png',
+      }),
+    },
+  });
+
+  toggleScreenshot.classList.add('on');
+  await toggleScreenshot.dispatch('click');
+  assert.deepEqual(calls.slice(0, 2), [
+    ['set', 'enableScreenshot', true],
+    ['syncMeta'],
+  ]);
+  assert.equal(uploadSwitch.classList.contains('on'), true);
+
+  await uploadSwitch.dispatch('click');
+  assert.deepEqual(calls.slice(2, 4), [
+    ['set', 'enableScreenshot', false],
+    ['syncMeta'],
+  ]);
+  assert.equal(toggleScreenshot.classList.contains('on'), false);
+
+  const intervalMode = makeElement('intervalMode', { dataset: { mode: 'interval' } });
+  await screenshotModeGroup.dispatch('click', {
+    target: {
+      closest(selector) {
+        return selector === '.toggle-btn' ? intervalMode : null;
+      },
+    },
+  });
+  assert.deepEqual(calls.slice(4, 6), [
+    ['set', 'screenshotMode', 'interval'],
+    ['set', 'syncScreenshotInterval', false],
+  ]);
+
+  const intervalBtn = makeElement('interval30', { dataset: { value: '30' } });
+  await intervalSelector.dispatch('click', {
+    target: {
+      closest(selector) {
+        return selector === '.interval-btn' ? intervalBtn : null;
+      },
+    },
+  });
+  assert.deepEqual(calls.at(-1), ['set', 'screenshotInterval', 30]);
+
+  await customIntervalValue.dispatch('change');
+  assert.deepEqual(calls.at(-1), ['set', 'screenshotInterval', 120]);
+
+  await captureNowBtn.dispatch('click');
+  assert.deepEqual(activities[0], ['capture', '截图完成', '0 KB · PNG', '12:00']);
+  assert.equal(elements.get('screenshotPreviewTime').textContent, '2026-06-05 12:00:00');
+  assert.equal(elements.get('screenshotFrame').style.backgroundImage, 'url(blob:screenshot)');
+  assert.equal(elements.get('dashScreenshotImg').src, 'blob:screenshot');
+  assert.match(elements.get('dashScreenshotName').innerHTML, /screenshot_/);
+  assert.equal(logs.some(([level]) => level === 'SUCCESS'), true);
+});
+
+test('dashboard page owns trend chart metrics runtime', () => {
+  function makeClassList() {
+    return {
+      values: new Set(),
+      add(value) { this.values.add(value); },
+      remove(value) { this.values.delete(value); },
+      toggle(value, enabled) {
+        const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+        if (shouldAdd) this.values.add(value);
+        else this.values.delete(value);
+      },
+      contains(value) { return this.values.has(value); },
+    };
+  }
+
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    return {
+      id,
+      dataset: extra.dataset || {},
+      style: extra.style || {},
+      classList: makeClassList(),
+      addEventListener(type, handler) { listeners[type] = handler; },
+      dispatch(type, event = {}) { listeners[type]?.({ target: this, currentTarget: this, ...event }); },
+      closest() { return this; },
+      getContext() {
+        return {
+          createLinearGradient() {
+            return { addColorStop() {} };
+          },
+        };
+      },
+      ...extra,
+    };
+  }
+
+  const updates = [];
+  class ChartStub {
+    static defaults = {};
+    static instances = [];
+    constructor(ctx, config) {
+      this.ctx = ctx;
+      this.data = config.data;
+      this.options = config.options;
+      this.chartArea = { top: 0, bottom: 120 };
+      this.destroyed = false;
+      ChartStub.instances.push(this);
+    }
+    update(mode) {
+      updates.push(mode);
+    }
+    destroy() {
+      this.destroyed = true;
+    }
+  }
+
+  const oneMinuteBtn = makeElement('trend1m', { dataset: { range: '1m' } });
+  const oneHourBtn = makeElement('trend1h', { dataset: { range: '1h' } });
+  const elements = new Map([
+    ['trendChart', makeElement('trendChart')],
+    ['trendRangeGroup', makeElement('trendRangeGroup')],
+    ['mainDashboardArea', makeElement('mainDashboardArea', { style: { display: '' } })],
+  ]);
+
+  const context = {
+    window: {
+      _nekoModules: {
+        services: {
+          ConfigClient: {
+            setDashboardLayout: async () => true,
+          },
+        },
+      },
+    },
+    document: {
+      documentElement: {
+        hasAttribute() { return false; },
+      },
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '#trendRangeGroup .toggle-btn') return [oneMinuteBtn, oneHourBtn];
+        return [];
+      },
+      querySelector() {
+        return null;
+      },
+    },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {},
+      removeItem() {},
+    },
+    getComputedStyle() {
+      return {
+        getPropertyValue(name) {
+          return name === '--theme-color' ? '#0ea5e9' : '';
+        },
+      };
+    },
+    setTimeout(fn) { fn(); return 1; },
+    Chart: ChartStub,
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+  context.window.Chart = ChartStub;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/dashboard.page.js');
+
+  const page = context.window._nekoModules.pages.DashboardPage;
+  page.initRuntime();
+  page.setMetricsHistory([{ timestamp: Date.now() - 1000, cpuPct: 12, memPct: 34 }]);
+  page.recordMetrics({ timestamp: Date.now(), cpuPct: 20, memPct: 40 });
+
+  assert.equal(ChartStub.instances.length, 1);
+  assert.equal(page._metricsBuffer.length, 2);
+  assert.equal(ChartStub.instances[0].data.datasets[0].data.some((value) => value != null), true);
+  assert.equal(ChartStub.instances[0].data.datasets[1].data.some((value) => value != null), true);
+
+  elements.get('trendRangeGroup').dispatch('click', { target: oneHourBtn });
+  assert.equal(page._trendRange, '1h');
+  assert.equal(oneHourBtn.classList.contains('active'), true);
+  assert.equal(updates.length > 0, true);
+});
+
 test('device status page owns metrics rendering and diagnostics', () => {
   function makeClassList() {
     return {
@@ -1088,8 +2490,13 @@ test('auth page owns modal state and profile summary rendering', async () => {
       },
       querySelectorAll() { return []; },
       addEventListener() {},
+      dispatchEvent(event) { this.lastEvent = event; return true; },
     },
     setTimeout(fn) { fn(); return 1; },
+    CustomEvent: function CustomEvent(type, init = {}) {
+      this.type = type;
+      this.detail = init.detail;
+    },
     URL: { createObjectURL() { return 'blob:test'; }, revokeObjectURL() {} },
     Image: function Image() {},
     FileReader: function FileReader() {},
@@ -1124,6 +2531,267 @@ test('auth page owns modal state and profile summary rendering', async () => {
 
   await page.checkFirstTimeAuthPrompt();
   assert.equal(authCalls.includes('getState'), true);
+});
+
+test('settings page owns core persistence controls', async () => {
+  const elements = new Map();
+
+  function makeClassList(classes = []) {
+    return {
+      values: new Set(classes),
+      add(value) { this.values.add(value); },
+      remove(value) { this.values.delete(value); },
+      toggle(value, enabled) {
+        const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+        if (shouldAdd) this.values.add(value);
+        else this.values.delete(value);
+      },
+      contains(value) { return this.values.has(value); },
+    };
+  }
+
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    const el = {
+      id,
+      value: extra.value || '',
+      textContent: extra.textContent || '',
+      innerHTML: '',
+      dataset: extra.dataset || {},
+      style: {},
+      disabled: false,
+      childNodes: extra.childNodes || [],
+      classList: makeClassList(extra.classes),
+      addEventListener(type, handler) {
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(handler);
+      },
+      dispatch(type, event = {}) {
+        return Promise.all((listeners[type] || []).map((handler) => handler.call(this, {
+          target: this,
+          currentTarget: this,
+          ...event,
+        })));
+      },
+      appendChild(child) { this.lastChild = child; },
+      querySelectorAll(selector) {
+        if (selector === '.toggle-btn') return extra.toggleButtons || [];
+        return [];
+      },
+      querySelector() { return null; },
+      closest() { return extra.closestEl || null; },
+      scrollIntoView() { this.scrolled = true; },
+      ...extra,
+    };
+    elements.set(id, el);
+    return el;
+  }
+
+  const reportAuto = makeElement('reportAuto', { dataset: { mode: 'auto' } });
+  const reportCustom = makeElement('reportCustom', { dataset: { mode: 'custom' } });
+  const screenshotAuto = makeElement('screenshotAuto', { dataset: { mode: 'auto' } });
+  const screenshotInterval = makeElement('screenshotInterval', { dataset: { mode: 'interval' } });
+  const scopeBoth = makeElement('scopeBoth', { dataset: { scope: 'both' } });
+  const row = makeElement('reportRow');
+
+  makeElement('stgFontSelect');
+  makeElement('stgTraySwitch', { classes: ['on'] });
+  makeElement('stgRestoreSwitch');
+  makeElement('stgAutoDownloadSwitch', { classes: ['on'] });
+  makeElement('stgExperimentalSwitch', { classes: ['on'] });
+  makeElement('openExperimentalSettingsBtn');
+  makeElement('settings-experimental');
+  makeElement('stgReportModeGroup', { toggleButtons: [reportAuto, reportCustom], closestEl: row });
+  makeElement('stgCustomIntervalRow');
+  makeElement('stgReportIntervalInput', { value: '20' });
+  makeElement('stgReportIntervalDesc');
+  makeElement('stgSaveIntervalBtn');
+  makeElement('quickIntervalInput', { value: '15' });
+  makeElement('quickIntervalLabel');
+  makeElement('quickIntervalStepper');
+  makeElement('quickIntervalHint');
+  makeElement('intervalAutoHintValue');
+  makeElement('stgSyncScreenshotSwitch');
+  makeElement('screenshotModeGroup', { toggleButtons: [screenshotAuto, screenshotInterval] });
+  makeElement('quickIntervalCard');
+  makeElement('quickIntervalDown');
+  makeElement('quickIntervalUp');
+  makeElement('stgNotifySwitch', { classes: ['on'] });
+  makeElement('stgDndSwitch', { classes: ['on'] });
+  makeElement('stgIncognitoSwitch', { classes: ['on'] });
+  makeElement('privacyBarTitle');
+  makeElement('privacyBarDesc');
+  makeElement('privacyBarIcon');
+  makeElement('openPrivacyRulesBtn');
+  makeElement('incognitoScopeGroup');
+  makeElement('blurAllSwitch', { classes: ['on'] });
+  makeElement('stg2FASwitch', { classes: ['on'] });
+  makeElement('stgGlassSwitch');
+  makeElement('stgDarkSwitch', { classes: ['on'] });
+  makeElement('stgDarkScheduleSwitch', { classes: ['on'] });
+  makeElement('stgDarkTimeRow');
+  makeElement('stgDarkStartTime', { value: '19:00' });
+  makeElement('stgDarkEndTime', { value: '06:00' });
+  makeElement('stgScaleLabel', { textContent: '100%' });
+  makeElement('stgScaleDown');
+  makeElement('stgScaleUp');
+  makeElement('clearCacheBtn', { childNodes: [{ textContent: ' 清理缓存' }] });
+  makeElement('clearCacheIcon');
+  makeElement('cacheSizeDesc');
+
+  const calls = [];
+  const logs = [];
+  const themes = [];
+  const expanded = [];
+  const dispatched = [];
+  const storage = new Map();
+  const context = {
+    window: {
+      _nekoModules: { pages: {}, services: {} },
+      _nekoUIHelpers: {
+        applyUIFontProfile: (font) => calls.push(['fontProfile', font]),
+      },
+      _nekoActivityHelpers: {
+        syncPrivacyBar: () => calls.push(['syncPrivacyBar']),
+      },
+    },
+    document: {
+      documentElement: {
+        style: {
+          setProperty: (key, value) => calls.push(['styleSet', key, value]),
+          removeProperty: (key) => calls.push(['styleRemove', key]),
+        },
+        classList: makeClassList(),
+      },
+      getElementById(id) { return elements.get(id) || null; },
+      createElement(tag) { return makeElement(tag); },
+      querySelector(selector) {
+        if (selector === '.nav-item[data-target="page-settings"]') return makeElement('settingsNav');
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '#stgReportModeGroup .toggle-btn') return [reportAuto, reportCustom];
+        return [];
+      },
+      dispatchEvent(event) {
+        dispatched.push(event);
+        return true;
+      },
+    },
+    localStorage: {
+      getItem(key) { return storage.get(key) || null; },
+      setItem(key, value) { storage.set(key, value); },
+    },
+    setTimeout(fn) { fn(); return 1; },
+    setInterval() { return 1; },
+    CustomEvent: function CustomEvent(type, init = {}) {
+      this.type = type;
+      this.detail = init.detail;
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/settings.page.js');
+
+  const page = context.window._nekoModules.pages.SettingsPage;
+  page.init({
+    addLogLine: (level, message) => logs.push([level, message]),
+    showNotice: (message, type) => calls.push(['notice', message, type]),
+    applyThemeMode: (...args) => themes.push(args),
+    applyExperimentalFeatureState: (cfg) => calls.push(['experimental', cfg]),
+    setExpandableSectionState: (el, expandedState) => {
+      expanded.push([el?.id, expandedState]);
+      if (el) el.dataset.expanded = String(expandedState);
+    },
+    setIncognitoScopeUI: (scope) => calls.push(['scopeUi', scope]),
+    setConsoleStatus: (...args) => calls.push(['consoleStatus', ...args]),
+    formatBytes: (bytes) => `${bytes} B`,
+    config: {
+      getAll: async () => ({ reportIntervalMode: 'auto' }),
+      set: async (key, value) => {
+        calls.push(['set', key, value]);
+        return true;
+      },
+    },
+    system: {
+      notify: async () => ({ shown: true }),
+      setFocusAssist: async (enabled) => {
+        calls.push(['focus', enabled]);
+        return { ok: true };
+      },
+      getFocusAssist: async () => ({ ok: true, enabled: false }),
+      setZoom: async (zoom) => {
+        calls.push(['zoom', zoom]);
+        return true;
+      },
+      clearCache: async () => ({
+        success: true,
+        clearedBytes: 2048,
+        afterBytes: 1024,
+        removedCount: 3,
+      }),
+    },
+  });
+
+  await elements.get('stgTraySwitch').dispatch('click');
+  await elements.get('stgAutoDownloadSwitch').dispatch('click');
+  await elements.get('stgExperimentalSwitch').dispatch('click');
+  assert.deepEqual(calls.filter((call) => call[0] === 'set').slice(0, 3), [
+    ['set', 'closeAction', 'minimize'],
+    ['set', 'autoDownload', true],
+    ['set', 'enableExperimentalFeatures', true],
+  ]);
+
+  await elements.get('stgReportModeGroup').dispatch('click', {
+    target: { closest: () => reportCustom },
+  });
+  assert.deepEqual(calls.filter((call) => call[0] === 'set').slice(3, 4), [
+    ['set', 'reportIntervalMode', 'custom'],
+  ]);
+  assert.equal(elements.get('stgReportIntervalDesc').textContent, '自定义模式: 每 20s 上报');
+  assert.equal(expanded.some(([id, state]) => id === 'stgCustomIntervalRow' && state === true), true);
+
+  await elements.get('stgSaveIntervalBtn').dispatch('click');
+  assert.deepEqual(calls.filter((call) => call[0] === 'set').at(-1), ['set', 'reportInterval', 20]);
+  assert.equal(elements.get('quickIntervalLabel').textContent, '20s · 自定义');
+
+  await elements.get('stgDndSwitch').dispatch('click');
+  assert.equal(elements.get('stgNotifySwitch').classList.contains('on'), false);
+  assert.deepEqual(calls.filter((call) => call[0] === 'set').slice(-2), [
+    ['set', 'doNotDisturb', true],
+    ['set', 'enableNotification', false],
+  ]);
+
+  await elements.get('incognitoScopeGroup').dispatch('click', {
+    target: { closest: () => scopeBoth },
+  });
+  assert.deepEqual(calls.filter((call) => call[0] === 'scopeUi').at(-1), ['scopeUi', 'both']);
+  assert.deepEqual(calls.filter((call) => call[0] === 'set').at(-1), ['set', 'incognitoScope', 'both']);
+  assert.equal(dispatched.at(-1).type, 'neko:privacy-scope-changed');
+
+  await elements.get('stgDarkScheduleSwitch').dispatch('click');
+  assert.deepEqual(themes.at(-1), ['auto', '19:00', '06:00']);
+
+  await elements.get('stgScaleUp').dispatch('click');
+  assert.equal(elements.get('stgScaleLabel').textContent, '110%');
+  assert.deepEqual(calls.filter((call) => call[0] === 'set').at(-1), ['set', 'uiScale', 110]);
+  assert.deepEqual(calls.filter((call) => call[0] === 'zoom').at(-1), ['zoom', 1.1]);
+
+  await elements.get('clearCacheBtn').dispatch('click');
+  assert.equal(elements.get('clearCacheBtn').classList.contains('loading'), false);
+  assert.equal(elements.get('clearCacheIcon').className, 'ph ph-broom');
+  assert.equal(elements.get('cacheSizeDesc').textContent, '会话缓存（图片、脚本等）· 当前 1024 B');
+  assert.deepEqual(calls.filter((call) => call[0] === 'consoleStatus').at(-1), [
+    'consoleStatus',
+    'Cache',
+    '1024 B',
+    'Local cache',
+    'ok',
+  ]);
+  assert.equal(logs.some(([level]) => level === 'INFO'), true);
 });
 
 test('theme module owns color normalization, persistence, and swatch binding', () => {
@@ -1374,6 +3042,631 @@ test('developer console registry parses aliases and delegates commands', async (
     'refreshStatus',
     'clearOutput',
   ]);
+});
+
+test('console runtime owns logs, status cards, export and command input', async () => {
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    let html = extra.innerHTML || '';
+    const el = {
+      id,
+      dataset: extra.dataset || {},
+      style: {},
+      children: [],
+      parentNode: null,
+      disabled: false,
+      value: extra.value || '',
+      checked: extra.checked,
+      scrollTop: 0,
+      scrollHeight: 0,
+      className: extra.className || '',
+      textContent: extra.textContent || '',
+      classList: {
+        values: new Set(),
+        add(...names) { names.forEach((name) => this.values.add(name)); },
+        remove(...names) { names.forEach((name) => this.values.delete(name)); },
+        contains(name) { return this.values.has(name); },
+      },
+      addEventListener(type, handler) { listeners[type] = handler; },
+      dispatch(type, event = {}) { listeners[type]?.({ target: el, ...event }); },
+      appendChild(child) {
+        child.parentNode = el;
+        el.children.push(child);
+        el.scrollHeight = el.children.length * 20;
+        return child;
+      },
+      removeChild(child) {
+        el.children = el.children.filter((item) => item !== child);
+      },
+      cloneNode() {
+        return makeElement(id, {
+          dataset: { ...el.dataset },
+          value: el.value,
+          checked: el.checked,
+          className: el.className,
+          textContent: el.textContent,
+          innerHTML: html,
+        });
+      },
+      querySelectorAll(selector) {
+        if (selector === '.log-line') return el.children.filter((child) => child.className === 'log-line');
+        return [];
+      },
+      get innerHTML() { return html; },
+      set innerHTML(value) {
+        html = value;
+        if (value === '') el.children = [];
+        el.textContent = String(value).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      },
+    };
+    return el;
+  }
+
+  const elements = new Map();
+  [
+    'consoleOutput',
+    'consoleAutoScroll',
+    'consoleClearBtn',
+    'consoleExportBtn',
+    'consoleInput',
+    'consoleSendBtn',
+    'consoleRuntimeValue',
+    'consoleRuntimeMeta',
+    'consoleServiceValue',
+    'consoleServiceMeta',
+    'consoleUploadValue',
+    'consoleUploadMeta',
+    'consoleCacheValue',
+    'consoleCacheMeta',
+    'consoleMetricsValue',
+    'consoleMetricsMeta',
+    'consoleTickValue',
+    'consoleTickMeta',
+  ].forEach((id) => elements.set(id, makeElement(id)));
+  elements.get('consoleAutoScroll').checked = true;
+  const filters = [
+    makeElement('filterAll', { dataset: { level: 'ALL' } }),
+    makeElement('filterError', { dataset: { level: 'ERROR' } }),
+  ];
+  const body = makeElement('body');
+  elements.forEach((el) => {
+    el.parentNode = body;
+  });
+
+  const savedFiles = [];
+  const calls = [];
+  const context = {
+    window: {},
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      createElement(tag) {
+        return makeElement(tag);
+      },
+      querySelectorAll(selector) {
+        if (selector === '.console-filter') return filters;
+        return [];
+      },
+    },
+    console,
+    setTimeout,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/components/developer-console.js');
+  context.window._nekoModules.components.DeveloperMode = {
+    create: () => ({
+      init: () => calls.push('developerModeInit'),
+      updateScreenshotDebug: (data) => calls.push(['screenshotDebug', data.success]),
+    }),
+  };
+  loadBrowserScript(context, 'src/renderer/js/components/console-runtime.js');
+
+  const runtime = context.window._nekoModules.components.ConsoleRuntime.create({
+    ipcClient: { isReady: () => true, invoke: async () => null, on: () => {} },
+    IPC_EVENTS: { DEV_MODE_PANEL_COMMAND: 'dev:modePanel:command' },
+    runtimeVersions: { electron: '30.0.0' },
+    healthStats: { total: 4, success: 3 },
+    callService: async (method) => {
+      calls.push(['service', method]);
+      if (method === 'isRunning') return true;
+      if (method === 'getProcessInfo') return { pid: 42, memoryMB: 128, uptimeSec: 65 };
+      return null;
+    },
+    callSystem: async (method, _fallback, payload) => {
+      calls.push(['system', method]);
+      if (method === 'getVersion') return '1.2.7';
+      if (method === 'getCacheSize') return 2048;
+      if (method === 'getMetrics') return { cpuPct: 20, memPct: 30, memUsed: 1024, memTotal: 4096 };
+      if (method === 'saveTextFile') {
+        savedFiles.push(payload);
+        return { success: true, path: 'C:\\tmp\\neko-console.log' };
+      }
+      return null;
+    },
+    callConfig: async () => ({}),
+    callUpdate: async () => null,
+    callAnnouncement: async () => null,
+    applyServiceState: (running) => calls.push(['serviceState', running]),
+    replaceHandler: (id, handler) => {
+      elements.get(id)?.addEventListener('click', handler);
+    },
+  });
+
+  runtime.addLogLine('INFO', 'hello <unsafe>');
+  runtime.addLogLine('ERROR', 'boom');
+  filters[1].dispatch('click');
+  assert.equal(elements.get('consoleOutput').children[0].style.display, 'none');
+  assert.equal(elements.get('consoleOutput').children[1].style.display, '');
+
+  await runtime.refreshStatus();
+  assert.equal(elements.get('consoleRuntimeValue').textContent, 'PID 42');
+  assert.equal(elements.get('consoleCacheValue').textContent, '2.0 KB');
+  assert.equal(elements.get('consoleUploadValue').textContent, '75.0%');
+  assert.equal(elements.get('consoleMetricsValue').textContent, '20.0% / 30.0%');
+
+  elements.get('consoleExportBtn').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(savedFiles[0].content, /boom/);
+
+  elements.get('consoleInput').value = 'version';
+  elements.get('consoleSendBtn').dispatch('click');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(elements.get('consoleOutput').children.at(-1).textContent, /Neko Status v1.2.7/);
+
+  runtime.updateScreenshotDebug({ success: true });
+  assert.deepEqual(calls.filter((call) => call === 'developerModeInit' || call[0] === 'screenshotDebug'), [
+    'developerModeInit',
+    ['screenshotDebug', true],
+  ]);
+});
+
+test('app init runtime owns startup hydration and cross-page sync', async () => {
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    const el = {
+      id,
+      dataset: extra.dataset || {},
+      style: {
+        values: {},
+        setProperty(name, value) { this.values[name] = value; },
+        removeProperty(name) { delete this.values[name]; },
+      },
+      children: [],
+      value: extra.value || '',
+      textContent: extra.textContent || '',
+      innerHTML: extra.innerHTML || '',
+      title: '',
+      disabled: false,
+      clicked: 0,
+      className: extra.className || '',
+      classList: {
+        values: new Set(extra.classes || []),
+        add(...names) { names.forEach((name) => this.values.add(name)); },
+        remove(...names) { names.forEach((name) => this.values.delete(name)); },
+        toggle(name, force) {
+          const next = force === undefined ? !this.values.has(name) : !!force;
+          if (next) this.values.add(name);
+          else this.values.delete(name);
+          return next;
+        },
+        contains(name) { return this.values.has(name); },
+      },
+      addEventListener(type, handler) { listeners[type] = handler; },
+      click() {
+        el.clicked += 1;
+        listeners.click?.({ target: el });
+      },
+      querySelector(selector) {
+        if (selector === 'i') {
+          if (!el._icon) el._icon = makeElement(`${id}-icon`);
+          return el._icon;
+        }
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '.toggle-btn') return extra.toggleButtons || [];
+        return [];
+      },
+      closest() {
+        return extra.closest || null;
+      },
+    };
+    return el;
+  }
+
+  const elements = new Map();
+  [
+    'stgTraySwitch',
+    'stgRestoreSwitch',
+    'stgAutoDownloadSwitch',
+    'stgDndSwitch',
+    'stgNotifySwitch',
+    'stgIncognitoSwitch',
+    'blurAllSwitch',
+    'stg2FASwitch',
+    'stgGlassSwitch',
+    'stgScaleLabel',
+    'stgScaleDown',
+    'stgScaleUp',
+    'stgFontSelect',
+    'cacheSizeDesc',
+    'stgScaleDesc',
+    'metaFingerprint',
+    'metaProcess',
+    'metaPrivilege',
+    'authGrantedCount',
+    'historyTableBody',
+    'dashPermDesc',
+    'dashDeniedList',
+    'dashDeniedItems',
+    'metaAuthScreenCapture',
+    'metaAuthProcessEnum',
+    'metaAuthPowerControl',
+    'metaAuthNetwork',
+    'metaAuthFileIO',
+    'metaAuthAutoStart',
+  ].forEach((id) => elements.set(id, makeElement(id)));
+  const deviceBadge = makeElement('deviceBadge');
+  const navUpdate = makeElement('navUpdate', { dataset: { target: 'page-update' } });
+  const reportButtons = [
+    makeElement('reportAuto', { dataset: { mode: 'auto' } }),
+    makeElement('reportCustom', { dataset: { mode: 'custom' } }),
+  ];
+  const screenshotButtons = [
+    makeElement('ssAuto', { dataset: { mode: 'auto' } }),
+    makeElement('ssManual', { dataset: { mode: 'manual' } }),
+  ];
+  elements.set('stgReportModeGroup', makeElement('stgReportModeGroup', { toggleButtons: reportButtons }));
+  elements.set('screenshotModeGroup', makeElement('screenshotModeGroup', { toggleButtons: screenshotButtons }));
+
+  const storage = new Map();
+  const calls = [];
+  const updatePage = {
+    bindSourceControls: () => calls.push('bindSourceControls'),
+    renderSources: (cfg) => calls.push(['renderSources', cfg.updateChannel]),
+    setPendingInstall: (version) => calls.push(['pending', version]),
+    syncChannel: (channel) => calls.push(['channel', channel]),
+    syncInstalledVersion: ({ version }) => calls.push(['installed', version]),
+  };
+  const context = {
+    window: {
+      devicePixelRatio: 2,
+      _nekoActivityHelpers: { syncPrivacyBar: () => calls.push('privacyBar') },
+    },
+    document: {
+      documentElement: makeElement('html'),
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelector(selector) {
+        if (selector === '.device-badge') return deviceBadge;
+        if (selector === '.nav-item[data-target="page-update"]') return navUpdate;
+        if (selector === '.rating-badge') return elements.get('ratingBadge') || null;
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '#stgReportModeGroup .toggle-btn') return reportButtons;
+        if (selector === '.settings-swatch, .color-swatch[data-color]') return [];
+        return [];
+      },
+      dispatchEvent(event) {
+        calls.push(['dispatch', event.type]);
+      },
+    },
+    localStorage: {
+      setItem(key, value) { storage.set(key, value); },
+      getItem(key) { return storage.get(key) || null; },
+    },
+    CustomEvent: function CustomEvent(type, init) {
+      this.type = type;
+      this.detail = init?.detail;
+    },
+    requestAnimationFrame(fn) {
+      calls.push('raf');
+      return fn();
+    },
+    setTimeout(fn) {
+      fn();
+      return 1;
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+  context.window.CustomEvent = context.CustomEvent;
+
+  loadBrowserScript(context, 'src/renderer/js/core/app-init-runtime.js');
+  const runtime = context.window._nekoModules.core.AppInitRuntime.create({
+    runtimeVersions: { electron: '30.0.0' },
+    consoleRuntime: {
+      refreshStatus: () => calls.push('refreshStatus'),
+      setLastTickSnapshot: (value) => calls.push(['lastTick', value.success]),
+      updateTickStatus: (value) => calls.push(['tickStatus', value.success]),
+    },
+    addLogLine: (level, msg) => calls.push(['log', level, msg]),
+    showNotice: (msg) => calls.push(['notice', msg]),
+    escapeHtml: (value) => String(value).replace(/</g, '&lt;'),
+    applyServiceState: (running) => calls.push(['serviceState', running]),
+    applyThemeMode: (...args) => calls.push(['theme', ...args]),
+    applyUIFontProfile: (font) => calls.push(['font', font]),
+    applyExperimentalFeatureState: (cfg) => calls.push(['experimental', cfg.enableExperimentalFeatures]),
+    setExpandableSectionState: (el, expanded) => calls.push(['expand', el?.id || null, expanded]),
+    setIncognitoScopeUI: (scope) => calls.push(['scope', scope]),
+    syncDeviceAuthExpandedState: () => calls.push('syncAuthExpanded'),
+    updateDashboardCards: (data) => calls.push(['dashboard', data.success ?? data.batteryLevel]),
+    updateDeviceStatusPage: (metrics) => calls.push(['deviceMetrics', metrics.cpuPct]),
+    updatePowerKpi: (...args) => calls.push(['power', ...args]),
+    addDiagnosticEntry: (...args) => calls.push(['diag', ...args]),
+    renderChangelogEntries: (entries) => calls.push(['changelog', entries.length]),
+    getInstalledChannel: () => 'stable',
+    initTrendChart: () => calls.push('trendInit'),
+    dashboardPage: () => ({ setMetricsHistory: (history) => calls.push(['history', history.length]) }),
+    servicePage: () => ({
+      syncAutoStartToggles: (enabled) => calls.push(['autoStart', enabled]),
+      initFromAppInit: (data) => calls.push(['serviceInit', data.version]),
+    }),
+    updatePage: () => updatePage,
+    aboutPage: () => ({ sync: ({ version }) => calls.push(['about', version]) }),
+    callConfig: async (method, _fallback, key, value) => {
+      calls.push(['config', method, key, value]);
+      return {};
+    },
+    callService: async (method) => {
+      calls.push(['service', method]);
+      if (method === 'getLastResult') return { success: true };
+      if (method === 'isAutoStartEnabled') return true;
+      if (method === 'checkPermissions') {
+        return {
+          screenCapture: 'granted',
+          processEnum: 'denied',
+          powerControl: 'granted',
+          network: 'granted',
+          fileIO: 'granted',
+        };
+      }
+      return null;
+    },
+    callSystem: async (method) => {
+      calls.push(['system', method]);
+      if (method === 'getFocusAssist') return { ok: true, enabled: true };
+      if (method === 'getCacheSize') return 1048576;
+      if (method === 'getMetricsHistory') return [{ cpuPct: 1 }];
+      if (method === 'getMetrics') return { cpuPct: 33 };
+      if (method === 'getFingerprint') return '1234567890abcdef9999';
+      if (method === 'getBattery') return { level: 87, isCharging: true, hasBattery: true };
+      return null;
+    },
+    callUpdate: async (method) => {
+      calls.push(['update', method]);
+      if (method === 'getPendingInstall') return { hasPending: true, version: '1.3.1' };
+      if (method === 'getChangelog') return [{ version: '1.3.0' }];
+      return null;
+    },
+  });
+
+  await runtime.handle({
+    version: '1.3.0',
+    deviceName: 'Desk <One>',
+    platform: 'win32',
+    isRunning: true,
+    isAutoStart: true,
+    isAdmin: false,
+    pid: 1234,
+    processName: 'neko.exe',
+    config: {
+      closeAction: 'minimize',
+      restoreLastState: true,
+      lastPage: 'page-update',
+      autoDownload: true,
+      reportIntervalMode: 'custom',
+      reportInterval: 30,
+      syncScreenshotInterval: false,
+      enableNotification: true,
+      doNotDisturb: false,
+      enableIncognito: true,
+      incognitoScope: 'both',
+      blurAllScreenshots: true,
+      enable2FA: true,
+      glassEffect: false,
+      themeMode: 'auto',
+      darkModeStart: '19:00',
+      darkModeEnd: '06:00',
+      screenshotMode: 'manual',
+      uiScale: 150,
+      uiFont: 'Inter',
+      seedColor: '#123456',
+      enableExperimentalFeatures: true,
+      updateChannel: 'beta',
+      deviceKey: 'dk_live',
+    },
+  });
+
+  assert.match(deviceBadge.innerHTML, /Desk &lt;One>/);
+  assert.equal(elements.get('stgTraySwitch').classList.contains('on'), true);
+  assert.equal(elements.get('stgScaleLabel').textContent, '150%');
+  assert.equal(elements.get('cacheSizeDesc').textContent, '会话缓存（图片、脚本等）· 当前 1.0 MB');
+  assert.equal(elements.get('metaFingerprint').textContent, '1234567890abcdef…');
+  assert.equal(elements.get('authGrantedCount').textContent, '1项未授权');
+  assert.equal(navUpdate.clicked, 1);
+  assert.equal(storage.get('neko-ui-font'), 'Inter');
+  assert.equal(context.document.documentElement.style.values['--theme-color'], '#123456');
+  assert.deepEqual(calls.filter((call) => Array.isArray(call) && ['about', 'pending', 'channel', 'installed', 'history'].includes(call[0])), [
+    ['pending', '1.3.1'],
+    ['channel', 'beta'],
+    ['installed', '1.3.0'],
+    ['about', '1.3.0'],
+    ['history', 1],
+  ]);
+  assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'config' && call[2] === 'doNotDisturb'));
+  assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'service' && call[1] === 'syncMeta'));
+});
+
+test('app-ipc is only a compatibility bootstrap for AppRuntime', () => {
+  let domReadyHandler = null;
+  let starts = 0;
+  const context = {
+    window: {
+      _nekoModules: {
+        core: {
+          AppRuntime: {
+            start() {
+              starts += 1;
+            },
+          },
+        },
+      },
+    },
+    document: {
+      readyState: 'loading',
+      addEventListener(type, handler, options) {
+        assert.equal(type, 'DOMContentLoaded');
+        assert.equal(options?.once, true);
+        domReadyHandler = handler;
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/app-ipc.js');
+
+  assert.equal(starts, 0);
+  domReadyHandler();
+  assert.equal(starts, 1);
+});
+
+test('app event runtime owns main-process event forwarding', async () => {
+  const ipcHandlers = new Map();
+  const documentHandlers = new Map();
+  const actions = {};
+  const calls = [];
+  const updateSeeAllBtn = {
+    addEventListener(type, handler) {
+      documentHandlers.set(`seeAll:${type}`, handler);
+    },
+  };
+  const context = {
+    window: {},
+    document: {
+      querySelector(selector) {
+        if (selector === '.update-see-all-btn') return updateSeeAllBtn;
+        return null;
+      },
+      addEventListener(type, handler) {
+        documentHandlers.set(type, handler);
+      },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/core/app-event-runtime.js');
+  const runtime = context.window._nekoModules.core.AppEventRuntime.create({
+    ipcClient: {
+      on(event, handler) {
+        ipcHandlers.set(event, handler);
+      },
+    },
+    IPC_EVENTS: {
+      APP_INIT: 'app:init',
+      UPDATE_PROGRESS: 'update:progress',
+      UPDATE_AUTO_DOWNLOADED: 'update:autoDownloaded',
+      UPDATE_FORCE_INSTALL_STARTED: 'update:forceInstallStarted',
+      UPDATE_AUTO_DOWNLOAD_FAILED: 'update:autoDownloadFailed',
+      UPDATE_AVAILABLE: 'update:available',
+      SERVICE_TICK: 'service:tick',
+      SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
+      SERVICE_STATUS_CHANGED: 'service:statusChanged',
+      LOG_ENTRY: 'log:entry',
+      SERVICE_KEY_STATUS: 'service:keyStatus',
+    },
+    appInitRuntime: { handle: async (data) => calls.push(['appInit', data.version]) },
+    consoleRuntime: {
+      setLastTickSnapshot: (data) => calls.push(['lastTick', data.success]),
+      updateTickStatus: (data) => calls.push(['tickStatus', data.success]),
+      updateScreenshotDebug: (data) => calls.push(['debug', data.success]),
+      setLastMetricsSnapshot: (data) => calls.push(['lastMetrics', data.cpuPct]),
+      updateMetricsStatus: (data) => calls.push(['metricsStatus', data.cpuPct]),
+    },
+    addLogLine: (...args) => calls.push(['log', ...args]),
+    showNotice: (...args) => calls.push(['notice', ...args]),
+    applyServiceState: (running) => calls.push(['serviceState', running]),
+    addDiagnosticEntry: (...args) => calls.push(['diag', ...args]),
+    updateDashboardCards: (data) => calls.push(['dashboard', data.success]),
+    updatePowerKpi: (...args) => calls.push(['power', ...args]),
+    updateDeviceStatusPage: (data) => calls.push(['device', data.cpuPct]),
+    rebuildTrendChartDeferred: () => calls.push('trendRebuild'),
+    applyDeviceStatusSparklineTheme: () => calls.push('sparkTheme'),
+    securityDialogs: { showWarning: (...args) => calls.push(['warning', ...args]) },
+    updatePage: () => ({
+      bindDialogActions: (nextActions) => Object.assign(actions, nextActions),
+      hideDialog: () => calls.push('hideDialog'),
+      downloadAndInstall: (result) => calls.push(['downloadInstall', result.latestVersion]),
+      updateProgress: (data) => calls.push(['progress', data.percent]),
+      markAutoDownloaded: (data) => calls.push(['autoDownloaded', data.version]),
+      markForceInstallStarted: (data) => calls.push(['forceInstall', data.version]),
+      markAvailable: (data) => calls.push(['available', data.latestVersion]),
+      renderReleaseNotes: (data) => calls.push(['notes', data.latestVersion]),
+    }),
+    updateClient: () => ({ setSkippedVersion: async (version) => calls.push(['skip', version]) }),
+    callConfig: async (method) => {
+      calls.push(['config', method]);
+      return { githubOwner: 'Owner', githubRepo: 'Repo' };
+    },
+    callSystem: async (method, _fallback, url) => calls.push(['system', method, url]),
+    callService: async (method) => calls.push(['service', method]),
+  });
+
+  runtime.bind();
+  await ipcHandlers.get('app:init')({ version: '1.3.0' });
+  ipcHandlers.get('update:progress')({ percent: 42 });
+  ipcHandlers.get('update:available')({ hasUpdate: true, latestVersion: '1.3.1', forceUpdate: false });
+  ipcHandlers.get('update:autoDownloaded')({ version: '1.3.1' });
+  ipcHandlers.get('update:forceInstallStarted')({ version: '1.3.2' });
+  ipcHandlers.get('update:autoDownloadFailed')({ version: '1.3.3', error: 'network' });
+  ipcHandlers.get('service:tick')({ success: true, batteryLevel: 88, isCharging: false, hasBattery: true });
+  ipcHandlers.get('system:metricsUpdate')({ cpuPct: 17 });
+  ipcHandlers.get('service:statusChanged')({ isRunning: false });
+  ipcHandlers.get('log:entry')({ level: 'WARN', msg: 'careful', time: 1 });
+  ipcHandlers.get('service:keyStatus')({ code: 'KEY_REVOKED', message: 'revoked' });
+  documentHandlers.get('neko:themeChange')();
+  await actions.onSkip({ latestVersion: '1.3.4' });
+  await actions.onInstall({ latestVersion: '1.3.5' });
+  await documentHandlers.get('seeAll:click')();
+
+  assert.deepEqual(calls.filter((call) => Array.isArray(call) && [
+    'appInit',
+    'progress',
+    'available',
+    'notes',
+    'autoDownloaded',
+    'forceInstall',
+    'dashboard',
+    'device',
+    'warning',
+    'downloadInstall',
+  ].includes(call[0])), [
+    ['appInit', '1.3.0'],
+    ['progress', 42],
+    ['available', '1.3.1'],
+    ['notes', '1.3.1'],
+    ['autoDownloaded', '1.3.1'],
+    ['forceInstall', '1.3.2'],
+    ['dashboard', true],
+    ['device', 17],
+    ['warning', '密钥已被撤销', '当前设备密钥已被服务器撤销，上报服务已自动停止。可能原因：密钥在网页端被手动删除，或被其他设备接管。', 'revoked', true],
+    ['downloadInstall', '1.3.5'],
+  ]);
+  assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'service' && call[1] === 'syncMeta'));
+  assert.ok(calls.includes('trendRebuild'));
+  assert.ok(calls.includes('sparkTheme'));
+  assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'system' && call[2] === 'https://github.com/Owner/Repo/releases'));
 });
 
 test('developer mode extracts UI metadata without direct IPC access', () => {

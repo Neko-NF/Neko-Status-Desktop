@@ -96,6 +96,7 @@ function checkFileStructure() {
     'src/main/ipc/system.ipc.js',
     'src/main/ipc/service.ipc.js',
     'src/main/ipc/update.ipc.js',
+    'src/main/ipc/announcement.ipc.js',
     'src/renderer/index.html',
     'src/renderer/developer-mode-panel.html',
     'src/renderer/css/main.css',
@@ -110,25 +111,36 @@ function checkFileStructure() {
     'src/renderer/js/services/system-client.js',
     'src/renderer/js/services/stream-client.js',
     'src/renderer/js/services/update-client.js',
+    'src/renderer/js/services/announcement-client.js',
     'src/renderer/js/components/ui-helpers.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
     'src/renderer/js/core/router.js',
+    'src/renderer/js/core/app-init-runtime.js',
+    'src/renderer/js/core/app-event-runtime.js',
+    'src/renderer/js/core/app-runtime.js',
     'src/renderer/js/components/neko-island.js',
     'src/renderer/js/components/expandable-section.js',
     'src/renderer/js/components/modal.js',
     'src/renderer/js/components/developer-console.js',
     'src/renderer/js/components/developer-mode.js',
+    'src/renderer/js/components/console-runtime.js',
+    'src/renderer/js/components/experimental-features.js',
+    'src/renderer/js/components/security-dialogs.js',
+    'src/renderer/js/components/app-shell-controls.js',
     'src/renderer/js/developer-mode-panel.js',
     'src/renderer/js/state/app-state.js',
     'src/renderer/js/pages/settings.page.js',
     'src/renderer/js/pages/config.page.js',
+    'src/renderer/js/pages/service.page.js',
     'src/renderer/js/pages/stream.page.js',
     'src/renderer/js/pages/dashboard.page.js',
     'src/renderer/js/pages/device-status.page.js',
     'src/renderer/js/pages/screenshot.page.js',
     'src/renderer/js/pages/update.page.js',
     'src/renderer/js/pages/auth.page.js',
+    'src/renderer/js/pages/announcement.page.js',
+    'src/renderer/js/pages/about.page.js',
     'src/renderer/css/tokens.css',
     'src/renderer/css/base.css',
     'src/renderer/css/layout.css',
@@ -167,25 +179,36 @@ function checkRendererSplitSyntax() {
     'src/renderer/js/services/system-client.js',
     'src/renderer/js/services/stream-client.js',
     'src/renderer/js/services/update-client.js',
+    'src/renderer/js/services/announcement-client.js',
     'src/renderer/js/components/ui-helpers.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
     'src/renderer/js/core/router.js',
+    'src/renderer/js/core/app-init-runtime.js',
+    'src/renderer/js/core/app-event-runtime.js',
+    'src/renderer/js/core/app-runtime.js',
     'src/renderer/js/components/neko-island.js',
     'src/renderer/js/components/expandable-section.js',
     'src/renderer/js/components/modal.js',
     'src/renderer/js/components/developer-console.js',
     'src/renderer/js/components/developer-mode.js',
+    'src/renderer/js/components/console-runtime.js',
+    'src/renderer/js/components/experimental-features.js',
+    'src/renderer/js/components/security-dialogs.js',
+    'src/renderer/js/components/app-shell-controls.js',
     'src/renderer/js/developer-mode-panel.js',
     'src/renderer/js/state/app-state.js',
     'src/renderer/js/pages/settings.page.js',
     'src/renderer/js/pages/config.page.js',
+    'src/renderer/js/pages/service.page.js',
     'src/renderer/js/pages/stream.page.js',
     'src/renderer/js/pages/dashboard.page.js',
     'src/renderer/js/pages/device-status.page.js',
     'src/renderer/js/pages/screenshot.page.js',
     'src/renderer/js/pages/update.page.js',
     'src/renderer/js/pages/auth.page.js',
+    'src/renderer/js/pages/announcement.page.js',
+    'src/renderer/js/pages/about.page.js',
   ];
 
   for (const relPath of modules) {
@@ -370,8 +393,9 @@ function checkUpdateSystem() {
   section('更新系统完整性检查');
   const main = readFile('src/main/main.js');
   const startupUpdate = readFile('src/main/startup-update-gate.js') || '';
-  const ipc = readFile('src/renderer/js/app-ipc.js');
-  if (!main || !ipc) { fail('主进程或渲染进程文件不可读'); return; }
+  const runtime = readFile('src/renderer/js/core/app-runtime.js');
+  const updatePage = readFile('src/renderer/js/pages/update.page.js');
+  if (!main || !runtime || !updatePage) { fail('主进程或渲染进程文件不可读'); return; }
 
   // 主进程 checkForUpdates 返回 downloadSize
   if (main.includes('downloadSize')) pass('checkForUpdates 返回 downloadSize');
@@ -392,18 +416,21 @@ function checkUpdateSystem() {
   if (main.includes('FORCE_UPDATE')) pass('支持 FORCE_UPDATE 标记检测');
   else fail('缺少 FORCE_UPDATE 标记检测');
 
-  // 渲染进程更新弹窗函数
-  if (ipc.includes('showUpdateDialog')) pass('渲染进程包含 showUpdateDialog 函数');
-  else fail('渲染进程缺少 showUpdateDialog 函数');
+  // 渲染进程更新弹窗函数由 UpdatePage 负责。
+  if (updatePage.includes('showDialog(result')) pass('UpdatePage 包含 showDialog 函数');
+  else fail('UpdatePage 缺少 showDialog 函数');
 
-  if (ipc.includes('hideUpdateDialog')) pass('渲染进程包含 hideUpdateDialog 函数');
-  else fail('渲染进程缺少 hideUpdateDialog 函数');
+  if (updatePage.includes('hideDialog()')) pass('UpdatePage 包含 hideDialog 函数');
+  else fail('UpdatePage 缺少 hideDialog 函数');
+
+  const aboutPage = readFile('src/renderer/js/pages/about.page.js');
+  const aboutSource = `${runtime}\n${aboutPage || ''}`;
 
   // 版本号动态化
-  if (ipc.includes('aboutVersionValue')) pass('关于页版本号按 ID 更新');
+  if (aboutPage && aboutPage.includes('aboutVersionValue') && runtime.includes('AboutPage')) pass('关于页版本号由 AboutPage 接管');
   else fail('关于页版本号更新方式不正确');
 
-  if (ipc.includes('aboutVersionSub')) pass('关于页版本日期按 ID 更新');
+  if (aboutPage && aboutPage.includes('aboutVersionSub') && aboutSource.includes('toLocaleDateString')) pass('关于页版本日期由 AboutPage 动态化');
   else fail('关于页版本日期未动态化');
 }
 
@@ -412,23 +439,25 @@ function checkUpdateSystem() {
 // ═══════════════════════════════════════════════════════════════
 function checkActivityFeed() {
   section('活动流完整性检查');
-  const ipc = readFile('src/renderer/js/app-ipc.js');
-  if (!ipc) { fail('app-ipc.js 不可读'); return; }
+  const runtime = readFile('src/renderer/js/core/app-runtime.js');
+  const dashboardPage = readFile('src/renderer/js/pages/dashboard.page.js');
+  if (!runtime || !dashboardPage) { fail('renderer runtime 或 dashboard.page.js 不可读'); return; }
+  const activitySource = `${runtime}\n${dashboardPage}`;
 
   // 检查活动流是否有 app 类型
-  if (ipc.includes("appendActivityItem('app'")) pass("活动流包含 'app' 类型条目");
+  if (activitySource.includes("appendActivityItem('app'")) pass("活动流包含 'app' 类型条目");
   else fail("活动流缺少 'app' 类型条目");
 
   // 检查活动流是否有 upload 类型
-  if (ipc.includes("appendActivityItem('upload'")) pass("活动流包含 'upload' 类型条目");
+  if (activitySource.includes("appendActivityItem('upload'")) pass("活动流包含 'upload' 类型条目");
   else fail("活动流缺少 'upload' 类型条目");
 
   // 检查活动流是否有 capture 类型
-  if (ipc.includes("appendActivityItem('capture'")) pass("活动流包含 'capture' 类型条目");
+  if (activitySource.includes("appendActivityItem('capture'")) pass("活动流包含 'capture' 类型条目");
   else fail("活动流缺少 'capture' 类型条目");
 
   // 检查 appName 回退逻辑
-  if (ipc.includes('data.appName || data.packageName')) pass('活动流有 appName 回退到 packageName 逻辑');
+  if (activitySource.includes('data.appName || data.packageName')) pass('活动流有 appName 回退到 packageName 逻辑');
   else fail('活动流缺少 appName 回退逻辑');
 }
 

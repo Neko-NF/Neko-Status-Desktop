@@ -14,7 +14,7 @@ src/
   shared/     IPC 常量、事件名、payload schema、跨层契约
 ```
 
-当前项目已经基本达到任务文档期望的工程化方向：主进程 IPC 已按领域模块化，preload 安全桥已落地，renderer 已开始按 `services/pages/components/core/state` 拆分，测试、CI、PR 模板和发布流程也已经具备。仍未完全完成的是 renderer 旧入口 `app.js` / `app-ipc.js` 的最终瘦身，它们目前还承担一部分历史兼容和事件编排职责。
+当前项目已经基本达到任务文档期望的工程化方向：主进程 IPC 已按领域模块化，preload 安全桥已落地，renderer 已按 `services/pages/components/core/state` 拆分，测试、CI、PR 模板和发布流程也已经具备。`app.js` / `app-ipc.js` 已退成极薄启动入口，renderer 运行时装配由 `core/app-runtime.js` 承担。
 
 ## 主进程
 
@@ -98,8 +98,10 @@ src/renderer/
 
 当前职责划分：
 
-- `app.js`：历史入口与全局初始化，后续只保留启动装配。
-- `app-ipc.js`：主进程事件协调、兼容层和仍在迁移中的业务绑定。
+- `app.js`：瘦身后的启动装配入口，只挂载 renderer bootstrap 元信息。
+- `components/app-shell-controls.js`：顶部栏、侧边栏、全局步进器、配置/资料弹窗等 shell 层 DOM 绑定；导航、主题、弹窗能力分别委托给 `core/router.js`、`core/theme.js`、`components/modal.js`。
+- `app-ipc.js`：兼容启动器，只在 DOM ready 后启动 `core/app-runtime.js`。
+- `core/app-runtime.js`：renderer 运行时装配层，负责把 services、pages、components、`AppInitRuntime` 和 `AppEventRuntime` 接线；不承接页面专属 DOM 行为。
 - `services/*`：renderer 侧业务 client，统一调用 `IpcClient`。
 - `pages/*`：页面 DOM、交互和渲染逻辑。
 - `components/*`：可复用 UI 或命令组件。
@@ -124,14 +126,23 @@ pages/dashboard.page.js
 pages/device-status.page.js
 pages/screenshot.page.js
 pages/settings.page.js
+pages/service.page.js
 pages/stream.page.js
 pages/update.page.js
+pages/about.page.js
 
 components/developer-console.js
+components/console-runtime.js
+components/experimental-features.js
+components/security-dialogs.js
 components/expandable-section.js
 components/modal.js
 components/neko-island.js
 components/ui-helpers.js
+
+core/app-init-runtime.js
+core/app-event-runtime.js
+core/app-runtime.js
 ```
 
 ## Shared 契约
@@ -182,8 +193,8 @@ npm run build:zip
 | Preload 安全桥 | 已达成 | 主窗口和隐私选择器均使用 preload |
 | IPC 契约集中管理 | 已达成 | `IPC_CHANNELS` / `IPC_EVENTS` 已集中 |
 | Renderer services | 基本达成 | 业务页面已优先走 services，旧协调层仍在迁移 |
-| `app.js` / `app-ipc.js` 瘦身 | 部分达成 | 已明显变薄，但仍承担历史兼容和事件编排 |
-| CSS 分层 | 已达成 | `main.css` 已作为入口，样式拆入分层文件 |
+| `app.js` / `app-ipc.js` 瘦身 | 基本达成 | `app.js` 已瘦身为 bootstrap；`app-ipc.js` 已退成兼容启动器；运行时装配迁入 `core/app-runtime.js`。shell 控制、公告弹窗轮询、关于页渲染、密钥安全弹窗、控制台 runtime、实验性入口、`APP_INIT` 同步、主进程事件转发、仪表盘运行时、设备状态诊断、服务/自启/体检、截图控制、核心设置、更新中心等职责已迁入对应 `pages/*`、`components/*` 或 `core/*` |
+| CSS 分层 | 持续推进 | `main.css` 已作为入口，tokens/base/layout/components/pages 分层生效；重复 design tokens/base 块和服务页等明确样式已从 `legacy.css` 迁出 |
 | Electron smoke test | 已达成 | `npm run test:smoke` 可验证 preload/IPC |
 | PR CI 与模板 | 已达成 | CI、build-check、release、PR/Issue 模板已存在 |
 | 团队文档 | 已达成并持续维护 | 以本目录核心文档为准 |
@@ -191,7 +202,7 @@ npm run build:zip
 ## 后续演进原则
 
 - 新页面放入 `src/renderer/js/pages`，不要写回 `app.js`。
-- 新页面 DOM 状态、事件绑定、输入解析和渲染逻辑必须优先放入 `pages/*` 或 `components/*`；`app-ipc.js` 只做跨模块装配、主进程事件转发和依赖注入。
+- 新页面 DOM 状态、事件绑定、输入解析和渲染逻辑必须优先放入 `pages/*` 或 `components/*`；跨模块装配放入 `core/app-runtime.js`，不要写回 `app-ipc.js`。
 - 新 IPC 调用放入 `src/renderer/js/services`，页面不直接调用 `window.nekoIPC`。
 - 新主进程 handler 放入对应 `src/main/ipc/*.ipc.js`，不要写回 `main.js`。
 - 新配置项必须同步默认值、schema、测试、文档。

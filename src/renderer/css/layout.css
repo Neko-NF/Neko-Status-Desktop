@@ -6,7 +6,11 @@
 
 /* ── 左侧导航栏 ──────────────────────────────────────────────── */
 .sidebar {
-    width: 240px;
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    max-width: var(--sidebar-width);
+    flex: 0 0 var(--sidebar-width);
+    box-sizing: border-box;
     height: 100%;
     background: var(--glass-bg);
     border-right: var(--sidebar-border);

@@ -124,6 +124,12 @@ function createRendererBridge() {
       ipcRenderer.send(IPC_CHANNELS.DEV_RENDERER_ERROR, payload);
     },
 
+    fetchAnnouncements: (options) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_FETCH, options || {}),
+    createAnnouncement: (payload) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_CREATE, payload),
+    updateAnnouncement: (id, payload) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_UPDATE, id, payload),
+    deleteAnnouncement: (id) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_DELETE, id),
+    recordAnnouncementReceipt: (id, action) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_RECEIPT, id, action),
+
     openDeveloperModePanel: () => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_OPEN),
     closeDeveloperModePanel: () => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_CLOSE),
     sendDeveloperModePanelCommand: (payload) => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_COMMAND, payload),

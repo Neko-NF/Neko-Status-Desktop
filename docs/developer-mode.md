@@ -18,9 +18,11 @@ Developer Mode is a global diagnostic mode for frontend UIUX inspection and back
 - External sidecar window: `src/renderer/developer-mode-panel.html` + `src/renderer/js/developer-mode-panel.js`
 - Style layer: `src/renderer/css/components.css`
 - Load point: `src/renderer/index.html`, after `developer-console.js` and before `app.js` / `app-ipc.js`
-- Injection point: `src/renderer/js/app-ipc.js`
+- Injection point: `src/renderer/js/core/app-runtime.js`
 
 Developer Mode is opened from Settings, not from dashboard quick actions. The UIUX guide switch is gated by Developer Mode: if Developer Mode is off, UIUX guide requests are rejected, the config is kept off, and the UI shows a warning.
+
+The normal application window must not expose DevTools through generic desktop shortcuts such as `Ctrl+Shift+I`, `Ctrl+Shift+J`, `Ctrl+Shift+C`, or `F12`. DevTools access belongs to the controlled Developer Mode sidecar actions only, so users cannot open debugging tools from the ordinary software interface by accident.
 
 Developer Mode opens an independent Electron sidecar window when enabled. The sidecar is positioned outside the main software interface and attached to the right edge of the main window by the main process. The main app window keeps its own content size; it is not padded, squeezed, or covered by the Developer Mode menu.
 

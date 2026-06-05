@@ -10,6 +10,25 @@ function withTimeout(ms) {
   return AbortSignal.timeout(ms);
 }
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = null;
+  }
+  return { text, json };
+}
+
+function createHttpError(response, json, text, fallbackMessage) {
+  const message = json?.message || json?.error || fallbackMessage || `Request failed HTTP ${response.status}`;
+  const err = new Error(message);
+  err.status = response.status;
+  if (text) err.body = text.substring(0, 300);
+  return err;
+}
+
 async function streamRequest(pathname, { method = 'GET', deviceKey, query, body } = {}) {
   const serverUrl = configStore.getServerUrl();
   const url = new URL(pathname, serverUrl);
@@ -230,6 +249,183 @@ async function testConnection(serverUrl) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  公 告 系 统  (需要 JWT Bearer Token)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * 获取公告列表: GET /api/announcements
+ * @param {string} token JWT token
+ * @param {object} [options]
+ * @param {boolean} [options.all] 管理员查看全部（含已过期）
+ * @param {number} [options.limit]
+ * @param {number} [options.offset]
+ */
+async function fetchAnnouncements(token, options = {}) {
+  const serverUrl = configStore.getServerUrl();
+  const params = new URLSearchParams();
+  if (options.all) params.set('all', 'true');
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.offset !== undefined) params.set('offset', String(options.offset));
+  if (options.status) params.set('status', String(options.status));
+  if (options.category) params.set('category', String(options.category));
+  if (options.search) params.set('search', String(options.search));
+
+  const qs = params.toString();
+  const url = qs ? `${serverUrl}/api/announcements?${qs}` : `${serverUrl}/api/announcements`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` },
+    signal: withTimeout(10000),
+  });
+
+  const { text, json } = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw createHttpError(response, json, text, `获取公告失败 HTTP ${response.status}`);
+  }
+
+  if (!json) {
+    const err = new Error(`服务端返回非 JSON 响应 (HTTP ${response.status})`);
+    err.status = response.status;
+    err.body = text.substring(0, 300);
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 创建公告: POST /api/announcements
+ * @param {string} token JWT token
+ * @param {object} payload { title, content, type, priority, expiresAt, showPopup, pushNotification }
+ */
+async function createAnnouncement(token, payload) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/announcements`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal: withTimeout(10000),
+  });
+
+  const { text, json } = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw createHttpError(response, json, text, `创建公告失败 HTTP ${response.status}`);
+  }
+
+  if (!json) {
+    const err = new Error(`服务端返回非 JSON 响应 (HTTP ${response.status})`);
+    err.status = response.status;
+    err.body = text.substring(0, 300);
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 更新公告: PUT /api/announcements/[id]
+ * @param {string} token JWT token
+ * @param {number} id
+ * @param {object} payload 局部更新的字段
+ */
+async function updateAnnouncement(token, id, payload) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/announcements/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal: withTimeout(10000),
+  });
+
+  const { text, json } = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw createHttpError(response, json, text, `更新公告失败 HTTP ${response.status}`);
+  }
+
+  if (!json) {
+    const err = new Error(`服务端返回非 JSON 响应 (HTTP ${response.status})`);
+    err.status = response.status;
+    err.body = text.substring(0, 300);
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 删除公告: DELETE /api/announcements/[id]
+ * @param {string} token JWT token
+ * @param {number} id
+ */
+async function deleteAnnouncement(token, id) {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/announcements/${id}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` },
+    signal: withTimeout(10000),
+  });
+
+  const { text, json } = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw createHttpError(response, json, text, `删除公告失败 HTTP ${response.status}`);
+  }
+
+  if (!json) {
+    const err = new Error(`服务端返回非 JSON 响应 (HTTP ${response.status})`);
+    err.status = response.status;
+    err.body = text.substring(0, 300);
+    throw err;
+  }
+
+  return json;
+}
+
+/**
+ * 记录公告回执: POST /api/announcements/[id]/receipt
+ * @param {string} token JWT token
+ * @param {number|string} id
+ * @param {'view'|'ack'} action
+ */
+async function recordAnnouncementReceipt(token, id, action = 'ack') {
+  const serverUrl = configStore.getServerUrl();
+  const response = await fetch(`${serverUrl}/api/announcements/${id}/receipt`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action }),
+    signal: withTimeout(10000),
+  });
+
+  const { text, json } = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw createHttpError(response, json, text, `记录公告回执失败 HTTP ${response.status}`);
+  }
+
+  if (!json) {
+    const err = new Error(`服务端返回非 JSON 响应 (HTTP ${response.status})`);
+    err.status = response.status;
+    err.body = text.substring(0, 300);
+    throw err;
+  }
+
+  return json;
+}
+
 module.exports = {
   reportStatusV2,
   performHandshake,
@@ -245,6 +441,11 @@ module.exports = {
   streamResetKey,
   streamGetStatus,
   streamTestSrs,
+  fetchAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
+  recordAnnouncementReceipt,
 };
 
 /**

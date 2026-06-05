@@ -86,7 +86,7 @@
     { selector: '#page-update, #page-update *', file: 'src/renderer/js/pages/update.page.js', owner: 'UpdatePage' },
     { selector: '#page-settings, #page-settings *', file: 'src/renderer/js/pages/settings.page.js', owner: 'SettingsPage' },
     { selector: '#authModal, #authModal *', file: 'src/renderer/js/pages/auth.page.js', owner: 'AuthPage' },
-    { selector: '.nav-item, .topbar, .topbar *', file: 'src/renderer/js/core/router.js + src/renderer/js/app.js', owner: 'Shell/Router' },
+    { selector: '.nav-item, .topbar, .topbar *', file: 'src/renderer/js/core/router.js + src/renderer/js/components/app-shell-controls.js', owner: 'Shell/Router' },
   ];
 
   const UIUX_TUNING_DEFAULTS = Object.freeze({
@@ -305,7 +305,7 @@
     if (match) return match;
     const page = el.closest?.('.content-safe-area');
     if (page?.id) return { owner: page.id, file: 'src/renderer/index.html + page module' };
-    return { owner: 'RendererShell', file: 'src/renderer/index.html / src/renderer/js/app-ipc.js' };
+    return { owner: 'RendererShell', file: 'src/renderer/index.html / src/renderer/js/core/app-runtime.js' };
   }
 
   function featureSummary(el) {

@@ -147,6 +147,8 @@ Release 产物应包含：
 - `SHA256SUMS.txt`。
 - 清晰的 release notes。
 
+Release notes 面向一般用户编写，保持简短、清楚、少技术细节。不要把内部文件名、测试用例、IPC 调整、重构路径写进面向用户的发布说明；这些内容应放在 PR 描述、CHANGELOG 或开发文档中。
+
 构建输出目录：
 
 ```text

@@ -19,6 +19,15 @@ body {
     overflow: hidden;
     position: relative;
     transition: background 0.5s ease, color 0.5s ease;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 /* 页面背景氛围光 */

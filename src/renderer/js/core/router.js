@@ -24,17 +24,27 @@
     'page-update':        { icon: 'ph-cloud-arrow-down',  title: '更新中心 / Update Center',        flex: false },
     'page-settings':      { icon: 'ph-gear',              title: '设置 / Settings',                flex: false },
     'page-about':         { icon: 'ph-info',              title: '关于 / About',                   flex: false },
+    'page-announcement': { icon: 'ph-megaphone',         title: '公告管理 / Announcements',        flex: false },
   };
 
   // 可被 lastPage 持久化的页面
   const RESTORABLE_PAGES = new Set([
     'mainDashboardArea', 'consoleArea', 'page-device-status', 'page-screenshot',
-    'page-services', 'page-stream', 'page-update', 'page-about'
+    'page-services', 'page-stream', 'page-update', 'page-about', 'page-announcement'
   ]);
 
   let _navMenu = null;
   let _navIndicator = null;
   let _currentPage = 'mainDashboardArea';
+
+  function canAccessNavTarget(targetId) {
+    const navItem = _navMenu?.querySelector?.(`.nav-item[data-target="${targetId}"]`);
+    if (!navItem) return true;
+    if (navItem.getAttribute?.('aria-hidden') === 'true') return false;
+    if (navItem.classList.contains('conditional-nav') && !navItem.classList.contains('show')) return false;
+    if (navItem.classList.contains('console-nav') && !navItem.classList.contains('show')) return false;
+    return getComputedStyle(navItem).display !== 'none' && getComputedStyle(navItem).visibility !== 'hidden';
+  }
 
   /** 同步导航指示器位置 */
   function syncNavIndicator(target) {
@@ -54,6 +64,15 @@
   function navigateTo(targetId) {
     const def = PAGE_DEFS[targetId];
     if (!def) return;
+    if (!canAccessNavTarget(targetId)) {
+      const fallback = 'mainDashboardArea';
+      const fallbackNav = _navMenu?.querySelector?.(`.nav-item[data-target="${fallback}"]`);
+      if (targetId !== fallback) {
+        fallbackNav?.click?.();
+        bus?.emit('router:access-denied', { page: targetId });
+      }
+      return;
+    }
 
     _currentPage = targetId;
 
@@ -121,7 +140,10 @@
       item.addEventListener('click', function () {
         const targetId = this.getAttribute('data-target');
         if (!targetId) return;
-        if (this.classList.contains('console-nav') && !this.classList.contains('show')) return;
+        if (!canAccessNavTarget(targetId)) {
+          bus?.emit('router:access-denied', { page: targetId });
+          return;
+        }
 
         navItems.forEach(nav => nav.classList.remove('active'));
         this.classList.add('active');

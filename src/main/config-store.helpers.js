@@ -78,6 +78,7 @@ const DEFAULTS = {
   lastUpdateCheck: 0,
   changelogCache: [],
   pendingInstall: null,
+  readAnnouncementIds: [],
   authToken: '',
   authUser: null,
   authPromptDismissed: false,
