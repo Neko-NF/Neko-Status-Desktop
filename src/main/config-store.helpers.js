@@ -113,6 +113,7 @@ function mergeDefaults(data = {}) {
       ...(data.streamConfig || {}),
     },
   };
+  merged.enableIncognito = false;
 
   const streamConfig = merged.streamConfig || {};
   const srsHost = String(streamConfig.srsHost || '').trim().toLowerCase();

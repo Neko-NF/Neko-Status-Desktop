@@ -4,6 +4,8 @@
 > 适用项目：`Z:\NF\neko-server` / 线上 `https://nekostatus.koirin.com`  
 > 桌面端项目：`D:\VScode project\Neko_Status`
 
+> 后续所有服务端改动的通用 Agent 流程见：`docs/neko-server-change-agent-runbook.md`。本文保留公告接口联调的具体事故案例与验证清单。
+
 ## 1. 背景与症状
 
 桌面端新增公告功能后，请求：
@@ -296,4 +298,3 @@ curl -i -X POST https://nekostatus.koirin.com/api/announcements ^
   - `/api/announcements/[id]`
 - 服务器 `7452` 端口已恢复监听。
 - 公网 `/api/announcements` 无 token / 假 token 均返回 JSON `401`，不再返回登录 HTML。
-

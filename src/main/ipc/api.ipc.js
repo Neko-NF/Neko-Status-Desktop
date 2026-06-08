@@ -1,4 +1,7 @@
 const { IPC_CHANNELS, createIpcSuccess, createIpcError } = require('../../shared/ipc-contracts');
+const packageJson = require('../../../package.json');
+
+const CLIENT_VERSION = packageJson.version || '0.0.0';
 
 function registerApiIpc({ ipcMain, os, configStore, statusService, apiService }) {
   ipcMain.handle(IPC_CHANNELS.PAIRING_HANDSHAKE, async (_, { token, model }) => {
@@ -72,6 +75,8 @@ function registerApiIpc({ ipcMain, os, configStore, statusService, apiService })
           deviceKey,
           reportEnabled: statusService.isRunning,
           captureEnabled: configStore.get('enableScreenshot') === true,
+          clientVersion: CLIENT_VERSION,
+          appVersion: CLIENT_VERSION,
         }),
         signal: AbortSignal.timeout(8000),
       });

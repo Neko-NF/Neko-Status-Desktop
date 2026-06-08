@@ -32,3 +32,15 @@ test('mergeDefaults repairs legacy API port copied from RTMP port', () => {
 
   assert.equal(merged.streamConfig.srsApiPort, DEFAULT_SRS_API_PORT);
 });
+
+test('mergeDefaults disables legacy incognito mode on startup', () => {
+  const merged = mergeDefaults({
+    enableIncognito: true,
+    incognitoScope: 'both',
+    privacyRules: ['Code.exe'],
+  });
+
+  assert.equal(merged.enableIncognito, false);
+  assert.equal(merged.incognitoScope, 'both');
+  assert.deepEqual(merged.privacyRules, ['Code.exe']);
+});

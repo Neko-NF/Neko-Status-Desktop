@@ -83,4 +83,23 @@ describe('registerApiIpc', () => {
     assert.equal(result.error.code, 'NO_KEY_PROVIDED');
     assert.equal(mocks.apiService.validateDeviceKeyAt.mock.callCount(), 0);
   });
+
+  it('syncs client version with device metadata', async () => {
+    const calls = [];
+    const originalFetch = global.fetch;
+    global.fetch = mock.fn(async (_url, options) => {
+      calls.push(JSON.parse(options.body));
+      return { ok: true, status: 200 };
+    });
+    try {
+      const result = await handlers['device:syncMeta']();
+
+      assert.equal(result.ok, true);
+      assert.equal(calls[0].deviceKey, 'dev-key');
+      assert.equal(calls[0].clientVersion, require('../../package.json').version);
+      assert.equal(calls[0].appVersion, require('../../package.json').version);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

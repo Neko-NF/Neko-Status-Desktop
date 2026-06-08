@@ -303,6 +303,7 @@
     _searchTimer: null,
     _runtimeStarted: false,
     _announcementPollTimer: null,
+    _pendingDeleteId: null,
     _state: {
       search: '',
       type: 'all',
@@ -322,6 +323,11 @@
       $('announcementCreateBtn')?.addEventListener('click', () => this.showCreateForm());
       $('announcementCancelBtn')?.addEventListener('click', () => this.hideForm());
       $('announcementSaveBtn')?.addEventListener('click', () => this.handleSave());
+      $('announcementDeleteCancelBtn')?.addEventListener('click', () => this.closeDeleteDialog());
+      $('announcementDeleteConfirmBtn')?.addEventListener('click', () => this.confirmDelete());
+      $('announcementDeleteOverlay')?.addEventListener('click', (event) => {
+        if (event.target === $('announcementDeleteOverlay')) this.closeDeleteDialog();
+      });
       $('announcementRefreshBtn')?.addEventListener('click', () => this.loadAnnouncements({ manual: true }));
       $('announcementMockToggleBtn')?.addEventListener('click', () => this.toggleMockMode());
       $('announcementSearchInput')?.addEventListener('input', (event) => {
@@ -899,6 +905,7 @@
       $('announcementFormWrapper')?.classList.add('show');
       const createBtn = $('announcementCreateBtn');
       if (createBtn) createBtn.style.display = 'none';
+      setTimeout(() => $('announcementTitle')?.focus?.(), 0);
     },
 
     showEditForm(item) {
@@ -912,6 +919,7 @@
       $('announcementFormWrapper')?.classList.add('show');
       const createBtn = $('announcementCreateBtn');
       if (createBtn) createBtn.style.display = 'none';
+      setTimeout(() => $('announcementTitle')?.focus?.(), 0);
     },
 
     setFormValues(data) {
@@ -1065,9 +1073,30 @@
       }, '回执统计已更新');
     },
 
-    async handleDelete(id) {
+    handleDelete(id) {
       if (id === undefined || id === null || id === '') return;
-      if (!confirm('确定删除此公告？此操作不可撤销。')) return;
+      const item = this._items.find((candidate) => normalizeId(candidate.id) === normalizeId(id));
+      this._pendingDeleteId = id;
+      const target = $('announcementDeleteTarget');
+      if (target) target.textContent = item?.title || `公告 #${id}`;
+      $('announcementDeleteOverlay')?.classList.add('show');
+    },
+
+    closeDeleteDialog() {
+      $('announcementDeleteOverlay')?.classList.remove('show');
+      this._pendingDeleteId = null;
+    },
+
+    async confirmDelete() {
+      const id = this._pendingDeleteId;
+      if (id === undefined || id === null || id === '') return;
+
+      const confirmBtn = $('announcementDeleteConfirmBtn');
+      const previousHtml = confirmBtn?.innerHTML;
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="ph ph-spinner-gap"></i> 删除中';
+      }
 
       try {
         if (this.isMockMode()) {
@@ -1078,10 +1107,16 @@
           await client.delete(id);
         }
         this._selectedId = '';
+        this.closeDeleteDialog();
         await this.loadAnnouncements();
         this._deps?.showNotice?.('公告已删除', 'success');
       } catch (err) {
         this._deps?.showNotice?.(`删除失败: ${err?.message || '未知错误'}`, 'error');
+      } finally {
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = previousHtml || '<i class="ph ph-trash"></i> 确认删除';
+        }
       }
     },
 

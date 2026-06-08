@@ -465,6 +465,10 @@
                             <div class="meta-value" id="metaProcess" style="display:flex; align-items:center; gap:6px;">加载中...</div>
                         </div>
                         <div class="meta-item">
+                            <div class="meta-label">上报客户端版本</div>
+                            <div class="meta-value" id="metaClientVersion" style="font-family: monospace;">加载中...</div>
+                        </div>
+                        <div class="meta-item">
                             <div class="meta-label">当前运行权限</div>
                             <div class="meta-value" id="metaPrivilege">加载中...</div>
                         </div>
@@ -2527,6 +2531,28 @@
             <div class="modal-footer announcement-popup-footer">
                 <button class="action-btn primary" id="announcementPopupCloseBtn">
                     <i class="ph ph-check"></i> 我知道了
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 公告删除确认弹窗 ========== -->
+    <div class="modal-overlay" id="announcementDeleteOverlay">
+        <div class="glass-card modal-container announcement-delete-container" role="dialog" aria-modal="true" aria-labelledby="announcementDeleteTitle">
+            <div class="announcement-delete-icon">
+                <i class="ph ph-warning-circle"></i>
+            </div>
+            <div class="announcement-delete-body">
+                <h3 id="announcementDeleteTitle">删除此公告？</h3>
+                <p id="announcementDeleteDesc">删除后将无法恢复，已弹出的公告回执也会失去对应内容。</p>
+                <div class="announcement-delete-target" id="announcementDeleteTarget">--</div>
+            </div>
+            <div class="modal-footer announcement-delete-footer">
+                <button class="action-btn" id="announcementDeleteCancelBtn">
+                    <i class="ph ph-x"></i> 取消
+                </button>
+                <button class="action-btn danger" id="announcementDeleteConfirmBtn">
+                    <i class="ph ph-trash"></i> 确认删除
                 </button>
             </div>
         </div>

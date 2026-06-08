@@ -358,6 +358,8 @@
         if (metaProcEl && data.processName) {
           metaProcEl.innerHTML = `${escapeHtml(data.processName)} <span class="meta-pid">PID ${data.pid}</span> <span class="status-dot info"></span>`;
         }
+        const metaClientVersionEl = document.getElementById('metaClientVersion');
+        if (metaClientVersionEl) metaClientVersionEl.textContent = data.version ? `v${data.version}` : '--';
         const metaPrivEl = document.getElementById('metaPrivilege');
         if (metaPrivEl) {
           metaPrivEl.innerHTML = data.isAdmin

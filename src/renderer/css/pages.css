@@ -3050,117 +3050,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
     font-size: 13px;
 }
 
-/* 外层包装容器承接高度折叠动画，彻底解决闪烁与卡顿 */
-.announcement-form-wrapper {
-    max-height: 0;
-    opacity: 0;
-    overflow: hidden;
-    margin-bottom: 0;
-    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 0.25s ease,
-                margin-bottom 0.35s ease;
-}
-
-.announcement-form-wrapper.show {
-    max-height: 600px;
-    opacity: 1;
-    margin-bottom: 22px;
-    overflow: visible; /* 允许日期选择器面板溢出，防截断 */
-}
-
-.announcement-form-card {
-    padding: 20px;
-}
-
-/* 区块标题区分与图标 */
-.announcement-form-title-text {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-main);
-    margin-bottom: 16px;
-}
-
-.announcement-form-title-text i {
-    font-size: 18px;
-    color: var(--theme-color);
-}
-
-.announcement-form-body {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.announcement-form-row {
-    display: flex;
-    gap: 14px;
-    align-items: flex-end;
-    flex-wrap: wrap;
-}
-
-.announcement-toggle-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: color-mix(in srgb, var(--text-main) 3%, transparent);
-    padding: 0 12px;
-    height: 40px; /* 强制统一 40px 高度 */
-    box-sizing: border-box;
-    border-radius: var(--radius-btn);
-    border: 1px solid color-mix(in srgb, var(--text-main) 6%, transparent);
-}
-
-.announcement-toggle-label {
-    font-size: 12px;
-    color: var(--text-secondary);
-    font-weight: 500;
-}
-
-.announcement-form-toggles {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    margin-left: 0;
-    padding-bottom: 2px;
-}
-
-.announcement-form-error {
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    color: var(--error-coral);
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-size: 13px;
-}
-
-.announcement-form-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding-top: 18px;
-    border-top: var(--glass-border);
-    margin-top: 16px;
-}
-
-.announcement-form-card .glass-input {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    height: 40px; /* 统一高度为40px */
-    box-sizing: border-box;
-}
-
-.announcement-form-card .glass-input:focus {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: var(--theme-color);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-color) 25%, transparent),
-                inset 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
 /* 自定义分段器组件 */
 .announcement-type-segmented {
     display: flex;
@@ -3209,33 +3098,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
 
 .announcement-type-segmented .segment-btn.active i {
     color: #ffffff;
-}
-
-/* 步进器在表单中的对齐覆盖 */
-.announcement-form-card .neko-stepper {
-    height: 40px;
-    border-radius: var(--radius-input);
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-sizing: border-box;
-    width: 100%;
-}
-
-.announcement-form-card .neko-stepper-btn {
-    width: 36px;
-    height: 38px;
-    font-size: 14px;
-}
-
-.announcement-form-card .neko-stepper-input {
-    width: 100%;
-    flex: 1;
-    height: 38px;
-    font-size: 14px;
-    background: transparent;
-    border: none;
-    border-left: var(--glass-border);
-    border-right: var(--glass-border);
 }
 
 .announcement-list-card {
@@ -3471,11 +3333,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
     color: var(--text-secondary);
 }
 
-.announcement-form-card textarea.glass-input {
-    resize: vertical;
-    font-family: inherit;
-}
-
 @media (max-width: 760px) {
     .announcement-header {
         align-items: stretch;
@@ -3486,26 +3343,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
         margin-left: 0;
         justify-content: flex-start;
     }
-
-    .announcement-form-row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .announcement-form-row .form-group {
-        width: 100% !important;
-    }
-
-    .announcement-form-toggles {
-        padding-bottom: 0;
-    }
-}
-
-/* 公告表单项名称字号与字重覆盖，符合 14px 规范 */
-.announcement-form-card .form-group label {
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    color: var(--text-main) !important;
 }
 
 /* 禁用表格行缩放，防止高频工作台列错位与抖动 */
@@ -3555,10 +3392,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
     font-size: 14px;
     font-weight: 600;
     color: var(--text-main);
-}
-
-.announcement-form-error {
-    grid-column: 1 / -1;
 }
 
 .neko-datepicker-nav-btn {
@@ -4827,42 +4660,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
     justify-content: center;
 }
 
-.announcement-form-wrapper {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    max-height: none;
-    margin: 0;
-    padding: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    overflow: hidden;
-    background: rgba(5, 8, 18, 0.74);
-    backdrop-filter: blur(14px);
-    transition: opacity 0.18s ease;
-}
-
-.announcement-form-wrapper.show {
-    max-height: none;
-    margin: 0;
-    opacity: 1;
-    pointer-events: auto;
-    overflow: auto;
-}
-
-.announcement-form-card {
-    width: min(760px, 100%);
-    max-height: calc(100vh - 56px);
-    overflow: auto;
-    border-radius: 8px;
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(14, 18, 36, 0.96);
-    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.44);
-}
-
 @media (max-width: 1180px) {
     .announcement-workspace {
         grid-template-columns: 150px minmax(320px, 1fr) minmax(280px, 0.48fr);
@@ -5374,30 +5171,6 @@ html[data-theme="light"] body .update-source-chip.active .update-source-card-fro
 .announcement-detail-actions .action-btn {
     min-height: 40px;
     border-radius: 8px;
-}
-
-.announcement-form-wrapper {
-    position: fixed !important;
-    inset: 0 !important;
-    z-index: 2600;
-    padding: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--glass-bg-solid);
-    backdrop-filter: none;
-}
-
-.announcement-form-card {
-    width: min(720px, calc(100vw - 48px));
-    max-height: calc(100vh - 48px);
-    overflow: auto;
-    padding: 24px;
-    border-radius: 8px;
-    border: var(--glass-border);
-    background: var(--glass-bg-solid);
-    backdrop-filter: none;
-    box-shadow: var(--shadow-xl);
 }
 
 .announcement-form-footer .action-btn {
@@ -6524,23 +6297,50 @@ html[data-theme="light"].no-glass .topbar {
 }
 
 .announcement-form-wrapper {
+    position: fixed !important;
     top: 64px !important;
     bottom: 18px !important;
     left: var(--sidebar-width) !important;
     right: 0 !important;
     width: auto !important;
+    z-index: 2600;
+    max-height: none;
+    margin: 0;
+    display: flex;
     justify-content: center;
     align-items: flex-start;
     padding: 0 22px 18px !important;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: var(--glass-bg-solid);
+    backdrop-filter: none;
+    transition: opacity 0.18s ease;
+}
+
+.announcement-form-wrapper.show {
+    max-height: none;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
+    overflow: auto;
 }
 
 .announcement-form-card {
     width: min(900px, calc(100vw - var(--sidebar-width) - 44px));
     max-height: 100%;
     padding: 18px 20px;
+    border: var(--glass-border);
+    border-radius: 8px;
+    background: var(--glass-bg-solid);
+    backdrop-filter: none;
+    box-shadow: var(--shadow-xl);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
 }
 
 .announcement-form-head {
@@ -6600,19 +6400,37 @@ html[data-theme="light"].no-glass .topbar {
     color: var(--text-main);
 }
 
+.announcement-form-error {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: var(--error-coral);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    grid-column: 1 / -1;
+}
+
 .announcement-form-card .glass-input,
 .announcement-form-card textarea.glass-input,
 .announcement-form-card select.glass-input {
     min-height: 42px;
     border: 1px solid var(--border-color);
+    border-radius: 8px;
     background: var(--surface-raised);
     color: var(--text-main);
+    box-sizing: border-box;
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
+    user-select: text;
+    transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 
 .announcement-form-card textarea.glass-input {
     min-height: 128px;
     max-height: 176px;
     resize: vertical;
+    font-family: inherit;
 }
 
 .announcement-form-card .glass-input:hover,
@@ -6626,6 +6444,32 @@ html[data-theme="light"].no-glass .topbar {
 .announcement-form-card select.glass-input:focus {
     border-color: color-mix(in srgb, var(--theme-color) 58%, transparent);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-color) 14%, transparent);
+}
+
+.announcement-form-card .neko-stepper {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-raised);
+    box-sizing: border-box;
+}
+
+.announcement-form-card .neko-stepper-btn {
+    width: 38px;
+    min-height: 40px;
+    font-size: 14px;
+}
+
+.announcement-form-card .neko-stepper-input {
+    width: 100%;
+    flex: 1;
+    min-height: 40px;
+    font-size: 14px;
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
 }
 
 html[data-theme="light"] .announcement-form-card .glass-input,
@@ -6790,8 +6634,12 @@ html[data-theme="light"] .announcement-toggle-group {
 }
 
 .announcement-form-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
     padding-top: 12px;
     margin-top: 12px;
+    border-top: 1px solid var(--border-color);
 }
 
 .announcement-progress-track div {

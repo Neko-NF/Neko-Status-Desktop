@@ -84,6 +84,7 @@ async function reportStatusV2(params) {
   const {
     deviceKey,
     deviceFingerprint = '',
+    clientVersion = '',
     appName = '',
     packageName = '',
     batteryLevel = 0,
@@ -101,6 +102,8 @@ async function reportStatusV2(params) {
   const dataObj = {
     deviceKey,
     deviceFingerprint,
+    clientVersion,
+    appVersion: clientVersion,
     appName,
     packageName,
     status,

@@ -19,6 +19,7 @@ const apiService = require('./api-service');
 const configStore = require('./config-store');
 const os = require('os');
 const crypto = require('crypto');
+const packageJson = require('../../package.json');
 const {
   DEVELOPER_SCREENSHOT_TUNING_DEFAULTS,
   normalizeDeveloperScreenshotTuning,
@@ -29,6 +30,7 @@ const {
 const DEVICE_FINGERPRINT = crypto.createHash('sha256')
   .update(`${os.hostname()}-${os.platform()}-${os.arch()}-${os.cpus().length}-${os.totalmem()}`)
   .digest('hex');
+const CLIENT_VERSION = packageJson.version || '0.0.0';
 
 // away 状态的空闲阈值（毫秒）
 const AWAY_THRESHOLD_MS = 5 * 60 * 1000; // 5分钟
@@ -398,6 +400,7 @@ class StatusService {
       const result = await apiService.reportStatusV2({
         deviceKey,
         deviceFingerprint: DEVICE_FINGERPRINT,
+        clientVersion: CLIENT_VERSION,
         appName: reportAppName,
         packageName: reportPkgName,
         batteryLevel: battery.level,
@@ -434,6 +437,8 @@ class StatusService {
         screenshotSkippedReason,
         screenshotBlurred,
         screenshotBlurReason,
+        clientVersion: CLIENT_VERSION,
+        serverClientVersion: result?.clientVersion || result?.appVersion || result?.data?.clientVersion || null,
       };
 
       const batteryStr = battery.hasBattery

@@ -398,6 +398,106 @@ test('announcement page owns unread popup polling and receipt state', async () =
   assert.deepEqual(calls.at(-1), ['receipt', 7, 'ack']);
 });
 
+test('announcement page uses themed delete dialog instead of native confirm', async () => {
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    const el = {
+      id,
+      dataset: extra.dataset || {},
+      style: {},
+      value: extra.value || '',
+      textContent: extra.textContent || '',
+      innerHTML: extra.innerHTML || '',
+      disabled: false,
+      classList: {
+        values: new Set(extra.classes || []),
+        add(...names) { names.forEach((name) => this.values.add(name)); },
+        remove(...names) { names.forEach((name) => this.values.delete(name)); },
+        contains(name) { return this.values.has(name); },
+        toggle(name, force) {
+          const next = force === undefined ? !this.values.has(name) : !!force;
+          if (next) this.values.add(name);
+          else this.values.delete(name);
+          return next;
+        },
+      },
+      addEventListener(type, handler) { listeners[type] = handler; },
+      dispatch(type, event = {}) {
+        return listeners[type]?.({ target: el, currentTarget: el, ...event });
+      },
+      querySelectorAll() { return []; },
+      querySelector() { return null; },
+      closest() { return null; },
+      focus() { el.focused = true; },
+      ...extra,
+    };
+    return el;
+  }
+
+  const elements = new Map();
+  [
+    'announcementDeleteOverlay',
+    'announcementDeleteTarget',
+    'announcementDeleteCancelBtn',
+    'announcementDeleteConfirmBtn',
+  ].forEach((id) => elements.set(id, makeElement(id)));
+
+  const calls = [];
+  const context = {
+    window: {
+      _nekoModules: {
+        services: {
+          AnnouncementClient: {
+            isReady: () => true,
+            delete: async (id) => {
+              calls.push(['delete', id]);
+              return { success: true };
+            },
+          },
+        },
+      },
+    },
+    document: {
+      getElementById(id) {
+        return elements.get(id) || null;
+      },
+      querySelectorAll() { return []; },
+    },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {},
+      removeItem() {},
+    },
+    confirm() {
+      throw new Error('native confirm should not be called');
+    },
+    setTimeout(fn) { fn(); return 1; },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/announcement.page.js');
+
+  const page = context.window._nekoModules.pages.AnnouncementPage;
+  page._deps = { showNotice: (message, type) => calls.push(['notice', message, type]) };
+  page._items = [{ id: 9, _id: '9', title: 'Server maintenance' }];
+  page.loadAnnouncements = async () => calls.push(['reload']);
+
+  page.handleDelete(9);
+  assert.equal(elements.get('announcementDeleteOverlay').classList.contains('show'), true);
+  assert.equal(elements.get('announcementDeleteTarget').textContent, 'Server maintenance');
+
+  await page.confirmDelete();
+  assert.equal(elements.get('announcementDeleteOverlay').classList.contains('show'), false);
+  assert.deepEqual(calls, [
+    ['delete', 9],
+    ['reload'],
+    ['notice', '公告已删除', 'success'],
+  ]);
+});
+
 test('about page owns version rendering and repository links', async () => {
   function makeElement(id, extra = {}) {
     const listeners = {};

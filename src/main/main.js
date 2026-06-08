@@ -303,8 +303,8 @@ function createStartupUpdateWindow() {
     maximizable: false,
     minimizable: false,
     frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: false,
+    backgroundColor: '#111827',
     show: false,
     title: `${APP_NAME} Update`,
     ...(icon ? { icon } : {}),
@@ -1165,7 +1165,7 @@ app.whenReady().then(async () => {
       fetch(`${serverUrl}/api/device/meta`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceKey, reportEnabled, captureEnabled }),
+        body: JSON.stringify({ deviceKey, reportEnabled, captureEnabled, clientVersion: APP_VERSION, appVersion: APP_VERSION }),
         signal: AbortSignal.timeout(8000),
       }).then(r => {
         if (r.ok) console.log('[Meta] 启动元数据同步成功');
