@@ -20,7 +20,6 @@ jobs:
       GITEA_OWNER: ${{ vars.GITEA_OWNER || 'NF' }}
       GITEA_REPO: ${{ vars.GITEA_REPO || 'Neko' }}
       GITEA_MIRROR_URL: ${{ vars.GITEA_MIRROR_URL || 'https://git.koirin.com:39520/NF/Neko.git' }}
-      GITEA_MIRROR_USERNAME: ${{ secrets.GITEA_MIRROR_USERNAME }}
       GITEA_MIRROR_TOKEN: ${{ secrets.GITEA_MIRROR_TOKEN }}
       HAS_GITEA_MIRROR_TOKEN: ${{ secrets.GITEA_MIRROR_TOKEN != '' }}
       HAS_GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_TOKEN != '' }}
@@ -41,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Mirror Git refs to personal repository
+      - name: Smart sync Git refs to personal repository
         if: env.HAS_GITEA_MIRROR_TOKEN == 'true' || startsWith(env.GITEA_MIRROR_URL, 'git@') || startsWith(env.GITEA_MIRROR_URL, 'ssh://')
         run: node scripts/sync-git-mirror.js
 

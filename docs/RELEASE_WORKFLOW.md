@@ -10,7 +10,7 @@
 - 日常开发通过 `main` 分支和 PR 流转
 - 正式发布通过 Git tag 触发 GitHub Actions
 - 产物由 `electron-builder` 生成后上传到 GitHub Release；有 Gitea token 时同步上传到个人 Gitea Release
-- GitHub 源码仓库通过镜像工作流实时推送到个人 Gitea 仓库
+- GitHub 源码仓库通过智能同步工作流推送到个人 Gitea 仓库
 - GitHub 和个人仓库使用同一版本、同一 tag、同一份 `release_notes.txt`
 - 两个发布目标的资产清单独立配置，允许上传文件数量不同
 - 个人仓库写入密钥只保存在本地 `.secrets/gitea-token.txt` 或临时环境变量中，不能写入源码、客户端配置、安装包或 Release 资产
@@ -26,8 +26,8 @@
 npm run verify
 npm run build
 npm run build:zip
-npm run repo:mirror:dry-run
-npm run repo:mirror
+npm run repo:sync:dry-run
+npm run repo:sync
 npm run release:gitea:dry-run
 npm run release:gitea:local
 ```
@@ -37,14 +37,14 @@ npm run release:gitea:local
 - `.github/workflows/ci.yml`
 - `.github/workflows/build-check.yml`
 - `.github/workflows/release.yml`
-- `.github/workflows/mirror-personal.yml`
+- `.github/workflows/sync-personal.yml`
 
 触发规则：
 
 - `ci.yml`：`pull_request`、`push main`
 - `build-check.yml`：`pull_request`
 - `release.yml`：推送 `v*` tag
-- `mirror-personal.yml`：任意 branch/tag push 和手动触发
+- `sync-personal.yml`：任意 branch/tag push 和手动触发
 
 ## 3. 版本与渠道
 
@@ -148,9 +148,9 @@ git push origin main --tags
 ```
 
 6. 到 GitHub Actions 检查 `Release` 工作流是否成功。
-7. 到 GitHub Actions 检查 `Mirror Personal Repository` 和 `Release` 工作流是否成功。
+7. 到 GitHub Actions 检查 `Sync Personal Repository` 和 `Release` 工作流是否成功。
 
-`release.yml` 会先创建 GitHub Release；如果仓库 secret `GITEA_TOKEN` 存在，会继续调用 `scripts/publish-gitea-release.js` 创建或更新同名个人 Gitea Release。个人仓库 Git refs 由 `mirror-personal.yml` 实时同步；`release.yml` 在发版时也会补跑一次镜像，确保 tag 已到达个人仓库。不要把 token 写入 `package.json`、`release_notes.txt`、`neko-config.json`、`.env`、文档示例或任何打包文件。
+`release.yml` 会先创建 GitHub Release；如果仓库 secret `GITEA_TOKEN` 存在，会继续调用 `scripts/publish-gitea-release.js` 创建或更新同名个人 Gitea Release。个人仓库 Git refs 由 `sync-personal.yml` 智能同步；`release.yml` 在发版时也会补跑一次同步，确保 tag 已到达个人仓库。不要把 token 写入 `package.json`、`release_notes.txt`、`neko-config.json`、`.env`、文档示例或任何打包文件。
 
 ### Beta 版本
 
@@ -195,16 +195,24 @@ dist/NekoStatus-Setup-${VERSION}.exe,dist/SHA256SUMS.txt
 https://git.koirin.com:39520/NF/Neko
 ```
 
-这个仓库是 GitHub 源码仓库的个人镜像，同时作为客户端个人更新源。发布新版本时必须跟 GitHub Release 同步：同一个 tag、同一个版本、同一份发布说明。它不需要创建 release 分支，也不需要在该仓库执行构建。
+这个仓库跟随 GitHub 源码仓库同步，同时作为客户端个人更新源。它是团队项目的一部分，可能存在个人仓库侧维护的分支或历史 tag，因此工作流不能强制覆盖、不能自动删除远端独有 refs。发布新版本时必须跟 GitHub Release 同步：同一个 tag、同一个版本、同一份发布说明。它不需要创建 release 分支，也不需要在该仓库执行构建。
 
-### 默认方式：自动镜像 Git refs 和 Release
+### 默认方式：智能同步 Git refs 和 Release
 
 1. 在源码仓库推送 `v*` tag。
-2. `mirror-personal.yml` 将 GitHub branches/tags 推送到 `https://git.koirin.com:39520/NF/Neko.git`。
+2. `sync-personal.yml` 将 GitHub 可安全推进的 branches/tags 推送到 `https://git.koirin.com:39520/NF/Neko.git`。
 3. GitHub Actions 构建 Windows 产物。
 4. 工作流上传 GitHub Release。
 5. 如果配置了 `GITEA_TOKEN`，工作流创建或更新 `https://git.koirin.com:39520/NF/Neko` 的同名 Release。
 6. Gitea Release Body 使用同一份 `release_notes.txt`。
+
+智能同步规则：
+
+- GitHub 新增的分支或 tag：同步到个人仓库。
+- 个人仓库同名分支落后于 GitHub：只做 fast-forward 推进。
+- 个人仓库同名分支领先于 GitHub：保留个人仓库分支，工作流记录 skipped。
+- 同名分支发生分叉、同名 tag 指向不同对象：工作流失败并输出冲突清单，由维护者人工决定合并、改名、删除或显式覆盖。
+- 个人仓库独有的分支或 tag：保留，不在 workflow 中自动删除。
 
 个人仓库默认上传：
 
@@ -216,28 +224,29 @@ SHA256SUMS.txt
 
 其中 `.exe` 是自动更新首选资产，`.zip` 是备用资产，`SHA256SUMS.txt` 用于完整性校验。客户端会通过 Gitea 兼容接口读取 release、更新说明和资产下载地址。
 
-### 镜像配置
+### 同步配置
 
 GitHub 仓库需要配置以下 secrets / variables：
 
 - `GITEA_MIRROR_TOKEN`：用于 Git push 到个人 Gitea 仓库，建议至少有写仓库权限。
-- `GITEA_MIRROR_USERNAME`：可选。未配置时脚本会用 `Authorization: token ...` 方式推送。
 - `GITEA_TOKEN`：用于创建或更新个人 Gitea Release。
 - `GITEA_MIRROR_URL`：可选 repository variable，默认 `https://git.koirin.com:39520/NF/Neko.git`。
 - `GITEA_BASE_URL`、`GITEA_OWNER`、`GITEA_REPO`：可选 repository variables，默认分别是 `https://git.koirin.com:39520`、`NF`、`Neko`。
 
-本地可先 dry-run，再执行真实镜像：
+本地可先 dry-run，再执行真实智能同步：
 
 ```powershell
 $env:GITEA_MIRROR_TOKEN = (Get-Content -Raw -Encoding UTF8 .secrets/gitea-token.txt).Trim()
-npm run repo:mirror:dry-run
-npm run repo:mirror
+npm run repo:sync:dry-run
+npm run repo:sync
 ```
 
-脚本默认会删除个人仓库里 GitHub 不存在的 branch/tag，以保持个人仓库是 GitHub 的镜像。执行破坏性镜像前建议保留一份 bare 备份：
+如果确实需要把个人仓库整理成 GitHub 的严格镜像，只能在本地人工执行显式 mirror 模式，且必须先保留一份 bare 备份。这个模式不允许出现在 GitHub Actions 工作流里：
 
 ```powershell
-git -c http.extraHeader="Authorization: token <token>" clone --mirror --filter=blob:none https://git.koirin.com:39520/NF/Neko.git .secrets/gitea-Neko-backup.git
+git clone --mirror --filter=blob:none https://git.koirin.com:39520/NF/Neko.git .secrets/gitea-Neko-backup.git
+npm run repo:sync:dry-run -- --mode mirror
+npm run repo:sync -- --mode mirror
 ```
 
 ### 本地补发或旧版本测试
@@ -298,7 +307,7 @@ gh release delete v1.2.4 --yes
 - 发版时机、版本号判断、更新说明仍需要人工负责
 - 当前没有 Nightly 定时任务
 - 当前发布主链路是 GitHub Actions；GitHub Release 由 workflow 完成，个人 Gitea Release 在配置 token 后由 workflow 同步完成
-- 个人仓库 `https://git.koirin.com:39520/NF/Neko` 是 GitHub 仓库镜像，不作为独立源码协作入口
+- 个人仓库 `https://git.koirin.com:39520/NF/Neko` 跟随 GitHub 智能同步；远端独有 refs 和冲突 refs 需要人工处理，不作为 workflow 自动覆盖对象
 
 ## 11. 相关文档
 
