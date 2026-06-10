@@ -15,10 +15,22 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      GITEA_BASE_URL: ${{ vars.GITEA_BASE_URL || 'https://git.koirin.com:39520' }}
+      GITEA_OWNER: ${{ vars.GITEA_OWNER || 'NF' }}
+      GITEA_REPO: ${{ vars.GITEA_REPO || 'Neko' }}
+      GITEA_MIRROR_URL: ${{ vars.GITEA_MIRROR_URL || 'https://git.koirin.com:39520/NF/Neko.git' }}
+      GITEA_MIRROR_USERNAME: ${{ secrets.GITEA_MIRROR_USERNAME }}
+      GITEA_MIRROR_TOKEN: ${{ secrets.GITEA_MIRROR_TOKEN }}
+      HAS_GITEA_MIRROR_TOKEN: ${{ secrets.GITEA_MIRROR_TOKEN != '' }}
+      HAS_GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_TOKEN != '' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,6 +40,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Mirror Git refs to personal repository
+        if: env.HAS_GITEA_MIRROR_TOKEN == 'true' || startsWith(env.GITEA_MIRROR_URL, 'git@') || startsWith(env.GITEA_MIRROR_URL, 'ssh://')
+        run: node scripts/sync-git-mirror.js
 
       - name: Validate release tag matches package version
         shell: pwsh
@@ -115,3 +131,9 @@ jobs:
             dist/NekoStatus-Setup-${{ env.VERSION }}.exe
             dist/NekoStatus-${{ env.VERSION }}-win.zip
             dist/SHA256SUMS.txt
+
+      - name: Sync personal Gitea Release
+        if: env.HAS_GITEA_RELEASE_TOKEN == 'true'
+        run: npm run release:gitea -- --version "${{ env.VERSION }}" --tag "${{ github.ref_name }}"
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}

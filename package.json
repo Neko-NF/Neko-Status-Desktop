@@ -22,6 +22,8 @@
     "release:gitea": "node scripts/publish-gitea-release.js",
     "release:gitea:local": "node scripts/publish-gitea-release.js --token-file .secrets/gitea-token.txt",
     "release:gitea:dry-run": "node scripts/publish-gitea-release.js --dry-run",
+    "repo:mirror": "node scripts/sync-git-mirror.js",
+    "repo:mirror:dry-run": "node scripts/sync-git-mirror.js --dry-run",
     "lint": "node scripts/verify.js",
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:smoke": "node --test \"tests/smoke/*.test.js\"",

@@ -1,0 +1,39 @@
+name: Mirror Personal Repository
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITEA_MIRROR_URL: ${{ vars.GITEA_MIRROR_URL || 'https://git.koirin.com:39520/NF/Neko.git' }}
+      GITEA_MIRROR_USERNAME: ${{ secrets.GITEA_MIRROR_USERNAME }}
+      GITEA_MIRROR_TOKEN: ${{ secrets.GITEA_MIRROR_TOKEN }}
+      HAS_GITEA_MIRROR_TOKEN: ${{ secrets.GITEA_MIRROR_TOKEN != '' }}
+
+    steps:
+      - name: Checkout full repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Mirror Git refs to personal repository
+        if: env.HAS_GITEA_MIRROR_TOKEN == 'true' || startsWith(env.GITEA_MIRROR_URL, 'git@') || startsWith(env.GITEA_MIRROR_URL, 'ssh://')
+        run: node scripts/sync-git-mirror.js
+
+      - name: Explain skipped mirror
+        if: env.HAS_GITEA_MIRROR_TOKEN != 'true' && !startsWith(env.GITEA_MIRROR_URL, 'git@') && !startsWith(env.GITEA_MIRROR_URL, 'ssh://')
+        run: |
+          echo "Personal repository mirror skipped."
+          echo "Set GITEA_MIRROR_TOKEN and GITEA_MIRROR_USERNAME, or set GITEA_MIRROR_URL to an SSH push URL with runner credentials."
