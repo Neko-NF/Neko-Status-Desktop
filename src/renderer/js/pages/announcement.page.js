@@ -304,6 +304,7 @@
     _runtimeStarted: false,
     _announcementPollTimer: null,
     _pendingDeleteId: null,
+    _managementLoading: false,
     _state: {
       search: '',
       type: 'all',
@@ -613,18 +614,19 @@
 
     async loadAnnouncements(options = {}) {
       const manual = options.manual === true;
+      if (this._managementLoading && !manual) return;
+      this._managementLoading = true;
       this.syncMockBadge();
       this.renderFilterState();
-      if (!(await this.canManageAnnouncements())) {
-        this.setLoadingState(false);
-        this.renderAccessDenied();
-        return;
-      }
-
-      if (this._items.length === 0) this.renderLoading();
-      this.setLoadingState(true);
-
       try {
+        if (!(await this.canManageAnnouncements())) {
+          this.renderAccessDenied();
+          return;
+        }
+
+        if (this._items.length === 0) this.renderLoading();
+        this.setLoadingState(true);
+
         let list;
         if (this.isMockMode()) {
           list = this.getMockAnnouncements();
@@ -670,6 +672,7 @@
         this.renderError(err);
         this._deps?.showNotice?.(`公告刷新失败：${err?.message || '未知错误'}`, 'error', 4200);
       } finally {
+        this._managementLoading = false;
         this.setLoadingState(false);
       }
     },
@@ -1134,10 +1137,21 @@
       const initialDelayMs = Number(options.initialDelayMs ?? 2000);
       const intervalMs = Number(options.intervalMs ?? 60000);
       this.bindAnnouncementNavSync();
+      this.bindManagementRouteSync();
       this.restoreAnnouncementNav();
 
       setTimeout(() => this.checkUnreadPopups(), initialDelayMs);
       this._announcementPollTimer = setInterval(() => this.checkUnreadPopups(), intervalMs);
+    },
+
+    bindManagementRouteSync() {
+      if (this._routeSyncBound) return;
+      this._routeSyncBound = true;
+      const bus = window._nekoModules?.eventBus;
+      bus?.on?.('router:page-changed', ({ page } = {}) => {
+        if (page !== 'page-announcement') return;
+        this.loadAnnouncements();
+      });
     },
 
     bindAnnouncementNavSync() {
@@ -1151,8 +1165,14 @@
 
     async restoreAnnouncementNav() {
       try {
-        const authUser = await getConfigClient()?.get?.('authUser');
-        this.syncAnnouncementNav(isAdminUser(authUser));
+        const client = getConfigClient();
+        const cfg = await client?.getAll?.().catch?.(() => null);
+        const authUser = cfg?.authUser || await client?.get?.('authUser');
+        const canManage = isAdminUser(authUser);
+        this.syncAnnouncementNav(canManage);
+        if (canManage && cfg?.restoreLastState && cfg?.lastPage === 'page-announcement') {
+          window._nekoModules?.router?.navigateTo?.('page-announcement');
+        }
       } catch {}
     },
 
@@ -1165,6 +1185,9 @@
       else navEl.setAttribute('tabindex', '-1');
       if (!show && navEl.classList.contains('active')) {
         document.querySelector('.nav-menu .nav-item[data-target="mainDashboardArea"]')?.click();
+      }
+      if (show && window._nekoModules?.router?.getCurrentPage?.() === 'page-announcement') {
+        this.loadAnnouncements();
       }
       window._nekoSyncNavIndicator?.();
     },

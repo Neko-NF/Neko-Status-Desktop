@@ -54,6 +54,32 @@
       .replace(/'/g, '&#39;');
   }
 
+  function firstPresent(...values) {
+    return values.find((value) => value !== undefined && value !== null);
+  }
+
+  function normalizeLastReportedApp(data = {}) {
+    const appName = firstPresent(
+      data.appName,
+      data.windowTitle,
+      data.foregroundWindowTitle,
+      data.activeWindowTitle,
+      data.lastReportedApp,
+      data.lastReportedAppName,
+      data.currentAppName
+    );
+    const packageName = firstPresent(
+      data.packageName,
+      data.processName,
+      data.foregroundProcessName,
+      data.activeProcessName,
+      data.lastReportedPackageName,
+      data.lastReportedProcessName,
+      data.currentProcessName
+    );
+    return { appName, packageName };
+  }
+
   function resolveEventTimestamp(value) {
     const ts = value instanceof Date ? value.getTime() : new Date(value).getTime();
     return Number.isFinite(ts) ? ts : Date.now();
@@ -807,17 +833,18 @@
       const deps = this._runtimeDeps;
       const recordHealth = options.recordHealth !== false;
 
-      if (data.appName !== undefined) {
+      const reportedApp = normalizeLastReportedApp(data);
+      if (reportedApp.appName !== undefined || reportedApp.packageName !== undefined) {
         const appValue = document.querySelector('#card-app .metric-value');
         if (appValue) {
-          const appName = data.appName || '-';
+          const appName = reportedApp.appName || reportedApp.packageName || '-';
           appValue.textContent = appName;
           appValue.title = appName;
         }
 
         const appProcess = document.querySelector('#card-app .metric-trend');
-        if (appProcess && data.packageName !== undefined) {
-          appProcess.innerHTML = `<i class="ph ph-cpu"></i> 进程: ${escapeWith(deps, data.packageName || '-')}`;
+        if (appProcess && reportedApp.packageName !== undefined) {
+          appProcess.innerHTML = `<i class="ph ph-cpu"></i> 进程: ${escapeWith(deps, reportedApp.packageName || '-')}`;
         }
       }
 

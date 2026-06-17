@@ -590,10 +590,11 @@
 .update-progress-fill { height: 100%; background: linear-gradient(90deg, var(--theme-color), color-mix(in srgb, var(--theme-color) 60%, #ffffff)); border-radius: 99px; transition: width 0.4s ease; }
 .update-action-row {
     display: grid;
-    grid-template-columns: repeat(3, minmax(118px, 1fr)) auto;
+    grid-template-columns: repeat(3, minmax(118px, 1fr)) minmax(112px, 0.9fr);
     align-items: center;
     gap: 8px;
     margin-top: 6px;
+    min-width: 0;
 }
 .update-ver-actions { display: flex; align-items: center; gap: 8px; border-top: var(--glass-border); margin-top: 10px; padding-top: 8px; flex-wrap: wrap; }
 .update-action-btn {
@@ -692,18 +693,25 @@ html[data-theme="light"] .neko-island {
     animation: progressIndeterminate 1.2s ease-in-out infinite;
 }
 .update-status-badge {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
+    min-width: 0;
+    max-width: 100%;
     min-height: 32px;
     padding: 0 10px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     border: 1px solid currentColor;
-    background: color-mix(in srgb, currentColor 8%, transparent);
+    background: color-mix(in srgb, currentColor 8%, var(--surface-raised));
+}
+.update-status-badge i {
+    flex: 0 0 auto;
 }
 .update-status-badge.success { color: var(--theme-color); }
 .update-status-badge.warn { color: var(--warning-amber); }
@@ -2005,7 +2013,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     height: 100%;
     border: 1px solid var(--border-color);
     border-radius: 20px;
-    background: color-mix(in srgb, var(--glass-bg-solid) 96%, var(--theme-color) 7%);
+    background: color-mix(in srgb, var(--glass-bg-solid) 92%, var(--theme-color) 8%);
     backdrop-filter: blur(16px) saturate(150%);
     -webkit-backdrop-filter: blur(16px) saturate(150%);
     box-shadow:
@@ -2034,8 +2042,8 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     padding: 24px 22px 22px;
     transform: rotateY(180deg);
     background:
-        linear-gradient(145deg, color-mix(in srgb, var(--error-coral) 11%, transparent), transparent 54%),
-        color-mix(in srgb, var(--glass-bg-solid) 96%, var(--theme-color) 4%);
+        linear-gradient(145deg, color-mix(in srgb, var(--error-coral) 11%, var(--glass-bg-solid)), transparent 54%),
+        color-mix(in srgb, var(--glass-bg-solid) 94%, var(--error-coral) 6%);
     border-color: color-mix(in srgb, var(--error-coral) 34%, var(--border-color));
 }
 .update-source-card-front::before {
@@ -2051,7 +2059,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
     transition: left 0.7s ease;
 }
 .update-source-chip:hover .update-source-card-front {
-    background: var(--surface-raised-hover);
+    background: color-mix(in srgb, var(--glass-bg-solid) 86%, var(--theme-color) 14%);
 }
 .update-source-card-number {
     position: absolute;
@@ -2114,7 +2122,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 }
 .update-source-chip.is-next .update-source-card-face,
 .update-source-chip.is-prev .update-source-card-face {
-    background: color-mix(in srgb, var(--glass-bg-solid) 94%, var(--theme-color) 12%);
+    background: color-mix(in srgb, var(--glass-bg-solid) 88%, var(--theme-color) 12%);
     border-color: color-mix(in srgb, var(--theme-color) 38%, var(--border-color));
     box-shadow:
         inset 0 1px 0 color-mix(in srgb, #ffffff 16%, transparent),
@@ -2174,8 +2182,8 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 }
 .update-source-placeholder .update-source-card-face {
     background:
-        linear-gradient(135deg, color-mix(in srgb, var(--theme-color) 12%, transparent), transparent 58%),
-        color-mix(in srgb, var(--glass-bg-solid) 90%, var(--theme-color) 6%);
+        linear-gradient(135deg, color-mix(in srgb, var(--theme-color) 12%, var(--glass-bg-solid)), transparent 58%),
+        color-mix(in srgb, var(--glass-bg-solid) 90%, var(--theme-color) 10%);
     border-style: dashed;
 }
 .update-source-placeholder .update-source-card-number {
@@ -2211,7 +2219,7 @@ html:not([data-theme="light"]) .glass-time-input { color-scheme: dark; }
 }
 .update-source-chip.active .update-source-card-front {
     border-color: color-mix(in srgb, var(--success-mint) 46%, transparent);
-    background: color-mix(in srgb, var(--success-mint) 13%, var(--glass-bg-solid));
+    background: color-mix(in srgb, var(--success-mint) 14%, var(--glass-bg-solid) 86%);
     box-shadow:
         0 14px 28px color-mix(in srgb, var(--success-mint) 10%, transparent);
 }
@@ -6311,17 +6319,19 @@ html[data-theme="light"].no-glass .topbar {
     align-items: flex-start;
     padding: 0 22px 18px !important;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
     overflow: hidden;
     background: var(--glass-bg-solid);
     backdrop-filter: none;
-    transition: opacity 0.18s ease;
+    transition: opacity 0.18s ease, visibility 0.18s ease;
 }
 
 .announcement-form-wrapper.show {
     max-height: none;
     margin: 0;
     opacity: 1;
+    visibility: visible;
     pointer-events: auto;
     overflow: auto;
 }
@@ -6340,6 +6350,10 @@ html[data-theme="light"].no-glass .topbar {
     overflow: hidden;
     position: relative;
     z-index: 1;
+    pointer-events: none;
+}
+
+.announcement-form-wrapper.show .announcement-form-card {
     pointer-events: auto;
 }
 

@@ -54,6 +54,12 @@
     if (!badge) return;
     badge.className = `update-status-badge ${kind}`;
     badge.innerHTML = html;
+    badge.title = String(badge.textContent || '').trim();
+  }
+
+  function versionText(version) {
+    const value = String(version || '').trim();
+    return value ? `v${escapeHtml(value)}` : '';
   }
 
   function setCheckButton(mode, label, iconClass) {
@@ -981,13 +987,18 @@
       }
 
       if (btn._updateMode === 'download' && this._lastUpdateResult?.hasUpdate) {
+        if (await this.syncPendingInstallForVersion(this._lastUpdateResult.latestVersion)) {
+          return this.installPendingUpdate();
+        }
         btn.disabled = true;
         if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
         if (label) label.textContent = '下载中...';
         await this.downloadAndInstall(this._lastUpdateResult);
-        btn.disabled = false;
-        if (icon) { icon.className = 'ph ph-download-simple'; icon.style.animation = ''; }
-        if (label) label.textContent = '立刻更新';
+        if (btn._updateMode !== 'install-pending') {
+          btn.disabled = false;
+          if (icon) { icon.className = 'ph ph-download-simple'; icon.style.animation = ''; }
+          if (label) label.textContent = '立刻更新';
+        }
         return this._lastUpdateResult;
       }
 
@@ -1029,7 +1040,7 @@
         if (result?.hasUpdate && result.forceUpdate) {
           if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
           if (label) label.textContent = '强制安装中...';
-          setBadge('error', `<i class="ph ph-warning"></i> 强制更新 v${escapeHtml(result.latestVersion || '')}`);
+          setBadge('error', `<i class="ph ph-warning"></i> 强更 ${versionText(result.latestVersion)}`);
           showNotice(`检测到强制更新 v${result.latestVersion}，正在自动下载...`, 'warn', 6000);
           addLogLine('WARN', `检测到强制更新 v${result.latestVersion}，必须安装`);
           this.renderReleaseNotes(result);
@@ -1047,6 +1058,12 @@
         }
 
         if (result?.hasUpdate) {
+          if (await this.syncPendingInstallForVersion(result.latestVersion)) {
+            this.renderReleaseNotes(result);
+            showNotice(`安装包已下载，点击「立即安装」完成 v${result.latestVersion} 更新`, 'info', 5000);
+            addLogLine('INFO', `检测到 v${result.latestVersion} 已下载，阻止重复下载`);
+            return result;
+          }
           this.setAvailable(result);
           showNotice(`发现新版本 v${result.latestVersion}，点击「立刻更新」下载安装`, 'info', 5000);
           addLogLine('INFO', `发现新版本 v${result.latestVersion}（当前 v${result.currentVersion}）`);
@@ -1235,14 +1252,16 @@
       if (btn) {
         btn.disabled = false;
         btn._updateMode = 'download';
+        btn._pendingVersion = '';
         btn.classList.remove('rollback-install-btn');
         btn.classList.add('primary');
       }
+      this._pendingInstallVersion = '';
       this.stopSourceDiagnosticsTimer();
       setCheckButton('download', '立刻更新', 'ph ph-download-simple');
       setBadge(result.forceUpdate ? 'error' : 'warn', result.forceUpdate
-        ? `<i class="ph ph-warning"></i> 强制更新 v${escapeHtml(result.latestVersion || '')}`
-        : `<i class="ph ph-arrow-circle-up"></i> 发现新版本 v${escapeHtml(result.latestVersion || '')}`);
+        ? `<i class="ph ph-warning"></i> 强更 ${versionText(result.latestVersion)}`
+        : `<i class="ph ph-arrow-circle-up"></i> 有更新 ${versionText(result.latestVersion)}`);
       document.querySelector('.nav-item[data-target="page-update"]')?.classList.add('has-update');
     },
 
@@ -1342,13 +1361,32 @@
       if (btn) {
         btn._updateMode = 'install-pending';
         btn._pendingVersion = version;
+        btn.disabled = false;
         btn.classList.remove('rollback-install-btn');
         btn.classList.add('primary');
       }
+      this._pendingInstallVersion = String(version || '');
       this.stopSourceDiagnosticsTimer();
       setCheckButton('install-pending', '立即安装', 'ph ph-package');
-      setBadge('warn', `<i class="ph ph-arrow-circle-up"></i> 已下载 v${escapeHtml(version || '')}，等待安装`);
+      setBadge('warn', `<i class="ph ph-package"></i> 已下载 ${versionText(version)}`);
       document.querySelector('.nav-item[data-target="page-update"]')?.classList.add('has-update');
+    },
+
+    async syncPendingInstallForVersion(version) {
+      const getPending = this._deps?.update?.getPendingInstall;
+      if (typeof getPending !== 'function') return false;
+      let pending = null;
+      try {
+        pending = await getPending();
+      } catch {
+        return false;
+      }
+      if (!pending?.hasPending) return false;
+      const pendingVersion = String(pending.version || '');
+      const expectedVersion = String(version || '');
+      if (expectedVersion && pendingVersion && pendingVersion !== expectedVersion) return false;
+      this.setPendingInstall(pendingVersion || expectedVersion);
+      return true;
     },
 
     showDialog(result = {}) {
@@ -1546,6 +1584,9 @@
         if (!installResult?.success) {
           addLogLine('ERROR', `安装失败: ${installResult?.error || 'unknown'}`);
           this.setProgressLabel('安装失败');
+          if (installResult?.pending || installResult?.hasPending || installResult?.code === 'PENDING_INSTALL_EXISTS') {
+            this.setPendingInstall(result.latestVersion || result.version || installResult.version || '');
+          }
           return false;
         }
 
@@ -1626,8 +1667,7 @@
     },
 
     markAutoDownloaded(data = {}) {
-      setBadge('info', `<i class="ph ph-download-simple"></i> 已下载 v${escapeHtml(data.version || '')}，下次启动时安装`);
-      document.querySelector('.nav-item[data-target="page-update"]')?.classList.add('has-update');
+      this.setPendingInstall(data.version || '');
     },
 
     markForceInstallStarted(data = {}) {

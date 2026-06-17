@@ -1343,6 +1343,7 @@ test('update page owns download progress and background update state', async () 
   const calls = [];
   const logs = [];
   const notices = [];
+  let pendingInstall = null;
   const context = {
     window: { _nekoModules: {} },
     document: {
@@ -1399,6 +1400,10 @@ test('update page owns download progress and background update state', async () 
         calls.push(['installPending']);
         return { success: true };
       },
+      getPendingInstall: async () => {
+        calls.push(['getPendingInstall']);
+        return pendingInstall || { hasPending: false };
+      },
       rollbackInfo: async () => {
         calls.push(['rollbackInfo']);
         return {
@@ -1442,6 +1447,7 @@ test('update page owns download progress and background update state', async () 
   page.markAutoDownloaded({ version: '1.3.0' });
   assert.equal(navUpdate.classList.contains('has-update'), true);
   assert.match(elements.get('updateStatusBadge').innerHTML, /1\.3\.0/);
+  assert.equal(elements.get('checkUpdateBtn')._updateMode, 'install-pending');
 
   assert.equal(page.markAvailable({
     hasUpdate: true,
@@ -1483,6 +1489,14 @@ test('update page owns download progress and background update state', async () 
   assert.equal(elements.get('checkUpdateBtn')._updateMode, 'download');
   assert.equal(calls.some((call) => call[0] === 'check'), true);
   assert.equal(calls.some((call) => call[0] === 'get' && call[1] === 'skippedVersion'), true);
+
+  pendingInstall = { hasPending: true, version: '1.3.2' };
+  elements.get('checkUpdateBtn')._updateMode = 'check';
+  const downloadsBeforePendingCheck = calls.filter((call) => call[0] === 'download').length;
+  assert.equal((await page.checkForUpdates()).latestVersion, '1.3.2');
+  assert.equal(elements.get('checkUpdateBtn')._updateMode, 'install-pending');
+  assert.equal(calls.filter((call) => call[0] === 'download').length, downloadsBeforePendingCheck);
+  pendingInstall = null;
 
   page.setPendingInstall('1.3.3');
   assert.equal((await page.checkForUpdates()).success, true);
@@ -2359,6 +2373,64 @@ test('dashboard page owns trend chart metrics runtime', () => {
   assert.equal(page._trendRange, '1h');
   assert.equal(oneHourBtn.classList.contains('active'), true);
   assert.equal(updates.length > 0, true);
+});
+
+test('dashboard page renders last reported app from normalized service fields', () => {
+  function makeElement(id, extra = {}) {
+    return {
+      id,
+      textContent: '',
+      innerHTML: '',
+      title: '',
+      dataset: {},
+      style: {},
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      ...extra,
+    };
+  }
+
+  const appValue = makeElement('appValue');
+  const appTrend = makeElement('appTrend');
+  const elements = new Map([
+    ['mainDashboardArea', makeElement('mainDashboardArea')],
+  ]);
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      documentElement: { hasAttribute() { return false; } },
+      getElementById(id) { return elements.get(id) || null; },
+      querySelector(selector) {
+        if (selector === '#card-app .metric-value') return appValue;
+        if (selector === '#card-app .metric-trend') return appTrend;
+        return null;
+      },
+      querySelectorAll() { return []; },
+    },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {},
+      removeItem() {},
+    },
+    setTimeout(fn) { fn(); return 1; },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+
+  loadBrowserScript(context, 'src/renderer/js/pages/dashboard.page.js');
+
+  const page = context.window._nekoModules.pages.DashboardPage;
+  page.initRuntime({ escapeHtml: (value) => String(value).replace(/</g, '&lt;') });
+  page.updateCards({
+    foregroundWindowTitle: 'Design Tool',
+    foregroundProcessName: 'design.exe',
+  });
+
+  assert.equal(appValue.textContent, 'Design Tool');
+  assert.equal(appValue.title, 'Design Tool');
+  assert.match(appTrend.innerHTML, /design\.exe/);
 });
 
 test('device status page owns metrics rendering and diagnostics', () => {
@@ -3638,6 +3710,130 @@ test('app-ipc is only a compatibility bootstrap for AppRuntime', () => {
   assert.equal(starts, 0);
   domReadyHandler();
   assert.equal(starts, 1);
+});
+
+test('router delegates conditional nav clicks to announcement page', () => {
+  function makeClassList(initial = []) {
+    return {
+      values: new Set(initial),
+      add(value) { this.values.add(value); },
+      remove(value) { this.values.delete(value); },
+      contains(value) { return this.values.has(value); },
+      toggle(value, enabled) {
+        const shouldAdd = enabled === undefined ? !this.values.has(value) : !!enabled;
+        if (shouldAdd) this.values.add(value);
+        else this.values.delete(value);
+      },
+    };
+  }
+
+  function makeElement(id, extra = {}) {
+    const listeners = {};
+    const attrs = new Map(Object.entries(extra.attrs || {}));
+    return {
+      id,
+      offsetTop: extra.offsetTop || 0,
+      offsetHeight: extra.offsetHeight || 44,
+      style: {
+        display: '',
+        setProperty(key, value) { this[key] = value; },
+      },
+      classList: makeClassList(extra.classes || []),
+      innerHTML: '',
+      dataset: extra.dataset || {},
+      addEventListener(type, handler) { listeners[type] = handler; },
+      dispatch(type, event = {}) { return listeners[type]?.({ target: this, currentTarget: this, preventDefault() {}, ...event }); },
+      getAttribute(name) { return attrs.get(name) || null; },
+      setAttribute(name, value) { attrs.set(name, String(value)); },
+      removeAttribute(name) { attrs.delete(name); },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      contains(target) { return target === this; },
+      click() { return listeners.click?.({ target: this, currentTarget: this, preventDefault() {} }); },
+      ...extra,
+    };
+  }
+
+  const navDashboard = makeElement('navDashboard', { attrs: { 'data-target': 'mainDashboardArea' }, classes: ['nav-item', 'active'] });
+  const navAnnouncement = makeElement('navAnnouncement', {
+    attrs: { 'data-target': 'page-announcement', 'aria-hidden': 'false' },
+    classes: ['nav-item', 'conditional-nav', 'show'],
+    offsetTop: 52,
+  });
+  const navMenu = makeElement('navMenu', {
+    querySelector(selector) {
+      if (selector === '.nav-item.active') return [navDashboard, navAnnouncement].find((item) => item.classList.contains('active')) || null;
+      if (selector === '.nav-item[data-target="mainDashboardArea"]') return navDashboard;
+      if (selector === '.nav-item[data-target="page-announcement"]') return navAnnouncement;
+      return null;
+    },
+    querySelectorAll(selector) {
+      return selector === '.nav-item' ? [navDashboard, navAnnouncement] : [];
+    },
+    contains(target) {
+      return target === navDashboard || target === navAnnouncement;
+    },
+  });
+  const pages = new Map([
+    ['mainDashboardArea', makeElement('mainDashboardArea')],
+    ['page-announcement', makeElement('page-announcement')],
+  ]);
+  const title = makeElement('pageTitle');
+  const indicator = makeElement('navActiveIndicator');
+  const editBtn = makeElement('editLayoutBtn');
+  const context = {
+    window: {
+      _nekoModules: {
+        services: {
+          ConfigClient: { set: async () => true },
+        },
+      },
+      addEventListener() {},
+    },
+    document: {
+      querySelector(selector) {
+        if (selector === '.nav-menu') return navMenu;
+        if (selector === '.page-title') return title;
+        return null;
+      },
+      querySelectorAll(selector) {
+        return selector === '.nav-menu .nav-item' ? [navDashboard, navAnnouncement] : [];
+      },
+      getElementById(id) {
+        if (id === 'navActiveIndicator') return indicator;
+        if (id === 'editLayoutBtn') return editBtn;
+        return pages.get(id) || null;
+      },
+    },
+    getComputedStyle(el) {
+      return {
+        display: el.style.display || 'flex',
+        visibility: el.classList.contains('show') || !el.classList.contains('conditional-nav') ? 'visible' : 'hidden',
+      };
+    },
+    requestAnimationFrame(fn) { fn(); },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+
+  loadBrowserScript(context, 'src/renderer/js/core/event-bus.js');
+  loadBrowserScript(context, 'src/renderer/js/core/router.js');
+
+  context.window._nekoModules.router.init();
+  navMenu.dispatch('click', {
+    target: {
+      closest(selector) {
+        return selector === '.nav-item' ? navAnnouncement : null;
+      },
+    },
+    preventDefault() {},
+  });
+
+  assert.equal(context.window._nekoModules.router.getCurrentPage(), 'page-announcement');
+  assert.equal(pages.get('page-announcement').style.display, 'block');
+  assert.equal(navAnnouncement.classList.contains('active'), true);
+  assert.equal(navDashboard.classList.contains('active'), false);
 });
 
 test('app event runtime owns main-process event forwarding', async () => {

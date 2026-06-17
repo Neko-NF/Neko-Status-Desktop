@@ -36,6 +36,11 @@
   let _navMenu = null;
   let _navIndicator = null;
   let _currentPage = 'mainDashboardArea';
+  let _navClickBound = false;
+
+  function getNavItems() {
+    return Array.from(_navMenu?.querySelectorAll?.('.nav-item') || []);
+  }
 
   function canAccessNavTarget(targetId) {
     const navItem = _navMenu?.querySelector?.(`.nav-item[data-target="${targetId}"]`);
@@ -57,6 +62,17 @@
     _navIndicator.classList.add('is-ready');
   }
 
+  function setActiveNav(targetId) {
+    const navItems = getNavItems();
+    let activeItem = null;
+    navItems.forEach(nav => {
+      const isActive = nav.getAttribute('data-target') === targetId;
+      nav.classList.toggle('active', isActive);
+      if (isActive) activeItem = nav;
+    });
+    if (activeItem) syncNavIndicator(activeItem);
+  }
+
   /**
    * 导航到指定页面
    * @param {string} targetId - 目标区域 ID
@@ -66,15 +82,15 @@
     if (!def) return;
     if (!canAccessNavTarget(targetId)) {
       const fallback = 'mainDashboardArea';
-      const fallbackNav = _navMenu?.querySelector?.(`.nav-item[data-target="${fallback}"]`);
       if (targetId !== fallback) {
-        fallbackNav?.click?.();
+        navigateTo(fallback);
         bus?.emit('router:access-denied', { page: targetId });
       }
       return;
     }
 
     _currentPage = targetId;
+    setActiveNav(targetId);
 
     // 持久化最后访问页面
     if (RESTORABLE_PAGES.has(targetId)) {
@@ -116,7 +132,8 @@
   function init() {
     _navMenu = document.querySelector('.nav-menu');
     _navIndicator = document.getElementById('navActiveIndicator');
-    const navItems = document.querySelectorAll('.nav-menu .nav-item');
+    if (!_navMenu) return;
+    const navItems = getNavItems();
 
     requestAnimationFrame(() => syncNavIndicator());
     window.addEventListener('resize', () => syncNavIndicator());
@@ -136,21 +153,21 @@
       });
     }
 
-    navItems.forEach(item => {
-      item.addEventListener('click', function () {
-        const targetId = this.getAttribute('data-target');
+    if (!_navClickBound) {
+      _navClickBound = true;
+      _navMenu.addEventListener('click', function handleNavClick(event) {
+        const item = event.target?.closest?.('.nav-item');
+        if (!item || !_navMenu.contains(item)) return;
+        event.preventDefault();
+        const targetId = item.getAttribute('data-target');
         if (!targetId) return;
         if (!canAccessNavTarget(targetId)) {
           bus?.emit('router:access-denied', { page: targetId });
           return;
         }
-
-        navItems.forEach(nav => nav.classList.remove('active'));
-        this.classList.add('active');
-        syncNavIndicator(this);
         navigateTo(targetId);
       });
-    });
+    }
   }
 
   window._nekoModules = window._nekoModules || {};
@@ -159,6 +176,7 @@
     navigateTo,
     getCurrentPage,
     syncNavIndicator,
+    setActiveNav,
     PAGE_DEFS,
     RESTORABLE_PAGES,
   };
