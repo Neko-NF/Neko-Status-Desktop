@@ -213,7 +213,7 @@
 }
 
 .developer-mode-btn.loading i {
-    animation: stgSpin 0.8s linear infinite;
+    animation: neko-busy-spin 0.82s linear infinite;
 }
 
 .developer-mode-panel-section {
@@ -1067,12 +1067,8 @@
         .close-profile-btn:hover { color: var(--text-main); }
 
         /* 旋转动画与状态评级标签 */
-        @keyframes spin-anim {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
         .ph-spin {
-            animation: spin-anim 1s linear infinite;
+            animation: neko-busy-spin 0.82s linear infinite;
             display: inline-block;
         }
         .rating-badge {
@@ -1470,16 +1466,12 @@
         }
 
         /* 诊断动画 */
-        @keyframes diagSpin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
         @keyframes diagPulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
         .diag-running { animation: diagPulse 1s ease infinite; }
-        .diag-spinner { animation: diagSpin 1s linear infinite; display: inline-block; }
+        .diag-spinner { animation: neko-busy-spin 0.82s linear infinite; display: inline-block; }
 
         /* 表格样式 */
         .table-container { overflow-x: auto; overflow-y: auto; max-height: 400px; margin-top: 10px; }

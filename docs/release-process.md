@@ -36,6 +36,7 @@ PR 阶段由 GitHub Actions 执行：
 
 ```bash
 npm run verify
+npm run test:agent
 npm run test:smoke
 ```
 
@@ -43,6 +44,14 @@ npm run test:smoke
 
 ```bash
 npm run build:zip
+```
+
+涉及用户关注活动 Agent 时，还需要：
+
+```bash
+cargo fmt --manifest-path native/presence-agent/Cargo.toml -- --check
+cargo clippy --manifest-path native/presence-agent/Cargo.toml --all-targets --locked -- -D warnings
+npm run build:agent
 ```
 
 ## 版本号
@@ -76,6 +85,7 @@ npm run build:zip
 - `package.json` version 正确。
 - 更新说明已准备。
 - ZIP 可生成。
+- `NekoPresenceAgent.exe` 已随 NSIS/ZIP 打包。
 - release workflow 未被破坏。
 - `CHANGELOG.md` 或 release notes 已同步。
 - 没有临时日志、heap dump、构建缓存进入提交。
@@ -176,3 +186,4 @@ dist/
 - Windows 签名信息为空时会跳过签名，这是当前可接受状态，但 release notes 应说明。
 - 开发态 Electron GPU 问题不等同于打包产物不可用，需用 `build:zip` 或正式 exe 对照。
 - IPC 或配置变更必须保持向后兼容，否则旧版本升级可能失败。
+- 用户关注活动发布时必须确认托盘唯一所有权、后台代理更新前退出、卸载删除 Run 项；服务端可通过 `ACTIVITY_FOLLOW_ENABLED=false` 快速回滚入口。

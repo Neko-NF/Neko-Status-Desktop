@@ -305,6 +305,20 @@
   }
 
   const UpdatePage = {
+    _checkingLoader: null,
+
+    ensureCheckingLoader() {
+      if (this._checkingLoader) return this._checkingLoader;
+      const host = $('updateCheckingLoaderHost');
+      this._checkingLoader = window._nekoModules?.components?.LoadingSystem?.create?.(host, {
+        context: 'search',
+        mode: 'section',
+        size: 'md',
+        label: '正在检查更新与来源…',
+      }) || null;
+      return this._checkingLoader;
+    },
+
     init(deps = {}) {
       this._deps = { ...(this._deps || {}), ...deps };
       this.bindBackendControls();
@@ -898,8 +912,7 @@
         }
 
         const origHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 0.8s linear infinite"></i> 保存中...';
-        btn.disabled = true;
+        window._nekoUIHelpers?.setButtonBusy?.(btn, true, { label: '保存中…' });
 
         try {
           const existingCfg = await getAllConfig?.() || {};
@@ -934,6 +947,7 @@
           await setManyConfig?.(payload);
           this._sourceCarouselIndex = targetSlotIndex >= 0 ? targetSlotIndex : Math.max(0, buildSourceList({ ...existingCfg, ...payload }).findIndex((source) => source.id === savedSource.id));
           this.renderSources({ ...existingCfg, ...payload });
+          window._nekoUIHelpers?.setButtonBusy?.(btn, false);
           btn.innerHTML = '<i class="ph ph-check-circle"></i> 已保存';
           addLogLine('SUCCESS', `${editSourceId ? '已修改' : '已保存'}更新源：${sourceTypeLabel(parsed.type)} - ${parsed.repoUrl}`);
           input.value = '';
@@ -943,6 +957,7 @@
           setTimeout(() => { btn.innerHTML = defaultSaveHtml || origHtml; btn.disabled = false; }, 1500);
         } catch (error) {
           addLogLine('ERROR', `更新源保存失败：${error.message}`);
+          window._nekoUIHelpers?.setButtonBusy?.(btn, false);
           btn.innerHTML = origHtml;
           btn.disabled = false;
         }
@@ -954,8 +969,8 @@
       const icon = $('checkUpdateIcon');
       if (btn) btn.disabled = true;
       if (icon) {
-        icon.className = 'ph ph-circle-notch';
-        icon.style.animation = 'spin 0.8s linear infinite';
+        icon.className = 'ph ph-circle-notch ph-spin';
+        icon.style.animation = '';
       }
       setBadge('info', '<i class="ph ph-arrows-clockwise"></i> Checking');
       this.startSourceDiagnosticsCheck();
@@ -991,7 +1006,7 @@
           return this.installPendingUpdate();
         }
         btn.disabled = true;
-        if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+        if (icon) { icon.className = 'ph ph-circle-notch ph-spin'; icon.style.animation = ''; }
         if (label) label.textContent = '下载中...';
         await this.downloadAndInstall(this._lastUpdateResult);
         if (btn._updateMode !== 'install-pending') {
@@ -1004,7 +1019,7 @@
 
       if (btn._updateMode === 'rollback-install' && btn._rollbackData) {
         btn.disabled = true;
-        if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+        if (icon) { icon.className = 'ph ph-circle-notch ph-spin'; icon.style.animation = ''; }
         if (label) label.textContent = '安装中...';
         await this.downloadAndInstall(btn._rollbackData);
         return btn._rollbackData;
@@ -1013,7 +1028,7 @@
       this.showCheckingProgress();
       btn.disabled = true;
       btn._updateMode = 'check';
-      if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+      if (icon) { icon.className = 'ph ph-circle-notch ph-spin'; icon.style.animation = ''; }
       if (label) label.textContent = '检查中...';
       this.startSourceDiagnosticsCheck();
 
@@ -1038,7 +1053,7 @@
         }
 
         if (result?.hasUpdate && result.forceUpdate) {
-          if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+          if (icon) { icon.className = 'ph ph-circle-notch ph-spin'; icon.style.animation = ''; }
           if (label) label.textContent = '强制安装中...';
           setBadge('error', `<i class="ph ph-warning"></i> 强更 ${versionText(result.latestVersion)}`);
           showNotice(`检测到强制更新 v${result.latestVersion}，正在自动下载...`, 'warn', 6000);
@@ -1191,7 +1206,7 @@
       clearTimeout(btn._confirmTimer);
       btn.classList.remove('confirming');
       btn.disabled = true;
-      if (icon) { icon.className = 'ph ph-circle-notch'; icon.style.animation = 'spin 0.8s linear infinite'; }
+      if (icon) { icon.className = 'ph ph-circle-notch ph-spin'; icon.style.animation = ''; }
       if (label) label.textContent = '查询中...';
 
       try {
@@ -1618,7 +1633,16 @@
       const progressBar = $('updateProgressBar');
       const progressLabel = $('updateProgressLabel');
       if (progressRow) progressRow.style.display = '';
-      if (progressBar) {
+      const loadingSystem = window._nekoModules?.components?.LoadingSystem;
+      const useCurve = loadingSystem?.getDiagnostics?.().enabled === true;
+      if (useCurve) {
+        if (progressBar) {
+          progressBar.style.display = 'none';
+          progressBar.classList.remove('indeterminate');
+        }
+        this.ensureCheckingLoader()?.setLabel?.(label)?.show?.();
+      } else if (progressBar) {
+        this._checkingLoader?.hide?.();
         progressBar.style.display = '';
         progressBar.classList.add('indeterminate');
       }
@@ -1633,6 +1657,7 @@
         progressBar.classList.remove('indeterminate');
       }
       if (progressRow) progressRow.style.display = 'none';
+      this._checkingLoader?.hide?.();
     },
 
     setProgressLabel(label) {
@@ -1647,6 +1672,7 @@
       const progressFill = $('updateProgressFill');
       const progressLabel = $('updateProgressLabel');
       if (progressRow) progressRow.style.display = '';
+      this._checkingLoader?.hide?.();
       if (progressBar) {
         progressBar.style.display = '';
         progressBar.classList.remove('indeterminate');

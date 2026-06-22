@@ -65,6 +65,7 @@
     getActiveWindow: stubInvoke,
     listWindows: stubInvoke,
     pickPrivacyWindow: stubInvoke,
+    pickActivityAppWindow: stubInvoke,
     getSystemInfo: stubInvoke,
     getBattery: stubInvoke,
     getMetrics: stubInvoke,
@@ -141,6 +142,14 @@
     minimize: stubInvoke,
     openExternal: stubInvoke,
     notify: stubInvoke,
+
+    // User following and foreground activity agent
+    getActivityState: stubInvoke,
+    updateActivitySettings: stubInvoke,
+    provisionActivityAgent: stubInvoke,
+    pauseActivityAgent: stubInvoke,
+    resumeActivityAgent: stubInvoke,
+    manageActivity: stubInvoke,
 
     // Dev
     emitRendererError: stubInvoke,

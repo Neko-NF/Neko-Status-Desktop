@@ -41,18 +41,24 @@ function configureUserDataPath({
   fsImpl = fs,
   isDevRuntime = false,
   displayName,
+  userDataDir,
   logger = console,
 }) {
   const appDataDir = app.getPath('appData');
   const targetName = isDevRuntime ? DEV_USER_DATA_DIR : PACKAGED_USER_DATA_DIR;
-  const targetDir = path.join(appDataDir, targetName);
+  const overrideDir = typeof userDataDir === 'string' && path.isAbsolute(userDataDir)
+    ? path.resolve(userDataDir)
+    : '';
+  const targetDir = overrideDir || path.join(appDataDir, targetName);
   const fallbackNames = [
     isDevRuntime ? 'Electron' : 'NekoStatus',
     isDevRuntime ? 'Neko Status Dev' : 'Neko Status',
     displayName,
     isDevRuntime ? 'NekoStatusDev' : 'neko_status',
   ].filter((name) => name && name !== targetName);
-  const sourceDirs = fallbackNames.map((name) => path.join(appDataDir, name));
+  const sourceDirs = overrideDir
+    ? []
+    : fallbackNames.map((name) => path.join(appDataDir, name));
 
   try {
     fsImpl.mkdirSync(targetDir, { recursive: true });

@@ -80,9 +80,5 @@ body::before {
 
 /* 加载旋转 */
 .ph-spin {
-    animation: spin 1.2s linear infinite;
-}
-
-@keyframes spin {
-    100% { transform: rotate(360deg); }
+    animation: neko-busy-spin 0.82s linear infinite;
 }

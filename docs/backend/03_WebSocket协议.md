@@ -2,6 +2,8 @@
 
 > WebSocket 端点：`wss://api.koirin.com/neko/ws`（生产）/ `ws://localhost:8080/neko/ws`（本地）
 
+> 用户关注与应用在线提醒不使用本文 WebSocket 通道。该功能使用 Rust Agent 连接 `/api/activity/events/stream` SSE；SSE 不可用时降级到 `/api/activity/events` 游标轮询。完整说明见 [用户关注与应用在线提醒](../用户关注与应用在线提醒/README.md)。
+
 ---
 
 ## 连接建立

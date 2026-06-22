@@ -88,6 +88,7 @@ function checkFileStructure() {
     'src/main/user-data-path.js',
     'src/main/status-service.js',
     'src/main/system-utils.js',
+    'src/main/activity-agent-controller.js',
     'src/main/api-service.js',
     'src/main/ipc/api.ipc.js',
     'src/main/ipc/auth.ipc.js',
@@ -97,6 +98,7 @@ function checkFileStructure() {
     'src/main/ipc/service.ipc.js',
     'src/main/ipc/update.ipc.js',
     'src/main/ipc/announcement.ipc.js',
+    'src/main/ipc/activity.ipc.js',
     'src/renderer/index.html',
     'src/renderer/developer-mode-panel.html',
     'src/renderer/css/main.css',
@@ -112,7 +114,10 @@ function checkFileStructure() {
     'src/renderer/js/services/stream-client.js',
     'src/renderer/js/services/update-client.js',
     'src/renderer/js/services/announcement-client.js',
+    'src/renderer/js/services/activity-client.js',
     'src/renderer/js/components/ui-helpers.js',
+    'src/renderer/js/components/loading-curves.js',
+    'src/renderer/js/components/loading-system.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
     'src/renderer/js/core/router.js',
@@ -141,6 +146,8 @@ function checkFileStructure() {
     'src/renderer/js/pages/auth.page.js',
     'src/renderer/js/pages/announcement.page.js',
     'src/renderer/js/pages/about.page.js',
+    'src/renderer/js/pages/activity.page.js',
+    'src/renderer/js/pages/ui-lab.page.js',
     'src/renderer/css/tokens.css',
     'src/renderer/css/base.css',
     'src/renderer/css/layout.css',
@@ -148,6 +155,10 @@ function checkFileStructure() {
     'src/renderer/css/developer-mode-panel.css',
     'src/renderer/css/pages.css',
     'src/renderer/css/legacy.css',
+    'src/renderer/css/loading-system.css',
+    'scripts/build-presence-agent.js',
+    'scripts/validate-presence-agent.js',
+    'native/presence-agent/Cargo.toml',
   ];
 
   for (const f of required) {
@@ -180,7 +191,10 @@ function checkRendererSplitSyntax() {
     'src/renderer/js/services/stream-client.js',
     'src/renderer/js/services/update-client.js',
     'src/renderer/js/services/announcement-client.js',
+    'src/renderer/js/services/activity-client.js',
     'src/renderer/js/components/ui-helpers.js',
+    'src/renderer/js/components/loading-curves.js',
+    'src/renderer/js/components/loading-system.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
     'src/renderer/js/core/router.js',
@@ -209,6 +223,8 @@ function checkRendererSplitSyntax() {
     'src/renderer/js/pages/auth.page.js',
     'src/renderer/js/pages/announcement.page.js',
     'src/renderer/js/pages/about.page.js',
+    'src/renderer/js/pages/activity.page.js',
+    'src/renderer/js/pages/ui-lab.page.js',
   ];
 
   for (const relPath of modules) {
@@ -257,9 +273,21 @@ function checkHtmlIds() {
     'updateDialogInstallBtn',
     // 活动流
     'activityList',
+    // 关注动态
+    'navActivity',
+    'page-activity',
+    'activityEnabledSwitch',
+    'activityAgentBadge',
+    'activityUserSearchInput',
     // 仪表盘
     'batteryValue',
     'healthValue',
+    // UI 实验室
+    'navUiLab',
+    'page-ui-lab',
+    'uiLabCurveGrid',
+    'uiLabPreviewStage',
+    'stgExperimentalUiLabSwitch',
   ];
 
   for (const id of requiredIds) {
@@ -280,6 +308,7 @@ function checkCssConsistency() {
     'src/renderer/css/components.css',
     'src/renderer/css/pages.css',
     'src/renderer/css/legacy.css',
+    'src/renderer/css/loading-system.css',
     'src/renderer/css/main.css'
   ];
   let css = '';
@@ -302,6 +331,8 @@ function checkCssConsistency() {
     'glass-card',
     'toggle-switch',
     'neko-island',
+    'neko-loading',
+    'ui-lab-layout',
   ];
 
   for (const cls of criticalClasses) {
@@ -378,6 +409,11 @@ function checkConfigDefaults() {
     'deviceKey', 'reportInterval', 'enableScreenshot',
     'autoCheckUpdate', 'updateChannel', 'skippedVersion',
     'githubOwner', 'githubRepo',
+    'enableActivityFeature', 'enableActivityPublishing', 'enableActivitySnapshots',
+    'enableActivityBackground', 'enableActivityAutoStart',
+    'activityDeviceId', 'activityDeviceName',
+    'enableExperimentalUiLabEntry', 'enableExperimentalCurveLoaders',
+    'loadingCurveStyle',
   ];
 
   for (const key of requiredKeys) {
@@ -462,6 +498,182 @@ function checkActivityFeed() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  7b. 用户关注活动功能检查
+// ═══════════════════════════════════════════════════════════════
+function checkActivityPresenceFeature() {
+  section('用户关注活动功能完整性检查');
+  const contracts = readFile('src/shared/ipc-contracts.js') || '';
+  const schemas = readFile('src/shared/schemas.js') || '';
+  const main = readFile('src/main/main.js') || '';
+  const controller = readFile('src/main/activity-agent-controller.js') || '';
+  const ipc = readFile('src/main/ipc/activity.ipc.js') || '';
+  const configIpc = readFile('src/main/ipc/config.ipc.js') || '';
+  const preload = readFile('src/preload/index.js') || '';
+  const html = readFile('src/renderer/index.html') || '';
+  const page = readFile('src/renderer/js/pages/activity.page.js') || '';
+  const settingsPage = readFile('src/renderer/js/pages/settings.page.js') || '';
+  const service = readFile('src/renderer/js/services/activity-client.js') || '';
+  const css = readFile('src/renderer/css/pages.css') || '';
+  const pkg = readFile('package.json') || '';
+
+  if (contracts.includes('ACTIVITY_GET_STATE') && contracts.includes('ACTIVITY_STATE_CHANGED') && contracts.includes('ACTIVITY_PICK_APP_WINDOW')) pass('Activity IPC 契约已集中定义');
+  else fail('Activity IPC 契约缺失');
+
+  if (schemas.includes('validateActivitySettingsPayload') && schemas.includes('validateActivityManagePayload')) pass('Activity payload schema 已定义');
+  else fail('Activity payload schema 缺失');
+
+  if (main.includes('activityAgent') && ipc.includes('registerActivityIpc')) pass('主进程注册 Activity IPC 和 Agent 控制器');
+  else fail('主进程 Activity 注册不完整');
+
+  if (preload.includes('getActivityState') && service.includes('ActivityClient')) pass('preload 与 renderer service 暴露 Activity API');
+  else fail('Activity renderer 调用链不完整');
+
+  if (page.includes('ActivityPage') && page.includes('activityAgentBadge')) pass('关注动态页面已接入 ActivityPage');
+  else fail('关注动态页面缺少核心绑定');
+
+  if (!page.includes('window.nekoIPC') && service.includes('IpcClient')) pass('Activity renderer 遵循 service 分层，不直接调用底层 IPC');
+  else fail('Activity renderer 可能绕过 service 层直接调用 IPC');
+
+  if (page.includes('confirmActivityDanger') && page.includes('window.confirm') && page.includes('toggle-app')) pass('关注动态危险操作包含二次确认');
+  else fail('关注动态危险操作缺少确认保护');
+
+  if (html.includes('aria-label="启用关注动态"') && html.includes('aria-live="polite"') && page.includes('aria-pressed')) pass('关注动态 UI 包含基础可访问性语义');
+  else fail('关注动态 UI 可访问性语义不完整');
+
+  if (html.includes('activity-empty') && html.includes('activity-security-note') && page.includes('没有找到匹配的用户')) pass('关注动态包含空状态、安全说明和搜索失败状态');
+  else fail('关注动态缺少必要状态文案');
+
+  if (html.includes('activity-guide-strip') && html.includes('activity-app-composer') && html.includes('activityPageStatus') && html.includes('activityActiveAppBtn')) pass('关注动态包含引导步骤、主动公开应用和保存状态反馈');
+  else fail('关注动态缺少新的用户引导或主动公开应用入口');
+
+  if (page.includes('pickActivityAppWindow') && !page.includes('getActiveWindow')) pass('公开应用选择复用窗口框选，不读取点击后的当前前台窗口');
+  else fail('公开应用选择仍可能读取 Neko 自身作为当前前台窗口');
+
+  const settingsStart = html.indexOf('id="page-settings"');
+  const aboutStart = html.indexOf('id="page-about"');
+  const streamStart = html.indexOf('id="page-stream"');
+  const settingsSection = settingsStart >= 0 && aboutStart > settingsStart ? html.slice(settingsStart, aboutStart) : '';
+  const streamSection = streamStart >= 0 && settingsStart > streamStart ? html.slice(streamStart, settingsStart) : '';
+  if (
+    html.includes('stgExperimentalActivitySwitch')
+    && html.includes('stgExperimentalStreamSwitch')
+    && !settingsSection.includes('id="settings-stream"')
+    && !settingsSection.includes('id="srsHost"')
+    && streamSection.includes('id="settings-stream"')
+  ) pass('实验性设置页只保留入口开关，直播推流配置位于直播推流页');
+  else fail('实验性设置页仍混入直播推流配置或缺少独立入口开关');
+
+  if (
+    css.includes('.settings-row.settings-experimental-entry-row')
+    && css.includes('.settings-experimental-shell.is-experimental-expanded .settings-row.settings-experimental-entry-row')
+    && css.includes('border-bottom-width: 0')
+  ) pass('实验性入口开关使用高优先级折叠动画样式，避免被通用设置行覆盖');
+  else fail('实验性入口开关折叠样式可能被通用 settings-row 覆盖');
+
+  if (
+    configIpc.includes('enableExperimentalFeatures: false')
+    && configIpc.includes('enableExperimentalActivityEntry: false')
+    && configIpc.includes('enableExperimentalStreamEntry: false')
+    && configIpc.includes('enableActivityPublishing: false')
+    && configIpc.includes('enableActivityBackground: false')
+    && settingsPage.includes('setMany?.(payload)')
+  ) pass('实验总开关关闭会清理实验入口和关注动态运行状态');
+  else fail('实验总开关关闭未兜底清理子功能状态');
+
+  const configDefaults = readFile('src/main/config-store.helpers.js') || '';
+  const runtimeInit = readFile('src/renderer/js/core/app-init-runtime.js') || '';
+  if (configDefaults.includes('https://nekostatus.koirin.com') && runtimeInit.includes('https://nekostatus.koirin.com')) pass('Dev 默认测试服务器地址固定为 nekostatus.koirin.com');
+  else fail('默认测试服务器地址可能回退到旧地址');
+
+  if (
+    html.includes('默认不上传截图，快照提醒需单独开启')
+    && html.includes('id="activitySnapshotsSwitch"')
+    && controller.includes('activityDeviceId')
+    && controller.includes('snapshotProfileFields')
+    && !controller.includes('请先生成设备密钥')
+  ) pass('关注动态的活动快照与完整截图上报在文案、配置和设备身份上解耦');
+  else fail('关注动态仍可能与截图/完整状态上报产生耦合感');
+
+  if (schemas.includes("'upsertApp'") && ipc.includes("case 'upsertApp'") && service.includes('upsertApp') && page.includes('setPageStatus')) pass('关注动态支持发布者主动公开应用，并具备弱网保存反馈');
+  else fail('关注动态缺少主动公开应用或弱网保存反馈链路');
+
+  const activityCssStart = css.indexOf('/* 用户关注与前台应用在线提醒 */');
+  const activityCssEnd = css.indexOf('/* 禁用表格行缩放', activityCssStart);
+  const activityCss = activityCssStart >= 0 && activityCssEnd > activityCssStart
+    ? css.slice(activityCssStart, activityCssEnd)
+    : '';
+  const hardcodedColors = activityCss.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
+  if (activityCss.includes('.activity-page-shell .action-btn.x-small') && activityCss.includes('min-height: 40px') && activityCss.includes('focus-visible')) pass('关注动态样式满足触达尺寸和键盘焦点要求');
+  else fail('关注动态样式缺少触达尺寸或焦点态');
+
+  if (activityCss && hardcodedColors.length === 0) pass('关注动态样式使用主题变量，未新增硬编码颜色');
+  else fail(`关注动态样式存在硬编码颜色: ${hardcodedColors.join(', ')}`);
+
+  if (controller.includes('NekoPresenceAgent.exe') && controller.includes('claim_tray')) pass('Agent 控制器包含代理路径和托盘租约');
+  else fail('Agent 控制器缺少代理路径或托盘租约');
+
+  if (pkg.includes('build:agent') && pkg.includes('test:agent') && pkg.includes('validate:agent') && pkg.includes('build/native/NekoPresenceAgent.exe')) pass('package 构建配置包含 Agent 构建与打包资源');
+  else fail('package 构建配置缺少 Agent 集成');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  7c. 数学曲线加载系统检查
+// ═══════════════════════════════════════════════════════════════
+function checkCurveLoadingSystem() {
+  section('数学曲线加载系统完整性检查');
+  const curves = readFile('src/renderer/js/components/loading-curves.js') || '';
+  const loading = readFile('src/renderer/js/components/loading-system.js') || '';
+  const runtime = readFile('src/renderer/js/core/app-runtime.js') || '';
+  const html = readFile('src/renderer/index.html') || '';
+  const configDefaults = readFile('src/main/config-store.helpers.js') || '';
+  const configIpc = readFile('src/main/ipc/config.ipc.js') || '';
+  const startupMain = readFile('src/main/main.js') || '';
+  const startupRenderer = readFile('src/renderer/js/startup-update.js') || '';
+
+  const presetIds = [
+    'neko-head', 'neko-paw', 'neko-tail', 'rose-five', 'rose-seven',
+    'lissajous-drift', 'lemniscate-bloom', 'hypotrochoid-loop',
+    'cardioid-pulse', 'spiral-search', 'butterfly-phase', 'fourier-flow',
+  ];
+  const missingPresets = presetIds.filter((id) => !curves.includes(`id: '${id}'`));
+  if (missingPresets.length === 0) pass('曲线注册表包含首发 12 个稳定预设 ID');
+  else fail(`曲线注册表缺少预设: ${missingPresets.join(', ')}`);
+
+  if (loading.includes('MAX_ACTIVE = 4') && loading.includes('requestAnimationFrame') && loading.includes('IntersectionObserver')) {
+    pass('加载系统包含共享 RAF、4 实例上限与离屏暂停');
+  } else {
+    fail('加载系统调度器性能门禁不完整');
+  }
+
+  if (loading.includes('prefers-reduced-motion: reduce') && loading.includes("role', 'status'") && loading.includes("aria-live', 'polite'")) {
+    pass('加载系统包含减少动态效果和状态可访问性语义');
+  } else {
+    fail('加载系统可访问性门禁不完整');
+  }
+
+  if (runtime.includes('loadingSystem()?.applyPreferences') && runtime.includes('UiLabPage')) pass('AppRuntime 接入加载偏好与 UI 实验室');
+  else fail('AppRuntime 未完整接入曲线加载系统');
+
+  if (html.includes('data-target="page-ui-lab"') && html.includes('ui-lab-curve-grid') && html.includes('uiLabDiagActive')) pass('UI 实验室包含入口、静态画廊与性能诊断');
+  else fail('UI 实验室结构不完整');
+
+  if (
+    configDefaults.includes('enableExperimentalUiLabEntry: false')
+    && configDefaults.includes('enableExperimentalCurveLoaders: false')
+    && configDefaults.includes("loadingCurveStyle: 'auto'")
+    && configIpc.includes('enableExperimentalUiLabEntry: false')
+    && configIpc.includes('enableExperimentalCurveLoaders: false')
+  ) pass('曲线加载实验配置默认关闭并受全局实验开关联动');
+  else fail('曲线加载实验配置门禁不完整');
+
+  if (startupMain.includes('enableExperimentalCurveLoaders') && startupMain.includes('loadingCurveStyle') && startupRenderer.includes('loadingSystem?.create')) {
+    pass('启动更新状态向后兼容地接入曲线加载器');
+  } else {
+    fail('启动更新曲线加载接入不完整');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  8. IPC 通道基本一致性
 // ═══════════════════════════════════════════════════════════════
 function checkIpcChannels() {
@@ -479,6 +691,9 @@ function checkIpcChannels() {
     ['config:get', 'IPC_CHANNELS.CONFIG_GET'],
     ['config:set', 'IPC_CHANNELS.CONFIG_SET'],
     ['update:download', 'IPC_CHANNELS.UPDATE_DOWNLOAD'],
+    ['activity:getState', 'IPC_CHANNELS.ACTIVITY_GET_STATE'],
+    ['activity:updateSettings', 'IPC_CHANNELS.ACTIVITY_UPDATE_SETTINGS'],
+    ['activity:manage', 'IPC_CHANNELS.ACTIVITY_MANAGE'],
   ];
 
   for (const [channel, constantName] of criticalHandles) {
@@ -515,6 +730,8 @@ checkTextEncodingPollution();
 checkConfigDefaults();
 checkUpdateSystem();
 checkActivityFeed();
+checkActivityPresenceFeature();
+checkCurveLoadingSystem();
 checkIpcChannels();
 
 // ── 汇总 ─────────────────────────────────────────────────────

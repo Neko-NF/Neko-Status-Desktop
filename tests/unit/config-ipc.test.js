@@ -3,18 +3,33 @@ const assert = require('node:assert/strict');
 
 function createMocks() {
   const handlers = {};
+  const activityCalls = [];
   return {
     ipcMain: {
       handle(channel, fn) { handlers[channel] = fn; },
     },
     handlers,
     configStore: {
-      _data: { deviceKey: 'dev-key' },
+      _data: {
+        deviceKey: 'dev-key',
+        enableActivityFeature: true,
+        enableActivityPublishing: true,
+        enableActivityBackground: true,
+      },
       get(key) { return this._data[key]; },
       set(key, value) { this._data[key] = value; },
       setMany(values) { Object.assign(this._data, values); },
       getAll() { return { ...this._data }; },
     },
+    activityAgent: {
+      async revoke(reason) {
+        activityCalls.push(['revoke', reason]);
+      },
+      isEnabled() {
+        return false;
+      },
+    },
+    activityCalls,
   };
 }
 
@@ -53,5 +68,34 @@ describe('registerConfigIpc', () => {
     assert.equal(setManyResult.ok, true);
     assert.equal(mocks.configStore.get('reportInterval'), 10);
     assert.equal(mocks.configStore.get('enableScreenshot'), true);
+  });
+
+  it('disabling the activity entry also stops activity publishing and the agent', async () => {
+    const result = await handlers['config:setMany'](null, {
+      enableExperimentalActivityEntry: false,
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(mocks.activityCalls, [['revoke', 'disable']]);
+    assert.equal(mocks.configStore.get('enableExperimentalActivityEntry'), false);
+    assert.equal(mocks.configStore.get('enableActivityFeature'), false);
+    assert.equal(mocks.configStore.get('enableActivityPublishing'), false);
+    assert.equal(mocks.configStore.get('enableActivityBackground'), false);
+  });
+
+  it('disabling all experiments hides the UI lab and curve loaders but preserves the selected style', async () => {
+    mocks.configStore.setMany({
+      enableExperimentalFeatures: true,
+      enableExperimentalUiLabEntry: true,
+      enableExperimentalCurveLoaders: true,
+      loadingCurveStyle: 'neko-paw',
+    });
+
+    const result = await handlers['config:setMany'](null, { enableExperimentalFeatures: false });
+
+    assert.equal(result.ok, true);
+    assert.equal(mocks.configStore.get('enableExperimentalUiLabEntry'), false);
+    assert.equal(mocks.configStore.get('enableExperimentalCurveLoaders'), false);
+    assert.equal(mocks.configStore.get('loadingCurveStyle'), 'neko-paw');
   });
 });

@@ -5,12 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neko Status - 启动更新</title>
     <link rel="stylesheet" href="./css/tokens.css">
+    <link rel="stylesheet" href="./css/loading-system.css">
     <link rel="stylesheet" href="./css/startup-update.css">
 </head>
 <body>
     <main class="startup-shell">
         <section class="startup-panel" aria-live="polite">
-            <div class="brand-mark">N</div>
+            <div class="startup-visual">
+                <div class="brand-mark">N</div>
+                <div class="startup-curve-stage" id="startupCurveLoaderStage"></div>
+            </div>
             <div class="startup-copy">
                 <h1 id="startupTitle">正在准备 Neko Status</h1>
                 <p id="startupDesc">启动前检查更新，失败时会自动继续打开软件。</p>
@@ -22,6 +26,8 @@
         </section>
     </main>
     <script src="./js/services/ipc-client.js"></script>
+    <script src="./js/components/loading-curves.js"></script>
+    <script src="./js/components/loading-system.js"></script>
     <script src="./js/startup-update.js"></script>
 </body>
 </html>

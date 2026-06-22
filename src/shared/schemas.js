@@ -118,6 +118,30 @@ function validateStreamConfigPayload(payload) {
   return { ok: true };
 }
 
+const ACTIVITY_MANAGE_ACTIONS = new Set([
+  'bootstrap', 'searchUsers', 'follow', 'unfollow',
+  'createRule', 'updateRule', 'deleteRule',
+  'getPrivacy', 'setPrivacy', 'getApps', 'upsertApp', 'setAppHidden',
+  'getFollowers', 'getBlocks', 'block', 'unblock',
+]);
+
+function validateActivitySettingsPayload(payload) {
+  if (!isPlainObject(payload)) return { ok: false, reason: 'payload must be an object' };
+  for (const key of ['enabled', 'publishing', 'snapshots', 'background', 'autoStart']) {
+    if (payload[key] !== undefined && typeof payload[key] !== 'boolean') {
+      return { ok: false, reason: `${key} must be a boolean when provided` };
+    }
+  }
+  return { ok: true };
+}
+
+function validateActivityManagePayload(payload) {
+  if (!isPlainObject(payload)) return { ok: false, reason: 'payload must be an object' };
+  if (!ACTIVITY_MANAGE_ACTIONS.has(payload.action)) return { ok: false, reason: 'unsupported activity action' };
+  if (payload.data !== undefined && !isPlainObject(payload.data)) return { ok: false, reason: 'activity data must be an object' };
+  return { ok: true };
+}
+
 const DEVELOPER_MODE_COMMAND_ACTIONS = new Set([
   'disable',
   'panel-closed',
@@ -312,6 +336,8 @@ module.exports = {
   validateConfigKeyPayload,
   validateConfigValuesPayload,
   validateStreamConfigPayload,
+  validateActivitySettingsPayload,
+  validateActivityManagePayload,
   validateDeveloperModeCommandPayload,
   validateDeveloperModePanelStatePayload,
   validateAnnouncementPayload,

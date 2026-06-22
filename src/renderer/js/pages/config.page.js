@@ -16,12 +16,19 @@
 
   function setButtonFeedback(button, html, className) {
     if (!button) return;
+    if (/ph-spinner|ph-circle-notch/.test(html)) {
+      const label = String(html).replace(/<[^>]+>/g, '').trim() || '处理中…';
+      window._nekoUIHelpers?.setButtonBusy?.(button, true, { label });
+      return;
+    }
+    window._nekoUIHelpers?.setButtonBusy?.(button, false);
     button.innerHTML = html;
     if (className) button.classList.add(className);
   }
 
   function resetButtonFeedback(button, originalHtml, className) {
     if (!button) return;
+    window._nekoUIHelpers?.setButtonBusy?.(button, false);
     button.innerHTML = originalHtml;
     if (className) button.classList.remove(className);
     button.disabled = false;

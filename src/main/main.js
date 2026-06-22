@@ -16,7 +16,12 @@ const APP_NAME = IS_DEV_RUNTIME ? 'Neko Status Dev' : 'Neko Status';
 const APP_USER_MODEL_ID = IS_DEV_RUNTIME ? 'com.koirin.neko-status.dev' : 'com.koirin.neko-status';
 app.setName(APP_NAME);
 app.setAppUserModelId(APP_USER_MODEL_ID);
-configureUserDataPath({ app, isDevRuntime: IS_DEV_RUNTIME, displayName: APP_NAME });
+configureUserDataPath({
+  app,
+  isDevRuntime: IS_DEV_RUNTIME,
+  displayName: APP_NAME,
+  userDataDir: process.env.NEKO_USER_DATA_DIR,
+});
 
 if (process.env.NEKO_DISABLE_HW_ACCEL === '1') {
   app.disableHardwareAcceleration();
@@ -43,6 +48,7 @@ const statusService = require('./status-service');
 const systemUtils   = require('./system-utils');
 const apiService    = require('./api-service');
 const streamService = require('./stream-service');
+const { ActivityAgentController } = require('./activity-agent-controller');
 const { createAppShell } = require('./app-shell');
 const {
   registerConfigIpc,
@@ -54,6 +60,7 @@ const {
   registerUpdateIpc,
   registerDeveloperModeIpc,
   registerAnnouncementIpc,
+  registerActivityIpc,
 } = require('./ipc');
 const {
   runStartupUpdateGate,
@@ -82,6 +89,9 @@ const {
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
 const APP_VERSION = app.getVersion();
+const activityAgent = new ActivityAgentController({ app, configStore });
+let activityExitAllRequested = false;
+let activityQuitPrepared = false;
 
 function writeStartupDiagnostic(label, error) {
   const message = [
@@ -228,6 +238,7 @@ async function removeCacheTargets(sessionRef) {
 }
 
 function launchInstaller(filePath, { silent = true, relaunchAfterInstall = true } = {}) {
+  activityAgent.shutdownForUpdateSync();
   return launchUpdateInstaller(filePath, {
     silent,
     relaunchAfterInstall,
@@ -276,6 +287,12 @@ const appShell = createAppShell({
   setIsQuitting: (value) => { isQuitting = value; },
   getPrivacyPickerWindow: () => privacyPickerWindow,
   setPrivacyPickerWindow: (value) => { privacyPickerWindow = value; },
+  activityAgent,
+  requestActivityQuit: (exitAll) => {
+    activityExitAllRequested = exitAll === true;
+    isQuitting = true;
+    app.quit();
+  },
 });
 
 const {
@@ -342,6 +359,9 @@ function sendStartupUpdateStatus(payload) {
     themeColor: configStore.get('seedColor') || configStore.get('themeColor') || '#0ea5e9',
     customThemeColor: configStore.get('customSeedColor') || '',
     themeMode: configStore.get('themeMode') || 'dark',
+    enableExperimentalFeatures: configStore.get('enableExperimentalFeatures') === true,
+    enableExperimentalCurveLoaders: configStore.get('enableExperimentalCurveLoaders') === true,
+    loadingCurveStyle: configStore.get('loadingCurveStyle') || 'auto',
   };
   pendingStartupStatus = themePayload;
   if (startupUpdateWindow && !startupUpdateWindow.isDestroyed() && startupUpdateWindow.webContents) {
@@ -375,8 +395,11 @@ if (!gotTheLock) {
   });
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv = []) => {
     showWindow();
+    if (argv.some((arg) => arg === '--page=activity')) {
+      sendToRenderer(IPC_EVENTS.APP_OPEN_PAGE, { page: 'page-activity' });
+    }
   });
 }
 
@@ -448,7 +471,7 @@ function showNotification(title, body) {
 // ═══════════════════════════════════════════════════════════════════════
 function setupIPC() {
   // ── 配置存取 ──────────────────────────────────────────────────────────
-  registerConfigIpc({ ipcMain, configStore });
+  registerConfigIpc({ ipcMain, configStore, activityAgent });
 
   // ── 上报服务、开机自启、进程信息、权限检测与体检 ──────────────────────
   registerServiceIpc({
@@ -487,7 +510,10 @@ function setupIPC() {
   registerStreamIpc({ ipcMain, streamService });
 
   // ── 用户认证 ──────────────────────────────────────────────────────────
-  registerAuthIpc({ ipcMain, os, configStore, statusService, apiService });
+  registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, activityAgent });
+
+  // ── 用户关注、应用规则与原生后台代理 ──────────────────────────────────
+  registerActivityIpc({ ipcMain, configStore, activityAgent });
 
   // ── 更新检查、通道、下载、安装、Changelog、回滚 ──────────────────────
   registerUpdateIpc({
@@ -1048,6 +1074,9 @@ async function waitForNetwork(timeoutMs = 30000) {
 app.whenReady().then(async () => {
   traceStartup('whenReady entered', `packaged=${app.isPackaged}`);
   ensureWindowsAppIdentity();
+  if (process.argv.some((arg) => arg === '--page=activity')) {
+    configStore.set('lastPage', 'page-activity');
+  }
   setupIPC();
   const shouldAutoDownload = configStore.get('autoDownload') === true;
   const pendingInstall = configStore.get('pendingInstall');
@@ -1075,6 +1104,15 @@ app.whenReady().then(async () => {
 
   traceStartup('create main window begin');
   createWindow();
+  if (activityAgent.isEnabled()) {
+    const startupAgent = await activityAgent.ensureRunning();
+    if (startupAgent.ok) {
+      const status = await activityAgent.getStatus();
+      if (status.provisioned) await activityAgent.syncProfile();
+      else if (configStore.get('authToken') && configStore.get('deviceId')) await activityAgent.provision();
+      await activityAgent.claimTray();
+    }
+  }
   traceStartup('create tray begin');
   createTray();
   traceStartup('shell created');
@@ -1091,6 +1129,10 @@ app.whenReady().then(async () => {
     sendToRenderer(IPC_EVENTS.SERVICE_STATUS_CHANGED, { isRunning });
     refreshTrayMenu();
     showNotification('服务状态变更', isRunning ? '上报服务已启动' : '上报服务已停止');
+  });
+  activityAgent.setStatusChangedCallback((state) => {
+    sendToRenderer(IPC_EVENTS.ACTIVITY_STATE_CHANGED, state);
+    refreshTrayMenu();
   });
   statusService.setKeyStatusCallback((code, message) => {
     sendToRenderer(IPC_EVENTS.SERVICE_KEY_STATUS, { code, message });
@@ -1202,7 +1244,18 @@ app.on('window-all-closed', () => {
   if (isQuitting) app.quit();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!activityQuitPrepared && activityAgent.isEnabled()) {
+    event.preventDefault();
+    activityQuitPrepared = true;
+    if (tray && !tray.isDestroyed()) tray.destroy();
+    tray = null;
+    activityAgent.releaseForAppExit({
+      exitAll: activityExitAllRequested,
+      reason: activityExitAllRequested ? 'session' : 'session',
+    }).finally(() => setTimeout(() => app.quit(), 0));
+    return;
+  }
   isQuitting = true;
   statusService.stop();
   streamService.disconnectObs();

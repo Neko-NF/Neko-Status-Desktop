@@ -95,6 +95,55 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
+.startup-visual {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+}
+
+.startup-curve-stage {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-fast, 180ms) ease;
+}
+
+.startup-curve-stage .neko-loading {
+    min-height: 0;
+    padding: 0;
+}
+
+.startup-curve-stage .neko-loading-visual {
+    width: 72px;
+    height: 72px;
+}
+
+.startup-curve-stage .neko-loading-label {
+    display: none;
+}
+
+.startup-panel.has-curve-loader .brand-mark {
+    opacity: 0;
+}
+
+.startup-panel.has-curve-loader .startup-curve-stage {
+    opacity: 1;
+}
+
+.startup-panel.has-curve-loader .progress-track.is-indeterminate {
+    opacity: 0;
+}
+
+.brand-mark,
+.progress-track {
+    transition: opacity var(--motion-fast, 180ms) ease;
+}
+
 .startup-copy {
     display: flex;
     flex-direction: column;

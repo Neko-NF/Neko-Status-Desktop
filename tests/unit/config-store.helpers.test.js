@@ -21,6 +21,11 @@ test('mergeDefaults fills missing nested stream config keys', () => {
   assert.equal(merged.streamConfig.obsWsPort, 4455);
 });
 
+test('activity snapshots are private by default', () => {
+  assert.equal(mergeDefaults({}).enableActivitySnapshots, false);
+  assert.equal(mergeDefaults({ enableActivitySnapshots: true }).enableActivitySnapshots, true);
+});
+
 test('mergeDefaults repairs legacy API port copied from RTMP port', () => {
   const merged = mergeDefaults({
     streamConfig: {
@@ -43,4 +48,33 @@ test('mergeDefaults disables legacy incognito mode on startup', () => {
   assert.equal(merged.enableIncognito, false);
   assert.equal(merged.incognitoScope, 'both');
   assert.deepEqual(merged.privacyRules, ['Code.exe']);
+});
+
+test('enabling experimental features does not implicitly expose the activity entry', () => {
+  const merged = mergeDefaults({
+    enableExperimentalFeatures: true,
+  });
+
+  assert.equal(merged.enableExperimentalActivityEntry, false);
+  assert.equal(merged.enableExperimentalStreamEntry, true);
+  assert.equal(merged.enableExperimentalUiLabEntry, false);
+  assert.equal(merged.enableExperimentalCurveLoaders, false);
+  assert.equal(merged.loadingCurveStyle, 'auto');
+});
+
+test('loading curve preference preserves future ids and repairs non-string legacy values', () => {
+  assert.equal(mergeDefaults({ loadingCurveStyle: 'future-curve' }).loadingCurveStyle, 'future-curve');
+  assert.equal(mergeDefaults({ loadingCurveStyle: null }).loadingCurveStyle, 'auto');
+});
+
+test('disabled global experiments close UI lab and curve loader flags but retain style', () => {
+  const merged = mergeDefaults({
+    enableExperimentalFeatures: false,
+    enableExperimentalUiLabEntry: true,
+    enableExperimentalCurveLoaders: true,
+    loadingCurveStyle: 'rose-seven',
+  });
+  assert.equal(merged.enableExperimentalUiLabEntry, false);
+  assert.equal(merged.enableExperimentalCurveLoaders, false);
+  assert.equal(merged.loadingCurveStyle, 'rose-seven');
 });

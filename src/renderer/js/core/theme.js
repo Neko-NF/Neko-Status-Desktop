@@ -193,7 +193,8 @@
     const normalizedColor = normalizeThemeColorInput(color);
     if (!normalizedColor) return false;
     const customColor = normalizeThemeColorInput(options.customColor || getSavedCustomThemeColor()) || normalizedColor;
-    document.documentElement.style.setProperty('--theme-color', normalizedColor);
+    document.documentElement.style.setProperty('--theme-color-seed', normalizedColor);
+    document.documentElement.style.removeProperty('--theme-color');
     localStorage.setItem('neko-theme-color', normalizedColor);
     localStorage.setItem('neko-custom-theme-color', customColor);
     syncThemeColorUI(normalizedColor, customColor);
@@ -220,7 +221,12 @@
 
   /** 获取当前主题色 */
   function getCurrentThemeColor() {
-    return getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || DEFAULT_THEME_COLOR;
+    const bodyColor = document.body
+      ? getComputedStyle(document.body).getPropertyValue('--theme-color').trim()
+      : '';
+    return bodyColor
+      || getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim()
+      || DEFAULT_THEME_COLOR;
   }
 
   function initThemeColorControls() {

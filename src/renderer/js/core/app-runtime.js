@@ -55,6 +55,10 @@
   const announcementPage = () => window._nekoModules?.pages?.AnnouncementPage || null;
   const aboutPage = () => window._nekoModules?.pages?.AboutPage || null;
   const servicePage = () => window._nekoModules?.pages?.ServicePage || null;
+  const activityPage = () => window._nekoModules?.pages?.ActivityPage || null;
+  const uiLabPage = () => window._nekoModules?.pages?.UiLabPage || null;
+  const loadingSystem = () => window._nekoModules?.components?.LoadingSystem || null;
+  const loadingCurves = () => window._nekoModules?.components?.LoadingCurves || null;
   const experimentalFeatures = window._nekoModules?.components?.ExperimentalFeatures?.create?.({
     setExpandableSectionState,
   });
@@ -321,6 +325,15 @@
     system: systemClient(),
   });
 
+  uiLabPage()?.init?.({
+    addLogLine,
+    showNotice: showNekoIsland,
+    applyExperimentalFeatureState,
+    config: configClient(),
+    loading: loadingSystem(),
+    curves: loadingCurves(),
+  });
+
   updatePage()?.init?.({
     addLogLine,
     showNotice: showNekoIsland,
@@ -332,6 +345,8 @@
   aboutPage()?.init?.({
     openExternal: (url) => callSystem('openExternal', 'openExternal', url),
   });
+
+  activityPage()?.init?.({ showNotice: showNekoIsland });
 
   // ══════════════════════════════════════════════════════════════
   //  关键权限详情折叠切换
@@ -354,7 +369,10 @@
     return 'stable';
   }
   function applyExperimentalFeatureState(cfg = {}) {
-    return experimentalFeatures?.applyState?.(cfg);
+    const result = experimentalFeatures?.applyState?.(cfg);
+    loadingSystem()?.applyPreferences?.(cfg);
+    uiLabPage()?.applyConfig?.(cfg);
+    return result;
   }
 
   /** Render online changelog entries through UpdatePage. */

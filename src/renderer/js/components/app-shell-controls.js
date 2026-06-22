@@ -20,7 +20,10 @@
     }
 
     const savedColor = localStorage.getItem('neko-theme-color');
-    if (savedColor) document.documentElement.style.setProperty('--theme-color', savedColor);
+    if (savedColor) {
+      document.documentElement.style.setProperty('--theme-color-seed', savedColor);
+      document.documentElement.style.removeProperty('--theme-color');
+    }
   }
 
   function getConfigClient() {
@@ -154,8 +157,9 @@
     $('closeProfileBtn')?.addEventListener('click', closeProfile);
     $('saveProfileBtn')?.addEventListener('click', function handleProfileSave() {
       const originalHtml = this.innerHTML;
-      this.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
+      window._nekoUIHelpers?.setButtonBusy?.(this, true, { label: '保存中…' });
       setTimeout(() => {
+        window._nekoUIHelpers?.setButtonBusy?.(this, false);
         this.innerHTML = '<i class="ph ph-check-circle"></i> 已保存';
         setTimeout(() => {
           closeProfile();

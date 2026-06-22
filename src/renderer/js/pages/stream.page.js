@@ -140,13 +140,13 @@
     },
 
     bindEvents() {
+      replaceHandler('goToStreamSettings', () => {
+        $('settings-stream')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('srsHost')?.focus?.();
+      });
+
       const client = streamClient();
       if (!client?.isReady?.()) return;
-
-      replaceHandler('goToStreamSettings', () => {
-        document.querySelector('.nav-item[data-target="page-settings"]')?.click();
-        setTimeout(() => $('settings-stream')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
-      });
 
       replaceHandler('copyRtmpUrlBtn', async () => {
         const value = $('streamRtmpUrl')?.textContent || '';
@@ -168,11 +168,7 @@
 
       replaceHandler('saveSrsSettingsBtn', async () => {
         const btn = $('saveSrsSettingsBtn');
-        const original = btn?.innerHTML;
-        if (btn) {
-          btn.disabled = true;
-          btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
-        }
+        window._nekoUIHelpers?.setButtonBusy?.(btn, true, { label: '保存中…' });
         try {
           const cfg = {
             ...collectSrsSettings(),
@@ -188,10 +184,7 @@
         } catch (e) {
           notify(`保存失败: ${e.message}`, 'error');
         } finally {
-          if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = original;
-          }
+          window._nekoUIHelpers?.setButtonBusy?.(btn, false);
         }
       });
 

@@ -18,6 +18,7 @@
     getActiveWindow: () => invoke('getActiveWindow'),
     listWindows: () => invoke('listWindows'),
     pickPrivacyWindow: () => invoke('pickPrivacyWindow'),
+    pickActivityAppWindow: () => invoke('pickActivityAppWindow'),
     selectFile: (options) => invoke('selectFile', options),
     saveTextFile: (options) => invoke('saveTextFile', options),
     notify: (title, body) => invoke('notify', title, body),

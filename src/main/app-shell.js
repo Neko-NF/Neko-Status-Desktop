@@ -29,6 +29,8 @@ function createAppShell(deps) {
     setIsQuitting,
     getPrivacyPickerWindow,
     setPrivacyPickerWindow,
+    activityAgent,
+    requestActivityQuit,
   } = deps;
 
   function getAssetPath(...relativePaths) {
@@ -380,7 +382,10 @@ function createAppShell(deps) {
     const tray = getTray();
     if (!tray) return;
     const running = statusService.isRunning;
-    const menu = Menu.buildFromTemplate([
+    const activityEnabled = activityAgent?.isEnabled?.() === true;
+    const activityStatus = activityAgent?.lastStatus || { state: 'disabled' };
+    const activityPaused = activityStatus.state === 'paused' || activityStatus.paused === true;
+    const template = [
       {
         label: running ? '停止上报服务' : '启动上报服务',
         click: () => {
@@ -389,11 +394,44 @@ function createAppShell(deps) {
           refreshTrayMenu();
         },
       },
+    ];
+    if (activityEnabled) {
+      const connectionLabel = activityStatus.connection === 'online'
+        ? '已连接'
+        : activityStatus.connection === 'reconnecting' || activityStatus.state === 'reconnecting'
+          ? '重连中'
+          : '连接中';
+      template.push(
+        { type: 'separator' },
+        { label: `活动提醒：${activityPaused ? '已暂停' : connectionLabel}`, enabled: false },
+        {
+          label: activityPaused ? '恢复活动功能' : '临时暂停活动功能',
+          click: async () => {
+            if (activityPaused) await activityAgent.resume();
+            else await activityAgent.pause();
+            refreshTrayMenu();
+          },
+        },
+      );
+    }
+    template.push(
       { type: 'separator' },
-      { label: '显示窗口', click: () => showWindow() },
+      { label: '打开 Neko Status', click: () => showWindow() },
       { type: 'separator' },
-      { label: '退出', click: () => { setIsQuitting(true); app.quit(); } },
-    ]);
+    );
+    if (activityEnabled && configStore.get('enableActivityBackground') === true) {
+      template.push({ label: '退出客户端，后台继续', click: () => requestActivityQuit?.(false) });
+      template.push({ label: '退出全部（本次）', click: () => requestActivityQuit?.(true) });
+    } else {
+      template.push({
+        label: '退出',
+        click: () => {
+          if (requestActivityQuit) requestActivityQuit(true);
+          else { setIsQuitting(true); app.quit(); }
+        },
+      });
+    }
+    const menu = Menu.buildFromTemplate(template);
     tray.setContextMenu(menu);
   }
 
@@ -494,9 +532,16 @@ function createAppShell(deps) {
     return normalizePickerWindows(windows);
   }
 
-  function createPrivacyPickerHtml({ windows, bounds, token, themeColor }) {
+  function createPrivacyPickerHtml({ windows, bounds, token, themeColor, hintText }) {
     const rgb = pickerColorToRgb(themeColor);
-    const payload = JSON.stringify({ windows, bounds, token, themeColor, rgb }).replace(/</g, '\\u003c');
+    const payload = JSON.stringify({
+      windows,
+      bounds,
+      token,
+      themeColor,
+      rgb,
+      hintText: hintText || '移动鼠标点选要加入隐私规则的窗口，单击确认，Esc 取消',
+    }).replace(/</g, '\\u003c');
     return `<!doctype html>
 <html>
 <head>
@@ -510,7 +555,7 @@ function createAppShell(deps) {
   </style>
 </head>
 <body>
-  <div id="hint">移动鼠标点选要加入隐私规则的窗口，单击确认，Esc 取消</div>
+  <div id="hint"></div>
   <div id="empty">未找到可框选窗口</div>
   <div id="frame"><div id="label"></div></div>
   <script>
@@ -522,7 +567,9 @@ function createAppShell(deps) {
     const frame = document.getElementById('frame');
     const label = document.getElementById('label');
     const empty = document.getElementById('empty');
+    const hint = document.getElementById('hint');
     let selected = null;
+    hint.textContent = payload.hintText;
     if (!windows.length) empty.style.display = 'block';
     function contains(win, x, y) {
       const b = win.bounds;
@@ -561,7 +608,7 @@ function createAppShell(deps) {
 </html>`;
   }
 
-  async function pickPrivacyWindow() {
+  async function pickPrivacyWindow(options = {}) {
     const currentPicker = getPrivacyPickerWindow();
     if (currentPicker && !currentPicker.isDestroyed()) return null;
 
@@ -608,7 +655,13 @@ function createAppShell(deps) {
       setPrivacyPickerWindow(pickerWindow);
       pickerWindow.setAlwaysOnTop(true, 'screen-saver');
       pickerWindow.setMenuBarVisibility(false);
-      pickerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createPrivacyPickerHtml({ windows, bounds, token, themeColor }))}`);
+      pickerWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createPrivacyPickerHtml({
+        windows,
+        bounds,
+        token,
+        themeColor,
+        hintText: options.hintText,
+      }))}`);
       pickerWindow.once('ready-to-show', () => {
         pickerWindow.show();
         pickerWindow.focus();

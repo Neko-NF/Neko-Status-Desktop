@@ -577,16 +577,6 @@
             transform: translateY(1px) !important;
         }
 
-        .ph-spin {
-            animation: spin 1.2s linear infinite;
-        }
-
-        @keyframes spin {
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-
         /* 解决悬浮时上移被卡片遮挡裁剪的问题 */
         .metric-trend-container {
             display: flex;

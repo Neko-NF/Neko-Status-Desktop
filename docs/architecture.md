@@ -12,6 +12,7 @@ src/
   preload/    Renderer 安全桥接层，只暴露白名单 API
   renderer/   前端 UI、页面交互、renderer services
   shared/     IPC 常量、事件名、payload schema、跨层契约
+native/        Rust 原生辅助程序，目前用于轻量活动代理
 ```
 
 当前项目已经基本达到任务文档期望的工程化方向：主进程 IPC 已按领域模块化，preload 安全桥已落地，renderer 已按 `services/pages/components/core/state` 拆分，测试、CI、PR 模板和发布流程也已经具备。`app.js` / `app-ipc.js` 已退成极薄启动入口，renderer 运行时装配由 `core/app-runtime.js` 承担。
@@ -32,6 +33,7 @@ src/main/api-service.js           后端 HTTP/API 通信
 src/main/status-service.js        状态上报服务
 src/main/stream-service.js        推流与 OBS 集成
 src/main/system-utils.js          截图、窗口、指标、系统信息等能力
+src/main/activity-agent-controller.js 用户关注活动 Agent 启动、Provision、托盘租约和状态同步
 src/main/ipc/*.ipc.js             各领域 IPC handler
 ```
 
@@ -49,9 +51,30 @@ src/main/ipc/
   system.ipc.js  截图、窗口、缓存、通知、字体、应用控制
   service.ipc.js 上报服务、开机自启、进程信息、权限、体检
   update.ipc.js  更新检查、下载、安装、回滚、完整性检查
+  activity.ipc.js 用户关注活动设置、代理控制、关注/规则/隐私管理转发
 ```
 
 主进程新增能力时优先落在对应 service / system / ipc 模块中。`main.js` 只做启动和编排，不继续承接新业务 handler。
+
+## 用户关注活动 Agent
+
+“用户关注与应用在线提醒”功能使用独立 Rust 原生后台代理：
+
+```text
+native/presence-agent/             Rust Agent 源码
+build/native/NekoPresenceAgent.exe 构建后随安装包打入的代理产物
+```
+
+边界：
+
+- Agent 负责前台应用智能检测、可选应用窗口快照、presence 发布、SSE/轮询事件接收、系统通知和独立托盘。
+- Electron 只负责配置、关注管理、隐私管理、代理启动/停止、Provision、托盘租约和展示。
+- 客户端打开时，Agent 运行在 `embedded` 模式且不显示独立托盘；客户端退出且后台模式开启时，Agent 切换为 `background` 并显示托盘。
+- 任意时刻只能有一个托盘所有者和一个检测器。客户端与 Agent 通过当前用户命名管道协商托盘租约。
+- Agent 不接管既有整屏截图上报、完整设备状态上报、OBS、推流、更新下载或安装；它只在被关注者显式开启时采集稳定上线应用的短期窗口缩略图。
+- Activity 使用独立 `activityDeviceId`、Agent Token、`ActivitySnapshot` 和服务端接口，不复用截图/完整状态上报的设备密钥或图片目录。合并托盘只是入口和视觉合并，不代表两条截图链路共享采集器或凭据。
+- 应用公开由发布方主动决定：新检测到的应用默认不公开，关注方只能对发布方已公开的应用设置提醒，手填 `.exe` 也必须经过服务端公开校验。
+- 详细方案见 [用户关注与应用在线提醒](./用户关注与应用在线提醒/README.md)。
 
 ## Preload
 
@@ -119,6 +142,7 @@ services/service-client.js
 services/system-client.js
 services/stream-client.js
 services/update-client.js
+services/activity-client.js
 
 pages/auth.page.js
 pages/config.page.js
@@ -130,6 +154,7 @@ pages/service.page.js
 pages/stream.page.js
 pages/update.page.js
 pages/about.page.js
+pages/activity.page.js
 
 components/developer-console.js
 components/console-runtime.js
@@ -173,6 +198,7 @@ src/shared/schemas.js        payload 校验
 
 ```bash
 npm test
+npm run test:agent
 npm run verify
 npm run test:smoke
 npm run build:zip
@@ -181,9 +207,10 @@ npm run build:zip
 当前质量基线：
 
 - `npm test` 覆盖 IPC、schema、配置合并、renderer services、页面 VM 测试、启动更新 gate。
+- `npm run test:agent` 覆盖 Rust Agent 稳定判定和 WinHTTP 辅助逻辑。
 - `npm run verify` 覆盖文件结构、renderer 模块语法、HTML/CSS 关键结构、编码污染、配置默认值、IPC 一致性。
 - `npm run test:smoke` 启动最小 Electron 隐藏窗口，验证 preload bridge 和基础 IPC round-trip。
-- `.github/workflows/ci.yml` 与 `build-check.yml` 提供 PR 质量门禁。
+- `.github/workflows/ci.yml` 与 `build-check.yml` 提供 PR 质量门禁；涉及 Agent 时必须同时运行 Rust fmt、clippy、test 和 release build。
 
 ## 当前达成度
 

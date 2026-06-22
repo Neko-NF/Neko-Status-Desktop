@@ -305,6 +305,7 @@
     _announcementPollTimer: null,
     _pendingDeleteId: null,
     _managementLoading: false,
+    _detailLoader: null,
     _state: {
       search: '',
       type: 'all',
@@ -563,7 +564,15 @@
         `).join('');
       }
       if (detailEl) {
-        detailEl.innerHTML = '<div class="announcement-detail-empty"><i class="ph ph-spinner-gap"></i><span>加载公告中...</span></div>';
+        this._detailLoader?.destroy?.();
+        detailEl.textContent = '';
+        this._detailLoader = window._nekoModules?.components?.LoadingSystem?.create?.(detailEl, {
+          context: 'network',
+          mode: 'section',
+          size: 'md',
+          label: '加载公告中…',
+        }) || null;
+        this._detailLoader?.show?.();
       }
     },
 
@@ -572,15 +581,7 @@
       board?.classList.toggle('is-loading', !!loading);
       const btn = $('announcementRefreshBtn');
       if (!btn) return;
-      if (loading) {
-        btn.dataset.previousHtml = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="ph ph-spinner-gap"></i> 刷新中';
-      } else {
-        btn.disabled = false;
-        btn.innerHTML = btn.dataset.previousHtml || '<i class="ph ph-arrow-clockwise"></i> 刷新';
-        delete btn.dataset.previousHtml;
-      }
+      window._nekoUIHelpers?.setButtonBusy?.(btn, !!loading, { label: '刷新中' });
     },
 
     async canManageAnnouncements() {
@@ -761,7 +762,7 @@
                 <span>·</span>
                 <em title="${escapeHtml(item.targetAudienceLabel)}">${escapeHtml(item.targetAudienceLabel)}</em>
               </div>
-              <span class="announcement-card-time">${formatRelativeTime(item.createdAt)} ${item.pinned ? '<i class="ph ph-push-pin-fill"></i>' : ''}</span>
+              <span class="announcement-card-time">${formatRelativeTime(item.createdAt)} ${item.pinned ? '<i class="ph ph-push-pin-simple"></i>' : ''}</span>
             </div>
             <h3 title="${escapeHtml(item.title || '未命名公告')}">${escapeHtml(item.title || '未命名公告')}</h3>
             <p title="${escapeHtml(item.content || '暂无正文')}">${escapeHtml(item.content || '暂无正文')}</p>
@@ -777,7 +778,7 @@
                 </span>
               </div>
               <div class="announcement-card-actions">
-                <button class="announcement-icon-action" data-action="pin" title="${item.pinned ? '取消置顶' : '置顶'}"><i class="ph ${item.pinned ? 'ph-push-pin-fill' : 'ph-push-pin'}"></i></button>
+                <button class="announcement-icon-action" data-action="pin" title="${item.pinned ? '取消置顶' : '置顶'}" aria-label="${item.pinned ? '取消置顶' : '置顶'}"><i class="ph ${item.pinned ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'}"></i></button>
                 <button class="announcement-icon-action" data-action="edit" title="修改正文"><i class="ph ph-sliders-horizontal"></i></button>
                 <button class="announcement-icon-action" data-action="archive" title="${item.status === 'archived' ? '恢复发布' : '快捷归档'}"><i class="ph ${item.status === 'archived' ? 'ph-arrow-counter-clockwise' : 'ph-archive'}"></i></button>
                 <button class="announcement-icon-action danger" data-action="delete" title="删除"><i class="ph ph-trash"></i></button>
@@ -811,6 +812,8 @@
     renderDetail(item) {
       const detailEl = $('announcementDetail');
       if (!detailEl) return;
+      this._detailLoader?.destroy?.();
+      this._detailLoader = null;
 
       if (!item) {
         detailEl.innerHTML = `
@@ -989,11 +992,7 @@
       }
 
       const saveBtn = $('announcementSaveBtn');
-      const previousHtml = saveBtn?.innerHTML;
-      if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<i class="ph ph-spinner-gap"></i> 保存中';
-      }
+      window._nekoUIHelpers?.setButtonBusy?.(saveBtn, true, { label: '保存中' });
 
       const wasEditing = this._editingId !== null && this._editingId !== undefined;
       try {
@@ -1013,10 +1012,7 @@
       } catch (err) {
         this.showFormError(err?.message || '保存失败');
       } finally {
-        if (saveBtn) {
-          saveBtn.disabled = false;
-          saveBtn.innerHTML = previousHtml || '保存';
-        }
+        window._nekoUIHelpers?.setButtonBusy?.(saveBtn, false);
       }
     },
 
@@ -1095,11 +1091,7 @@
       if (id === undefined || id === null || id === '') return;
 
       const confirmBtn = $('announcementDeleteConfirmBtn');
-      const previousHtml = confirmBtn?.innerHTML;
-      if (confirmBtn) {
-        confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<i class="ph ph-spinner-gap"></i> 删除中';
-      }
+      window._nekoUIHelpers?.setButtonBusy?.(confirmBtn, true, { label: '删除中' });
 
       try {
         if (this.isMockMode()) {
@@ -1116,10 +1108,7 @@
       } catch (err) {
         this._deps?.showNotice?.(`删除失败: ${err?.message || '未知错误'}`, 'error');
       } finally {
-        if (confirmBtn) {
-          confirmBtn.disabled = false;
-          confirmBtn.innerHTML = previousHtml || '<i class="ph ph-trash"></i> 确认删除';
-        }
+        window._nekoUIHelpers?.setButtonBusy?.(confirmBtn, false);
       }
     },
 

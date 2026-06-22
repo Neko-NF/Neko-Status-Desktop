@@ -4,7 +4,7 @@ const {
   validateAuthUpdateProfilePayload,
 } = require('../../shared/schemas');
 
-function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService }) {
+function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, activityAgent }) {
   // Keep renderer compatibility in data while preserving the shared IPC envelope.
   function authOk(data = {}) { return createIpcSuccess({ success: true, ...data }); }
   function authFail(message, code = 'AUTH_FAILED') { return createIpcError(code, message); }
@@ -182,7 +182,8 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService }
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, () => {
+  ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async () => {
+    if (activityAgent) await activityAgent.revoke('logout');
     configStore.setMany({ authToken: '', authUser: null });
     return authOk();
   });

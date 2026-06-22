@@ -165,6 +165,29 @@
         }
     }
 
+    function setButtonBusy(button, busy, options = {}) {
+        const loadingSystem = window._nekoModules?.components?.LoadingSystem;
+        if (loadingSystem?.setButtonBusy) {
+            return loadingSystem.setButtonBusy(button, busy, options);
+        }
+        if (!button) return false;
+        if (busy) {
+            if (!button.dataset.nekoOriginalHtml) button.dataset.nekoOriginalHtml = button.innerHTML;
+            button.disabled = true;
+            button.classList.add('loading');
+            button.setAttribute('aria-busy', 'true');
+            button.textContent = String(options.label || '处理中…');
+            return true;
+        }
+        if (!button.dataset.nekoOriginalHtml) return false;
+        button.innerHTML = button.dataset.nekoOriginalHtml;
+        delete button.dataset.nekoOriginalHtml;
+        button.disabled = false;
+        button.classList.remove('loading');
+        button.removeAttribute('aria-busy');
+        return true;
+    }
+
     function enhanceSelect(select, options = {}) {
         if (!select || select._nekoSelect) return select?._nekoSelect || null;
 
@@ -268,6 +291,7 @@
         applyUIFontProfile,
         resolveUIFontProfile,
         normalizeServiceHealthCheckCopy,
+        setButtonBusy,
         enhanceSelect,
     };
 })();

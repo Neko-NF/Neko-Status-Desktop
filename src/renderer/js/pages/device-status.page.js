@@ -75,7 +75,9 @@
   }
 
   function getSparklineThemeColor() {
-    return getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim() || 'rgb(99,102,241)';
+    return getComputedStyle(document.body).getPropertyValue('--theme-color').trim()
+      || getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim()
+      || 'rgb(99,102,241)';
   }
 
   function sparklineFillColor(color, alpha = 0.12) {
@@ -510,9 +512,8 @@
     btn.dataset.deviceStatusDiagBound = '1';
     btn.addEventListener('click', async () => {
       if (btn.disabled) return;
-      btn.disabled = true;
       const origHTML = btn.innerHTML;
-      btn.innerHTML = '<i class="ph ph-circle-notch diag-spinner"></i> 诊断中...';
+      window._nekoUIHelpers?.setButtonBusy?.(btn, true, { label: '诊断中…' });
       btn.classList.add('diag-running');
 
       try {
@@ -521,10 +522,12 @@
         addDiagnosticEntry('权限诊断', denied === 0 ? 'success' : 'warn', `${grantedCount}/${totalPerm} 权限已授权`);
         state.deps.showNotice(denied === 0 ? '权限诊断通过' : `${denied} 项权限未授权`, denied === 0 ? 'success' : 'warn', 2500);
 
+        window._nekoUIHelpers?.setButtonBusy?.(btn, false);
         btn.innerHTML = '<i class="ph ph-check-circle"></i> 诊断完成';
         setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; btn.classList.remove('diag-running'); }, 2000);
       } catch (error) {
         state.deps.addLogLine('ERROR', `权限诊断失败: ${error.message}`);
+        window._nekoUIHelpers?.setButtonBusy?.(btn, false);
         btn.innerHTML = '<i class="ph ph-x-circle"></i> 诊断失败';
         setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; btn.classList.remove('diag-running'); }, 2000);
       }

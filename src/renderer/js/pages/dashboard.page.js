@@ -105,14 +105,36 @@
 
   function parseColorRgb(colorStr) {
     const color = (colorStr || '').trim();
+    const parseHex = (value) => ({
+      r: parseInt(value.slice(1, 3), 16),
+      g: parseInt(value.slice(3, 5), 16),
+      b: parseInt(value.slice(5, 7), 16),
+    });
     if (/^#[0-9a-f]{6}$/i.test(color)) {
+      return parseHex(color);
+    }
+    const mix = color.match(/^color-mix\(in srgb,\s*(#[0-9a-f]{6})\s+([\d.]+)%,\s*(#[0-9a-f]{6})\s+([\d.]+)%\)$/i);
+    if (mix) {
+      const first = parseHex(mix[1]);
+      const second = parseHex(mix[3]);
+      const firstWeight = Number(mix[2]);
+      const secondWeight = Number(mix[4]);
+      const totalWeight = firstWeight + secondWeight || 100;
       return {
-        r: parseInt(color.slice(1, 3), 16),
-        g: parseInt(color.slice(3, 5), 16),
-        b: parseInt(color.slice(5, 7), 16),
+        r: Math.round((first.r * firstWeight + second.r * secondWeight) / totalWeight),
+        g: Math.round((first.g * firstWeight + second.g * secondWeight) / totalWeight),
+        b: Math.round((first.b * firstWeight + second.b * secondWeight) / totalWeight),
       };
     }
-    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    const srgb = color.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i);
+    if (srgb) {
+      return {
+        r: Math.round(Number(srgb[1]) * 255),
+        g: Math.round(Number(srgb[2]) * 255),
+        b: Math.round(Number(srgb[3]) * 255),
+      };
+    }
+    const match = color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
     if (match) return { r: +match[1], g: +match[2], b: +match[3] };
     return { r: 6, g: 182, b: 212 };
   }
@@ -224,9 +246,10 @@
 
         if (isReporting) {
           reportToggleBtn.className = 'status-toggle-btn btn-pending';
-          reportToggleBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 停止中...';
+          window._nekoUIHelpers?.setButtonBusy?.(reportToggleBtn, true, { label: '停止中…' });
 
           setTimeout(() => {
+            window._nekoUIHelpers?.setButtonBusy?.(reportToggleBtn, false);
             isReporting = false;
             reportToggleBtn.className = 'status-toggle-btn btn-start';
             reportToggleBtn.innerHTML = '<i class="ph ph-play-circle"></i> 开始上报';
@@ -236,9 +259,10 @@
         }
 
         reportToggleBtn.className = 'status-toggle-btn btn-pending';
-        reportToggleBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 连接中...';
+        window._nekoUIHelpers?.setButtonBusy?.(reportToggleBtn, true, { label: '连接中…' });
 
         setTimeout(() => {
+          window._nekoUIHelpers?.setButtonBusy?.(reportToggleBtn, false);
           isReporting = true;
           reportToggleBtn.className = 'status-toggle-btn btn-stop';
           reportToggleBtn.innerHTML = '<i class="ph ph-stop-circle"></i> 停止上报';
@@ -510,11 +534,12 @@
         swapped,
       }));
       const originalHtml = saveButton.innerHTML;
-      saveButton.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
+      window._nekoUIHelpers?.setButtonBusy?.(saveButton, true, { label: '保存中…' });
 
       setTimeout(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
         persistLayoutToConfig(layout);
+        window._nekoUIHelpers?.setButtonBusy?.(saveButton, false);
         saveButton.innerHTML = '<i class="ph ph-check"></i> 保存成功';
         setTimeout(() => {
           this.toggleEditMode(false);
@@ -601,8 +626,11 @@
       if (this._trendChart) return this._trendChart;
       setTrendChartStatus('');
 
-      const cs = getComputedStyle(document.documentElement);
-      const themeColor = cs.getPropertyValue('--theme-color').trim() || '#0ea5e9';
+      const bodyStyles = getComputedStyle(document.body);
+      const rootStyles = getComputedStyle(document.documentElement);
+      const themeColor = bodyStyles.getPropertyValue('--theme-color').trim()
+        || rootStyles.getPropertyValue('--theme-color').trim()
+        || '#0ea5e9';
       this._themeColorRgb = parseColorRgb(themeColor);
       const { r, g, b } = this._themeColorRgb;
       const light = isLightTheme();

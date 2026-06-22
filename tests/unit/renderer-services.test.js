@@ -734,17 +734,24 @@ test('experimental features component owns settings mount and stream gate state'
     ['settingsExperimentalZone', makeElement('settingsExperimentalZone')],
     ['settingsExperimentalLabel', makeElement('settingsExperimentalLabel')],
     ['settings-experimental', makeElement('settings-experimental')],
-    ['streamSettingsLabel', makeElement('streamSettingsLabel')],
-    ['settings-stream', makeElement('settings-stream')],
-    ['streamSettingsDisabledNotice', makeElement('streamSettingsDisabledNotice')],
+    ['stgExperimentalActivityRow', makeElement('stgExperimentalActivityRow')],
+    ['stgExperimentalStreamRow', makeElement('stgExperimentalStreamRow')],
+    ['stgExperimentalUiLabRow', makeElement('stgExperimentalUiLabRow')],
     ['stgExperimentalDesc', makeElement('stgExperimentalDesc')],
     ['streamExperimentalGate', makeElement('streamExperimentalGate')],
     ['streamExperimentalContent', makeElement('streamExperimentalContent')],
     ['page-stream', makeElement('page-stream')],
+    ['page-activity', makeElement('page-activity')],
+    ['page-ui-lab', makeElement('page-ui-lab')],
     ['stgExperimentalSwitch', makeElement('stgExperimentalSwitch')],
+    ['stgExperimentalActivitySwitch', makeElement('stgExperimentalActivitySwitch')],
+    ['stgExperimentalStreamSwitch', makeElement('stgExperimentalStreamSwitch')],
+    ['stgExperimentalUiLabSwitch', makeElement('stgExperimentalUiLabSwitch')],
+    ['navActivity', makeElement('navActivity')],
     ['navStream', makeElement('navStream')],
+    ['navUiLab', makeElement('navUiLab')],
   ]);
-  const activeStreamNav = makeElement('activeStreamNav');
+  const activeUiLabNav = makeElement('activeUiLabNav');
   const dashboardNav = makeElement('dashboardNav');
   const calls = [];
   const context = {
@@ -760,7 +767,7 @@ test('experimental features component owns settings mount and stream gate state'
         return makeElement(tag);
       },
       querySelector(selector) {
-        if (selector === '.nav-item.active[data-target="page-stream"]') return activeStreamNav;
+        if (selector === '.nav-item.active[data-target="page-ui-lab"]') return activeUiLabNav;
         if (selector === '.nav-item[data-target="mainDashboardArea"]') return dashboardNav;
         return null;
       },
@@ -779,19 +786,105 @@ test('experimental features component owns settings mount and stream gate state'
   runtime.mountSettingsZone();
   assert.equal(elements.get('settingsExperimentalZone').dataset.mounted, '1');
   assert.ok(elements.get('settings-experimental').classList.contains('settings-experimental-shell'));
-  assert.equal(elements.get('streamSettingsDisabledNotice').removed, true);
 
-  runtime.applyState({ enableExperimentalFeatures: true });
+  runtime.applyState({
+    enableExperimentalFeatures: true,
+    enableExperimentalActivityEntry: true,
+    enableExperimentalStreamEntry: true,
+    enableExperimentalUiLabEntry: true,
+  });
   assert.equal(elements.get('navStream').attributes['aria-hidden'], 'false');
   assert.ok(elements.get('navStream').classList.contains('show'));
+  assert.equal(elements.get('navActivity').attributes['aria-hidden'], 'false');
+  assert.ok(elements.get('navActivity').classList.contains('show'));
+  assert.ok(elements.get('stgExperimentalActivitySwitch').classList.contains('on'));
+  assert.ok(elements.get('stgExperimentalStreamSwitch').classList.contains('on'));
+  assert.ok(elements.get('stgExperimentalUiLabSwitch').classList.contains('on'));
+  assert.equal(elements.get('navUiLab').attributes['aria-hidden'], 'false');
+  assert.ok(elements.get('settings-experimental').classList.contains('is-experimental-expanded'));
+  assert.equal(elements.get('stgExperimentalActivityRow').attributes['aria-hidden'], 'false');
 
   runtime.applyState({ enableExperimentalFeatures: false });
   assert.equal(elements.get('navStream').attributes['aria-hidden'], 'true');
   assert.equal(elements.get('navStream').attributes.tabindex, '-1');
+  assert.equal(elements.get('navActivity').attributes['aria-hidden'], 'true');
+  assert.equal(elements.get('navUiLab').attributes['aria-hidden'], 'true');
+  assert.equal(elements.get('stgExperimentalActivityRow').attributes['aria-hidden'], 'true');
+  assert.ok(elements.get('stgExperimentalStreamRow').classList.contains('is-collapsed'));
+  assert.equal(elements.get('settings-experimental').classList.contains('is-experimental-expanded'), false);
   assert.equal(elements.get('page-stream').style.display, 'none');
+  assert.equal(elements.get('page-ui-lab').style.display, 'none');
   assert.equal(dashboardNav.clicked, 1);
   assert.deepEqual(calls, ['syncNav', 'syncNav', 'stopStream']);
-  assert.ok(expanded.some((entry) => entry[0] === 'settings-stream' && entry[1] === false));
+  assert.ok(expanded.some((entry) => entry[0] === 'streamExperimentalGate' && entry[1] === true));
+});
+
+test('activity experimental entry stays hidden when only the runtime feature is enabled', () => {
+  function makeClassList() {
+    const values = new Set();
+    return {
+      toggle(name, force) {
+        const next = force === undefined ? !values.has(name) : !!force;
+        if (next) values.add(name);
+        else values.delete(name);
+      },
+      contains(name) { return values.has(name); },
+    };
+  }
+  function makeElement() {
+    return {
+      style: { removeProperty() {} },
+      classList: makeClassList(),
+      setAttribute() {},
+      removeAttribute() {},
+    };
+  }
+  const elements = new Map([
+    ['stgExperimentalSwitch', makeElement()],
+    ['stgExperimentalActivitySwitch', makeElement()],
+    ['stgExperimentalStreamSwitch', makeElement()],
+    ['stgExperimentalActivityRow', makeElement()],
+    ['stgExperimentalStreamRow', makeElement()],
+    ['settings-experimental', makeElement()],
+    ['stgExperimentalDesc', makeElement()],
+    ['streamExperimentalGate', makeElement()],
+    ['streamExperimentalContent', makeElement()],
+    ['page-stream', makeElement()],
+    ['page-activity', makeElement()],
+    ['navActivity', makeElement()],
+    ['navStream', makeElement()],
+  ]);
+  const context = {
+    window: {},
+    document: {
+      getElementById(id) { return elements.get(id) || null; },
+      querySelector() { return null; },
+    },
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  loadBrowserScript(context, 'src/renderer/js/components/experimental-features.js');
+
+  const runtime = context.window._nekoModules.components.ExperimentalFeatures.create();
+  runtime.applyState({
+    enableExperimentalFeatures: true,
+    enableExperimentalActivityEntry: false,
+    enableActivityFeature: true,
+  });
+
+  assert.equal(elements.get('navActivity').classList.contains('show'), false);
+  assert.equal(elements.get('stgExperimentalActivitySwitch').classList.contains('on'), false);
+  assert.equal(elements.get('page-activity').style.display, 'none');
+});
+
+test('announcement pin actions use icons available in the regular phosphor bundle', () => {
+  const pageSource = fs.readFileSync(path.join(ROOT, 'src/renderer/js/pages/announcement.page.js'), 'utf8');
+  const regularIcons = fs.readFileSync(path.join(ROOT, 'node_modules/@phosphor-icons/web/src/regular/style.css'), 'utf8');
+
+  assert.match(pageSource, /ph-push-pin-simple-slash/);
+  assert.doesNotMatch(pageSource, /ph-push-pin-fill/);
+  assert.match(regularIcons, /\.ph\.ph-push-pin-simple-slash:before/);
 });
 
 test('config page loads modal values and saves through ConfigClient', async () => {
@@ -2325,6 +2418,7 @@ test('dashboard page owns trend chart metrics runtime', () => {
       documentElement: {
         hasAttribute() { return false; },
       },
+      body: {},
       getElementById(id) {
         return elements.get(id) || null;
       },
@@ -2344,7 +2438,9 @@ test('dashboard page owns trend chart metrics runtime', () => {
     getComputedStyle() {
       return {
         getPropertyValue(name) {
-          return name === '--theme-color' ? '#0ea5e9' : '';
+          return name === '--theme-color'
+            ? 'color-mix(in srgb, #8ac2ff 58%, #0f172a 42%)'
+            : '';
         },
       };
     },
@@ -2365,6 +2461,7 @@ test('dashboard page owns trend chart metrics runtime', () => {
   page.recordMetrics({ timestamp: Date.now(), cpuPct: 20, memPct: 40 });
 
   assert.equal(ChartStub.instances.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(page._themeColorRgb)), { r: 86, g: 122, b: 166 });
   assert.equal(page._metricsBuffer.length, 2);
   assert.equal(ChartStub.instances[0].data.datasets[0].data.some((value) => value != null), true);
   assert.equal(ChartStub.instances[0].data.datasets[1].data.some((value) => value != null), true);
@@ -2770,7 +2867,10 @@ test('settings page owns core persistence controls', async () => {
   makeElement('stgTraySwitch', { classes: ['on'] });
   makeElement('stgRestoreSwitch');
   makeElement('stgAutoDownloadSwitch', { classes: ['on'] });
-  makeElement('stgExperimentalSwitch', { classes: ['on'] });
+  makeElement('stgExperimentalSwitch');
+  makeElement('stgExperimentalActivitySwitch');
+  makeElement('stgExperimentalStreamSwitch');
+  makeElement('stgExperimentalUiLabSwitch');
   makeElement('openExperimentalSettingsBtn');
   makeElement('settings-experimental');
   makeElement('stgReportModeGroup', { toggleButtons: [reportAuto, reportCustom], closestEl: row });
@@ -2887,6 +2987,10 @@ test('settings page owns core persistence controls', async () => {
         calls.push(['set', key, value]);
         return true;
       },
+      setMany: async (values) => {
+        calls.push(['setMany', values]);
+        return true;
+      },
     },
     system: {
       notify: async () => ({ shown: true }),
@@ -2915,6 +3019,22 @@ test('settings page owns core persistence controls', async () => {
     ['set', 'closeAction', 'minimize'],
     ['set', 'autoDownload', true],
     ['set', 'enableExperimentalFeatures', true],
+  ]);
+
+  elements.get('stgExperimentalActivitySwitch').classList.add('on');
+  await page.handleExperimentalSwitchClick(
+    elements.get('stgExperimentalActivitySwitch'),
+    'enableExperimentalActivityEntry',
+    '关注动态入口',
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.filter((call) => call[0] === 'setMany').at(-1))), [
+    'setMany',
+    {
+      enableExperimentalActivityEntry: false,
+      enableActivityFeature: false,
+      enableActivityPublishing: false,
+      enableActivityBackground: false,
+    },
   ]);
 
   await elements.get('stgReportModeGroup').dispatch('click', {
@@ -2978,6 +3098,7 @@ test('theme module owns color normalization, persistence, and swatch binding', (
         values: {},
         setProperty(name, value) { this.values[name] = value; },
         getPropertyValue(name) { return this.values[name] || ''; },
+        removeProperty(name) { delete this.values[name]; },
       },
       classList: {
         values: new Set(),
@@ -3096,7 +3217,8 @@ test('theme module owns color normalization, persistence, and swatch binding', (
 
   topSwatch.dispatch('click');
   assert.equal(storage.get('neko-theme-color'), '#ff0000');
-  assert.equal(context.document.documentElement.style.values['--theme-color'], '#ff0000');
+  assert.equal(context.document.documentElement.style.values['--theme-color-seed'], '#ff0000');
+  assert.equal(context.document.documentElement.style.values['--theme-color'], undefined);
   assert.equal(elements.get('profileModalAvatar').src.includes('background=ff0000'), true);
   assert.equal(context.document.lastEvent.type, 'neko:themeChange');
 
@@ -3665,7 +3787,8 @@ test('app init runtime owns startup hydration and cross-page sync', async () => 
   assert.equal(elements.get('authGrantedCount').textContent, '1项未授权');
   assert.equal(navUpdate.clicked, 1);
   assert.equal(storage.get('neko-ui-font'), 'Inter');
-  assert.equal(context.document.documentElement.style.values['--theme-color'], '#123456');
+  assert.equal(context.document.documentElement.style.values['--theme-color-seed'], '#123456');
+  assert.equal(context.document.documentElement.style.values['--theme-color'], undefined);
   assert.deepEqual(calls.filter((call) => Array.isArray(call) && ['about', 'pending', 'channel', 'installed', 'history'].includes(call[0])), [
     ['pending', '1.3.1'],
     ['channel', 'beta'],
@@ -4217,6 +4340,10 @@ test('developer mode panel commands drive diagnostic switches through injected c
   assert.equal(calls.includes('clearCache'), true);
   assert.equal(context.document.documentElement.style.values['--radius-card'], '24px');
   assert.equal(context.document.documentElement.style.values['--type-body-size'], '12px');
+  assert.equal(context.document.documentElement.style.values['--uiux-glass-opacity'], '0.05');
+  assert.equal(context.document.documentElement.style.values['--uiux-text-secondary-opacity'], '0.6');
+  assert.equal(context.document.documentElement.style.values['--text-secondary'], undefined);
+  assert.equal(context.document.body.style.values['--glass-bg'], undefined);
   assert.equal(context.document.body.style.zoom, '');
   assert.equal(panelStates.some((payload) => payload.diagnostics?.some((item) => item.title === '服务体检')), true);
   assert.equal(panelStates.some((payload) => payload.diagnostics?.some((item) => item.title === '缓存清理')), true);

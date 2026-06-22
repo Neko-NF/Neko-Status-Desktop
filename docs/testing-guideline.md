@@ -9,6 +9,7 @@ npm test
 npm run test:watch
 npm run test:coverage
 npm run test:smoke
+npm run test:agent
 npm run verify
 npm run build:zip
 ```
@@ -19,6 +20,7 @@ npm run build:zip
 - `npm run test:watch`：单元测试 watch 模式。
 - `npm run test:coverage`：实验性覆盖率输出。
 - `npm run test:smoke`：启动最小 Electron 隐藏窗口，验证 preload 与 IPC bridge。
+- `npm run test:agent`：运行 Rust Presence Agent 单元测试。
 - `npm run verify`：静态结构检查、语法检查、编码污染扫描，再运行单元测试。
 - `npm run build:zip`：Windows ZIP 打包检查。
 
@@ -28,6 +30,8 @@ npm run build:zip
 tests/
   unit/    纯 JS、主进程 helper、IPC 注册、renderer VM 测试
   smoke/   Electron 最小启动与 preload/IPC 验证
+native/presence-agent/
+  src/*    Rust Agent 状态机、WinHTTP、IPC 和平台能力测试
 ```
 
 当前项目优先使用 Node 内置测试能力，避免为了少量测试引入大型框架。
@@ -45,6 +49,18 @@ tests/
 - 后台更新检查。
 - renderer services 方法委托。
 - renderer 页面 VM 测试：配置页、更新页、截图页、设备状态页、认证页、主题模块、开发者控制台。
+- 用户关注活动 IPC schema、renderer service、页面入口和 Agent 生命周期相关 helper。
+- 数学曲线注册表、共享调度器、按钮 busy、UI 实验室与实验配置门禁。
+
+Rust Agent 测试覆盖：
+
+- 交互快路径、主导路径、被动路径。
+- 频繁切换防误报。
+- 窗口标题变化不算切换。
+- 未稳定新候选不覆盖旧状态。
+- 无候选进入 idle。
+- 锁屏或恢复异常采样间隔立即 idle。
+- WinHTTP URL 解析；后续继续补 SSE、退避和 DPAPI 损坏恢复。
 
 Smoke 覆盖：
 
@@ -68,6 +84,7 @@ Smoke 覆盖：
 - 更新系统完整性。
 - 活动流结构。
 - IPC 通道一致性。
+- 数学曲线加载系统的注册表、调度器、配置、启动更新和 UI 实验室结构。
 
 新增 renderer service / page / component 后，必须同步 `scripts/verify.js` 的文件结构和语法检查列表。
 
@@ -176,12 +193,31 @@ npm run dev:startup-update:up-to-date
 涉及打包、更新、发布：
 
 - `npm run build:zip`
+
+涉及用户关注活动 Agent：
+
+- `npm run test:agent`
+- `cargo fmt --manifest-path native/presence-agent/Cargo.toml -- --check`
+- `cargo clippy --manifest-path native/presence-agent/Cargo.toml --all-targets --locked -- -D warnings`
+- `npm run build:agent`
 - release workflow 相关检查
+- 验证关注动态不依赖截图/完整状态上报设备密钥；关闭或重置截图链路不应撤销 Activity Agent Token。
+- 验证新检测应用默认不公开；发布方主动公开后，关注方才能从目录选择或手填同一 `.exe` 创建提醒规则。
+- 验证弱网下开关显示处理中，失败后恢复旧状态且不显示假成功。
 
 涉及 UI：
 
 - 至少一条手工验收说明或截图记录
 - 移动/缩放/主题切换不破坏布局
+
+涉及数学曲线加载系统：
+
+- `node --test tests/unit/loading-system.test.js tests/unit/ui-lab.test.js`
+- 验证 12 个稳定 ID、有限采样、归一化、闭合误差、开放曲线淡出、用户可读用途、非线性速度元数据、非统一旋转策略和未知风格回退。
+- 验证单一 RAF、4 个活动实例上限、离屏/隐藏/reduce-motion 暂停及幂等销毁。
+- 验证 UI 实验室 12 个缩略图均为静态 SVG，只有主预览活动；场景切换、使用位置说明和点击反馈必须可见。
+- 手工覆盖深浅主题、全部强调色、80%–200% 缩放、窄窗口、键盘、高对比、窗口最小化和快速切页。
+- 启动更新的 checking、available、download、installing、failed、offline、up-to-date 场景必须保留确定进度优先级。
 
 ## 常见问题判断
 

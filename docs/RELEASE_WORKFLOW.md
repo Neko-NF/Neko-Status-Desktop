@@ -24,6 +24,7 @@
 
 ```bash
 npm run verify
+npm run test:agent
 npm run build
 npm run build:zip
 npm run repo:sync:dry-run
@@ -67,7 +68,7 @@ npm run release:gitea:local
 
 1. 工作区确认没有误提交的临时文件。
 2. `npm run verify` 通过。
-3. `npm run build` 或 `npm run build:zip` 在本地通过。
+3. `npm run build` 或 `npm run build:zip` 在本地通过；这会先构建 `NekoPresenceAgent.exe`。
 4. 与本次修改相关的手工 smoke test 已完成。
 5. `release_notes.txt` 已按本次版本更新。
 
@@ -77,6 +78,7 @@ npm run release:gitea:local
 - 主窗口、托盘、设置页可打开
 - 关键 IPC 功能未出现明显报错
 - 如涉及更新逻辑，至少验证更新页可正常展示当前版本信息
+- 如涉及用户关注活动，验证关注动态页可打开、Agent 状态可读取、托盘不会出现双图标。
 
 ## 5. 更新说明规则
 
@@ -130,6 +132,7 @@ npm run release:gitea:local
 
 ```bash
 npm run verify
+npm run test:agent
 npm run build
 ```
 
@@ -178,6 +181,13 @@ git push origin main --tags
 - `.exe` 适合普通安装
 - `.zip` 适合便携或快速验证
 - `SHA256SUMS.txt` 用于校验下载一致性
+
+安装包与 ZIP 都必须包含 `NekoPresenceAgent.exe`。发布前需要确认：
+
+- `npm run build:agent` 已生成 `build/native/NekoPresenceAgent.exe`。
+- `electron-builder` 的 `extraResources` 已把 Agent 打入产物。
+- NSIS include 脚本可在安装/卸载前调用 `NekoPresenceAgent.exe --shutdown-for-update`。
+- 旧版本升级时不会因后台代理占用二进制导致覆盖失败。
 
 个人 Gitea Release 的默认上传清单与 GitHub 相同，但它是独立配置项。需要减少或增加个人仓库文件时，在本地命令中传入 `--files` 或设置 `GITEA_RELEASE_FILES`，例如：
 

@@ -32,6 +32,8 @@ src/renderer/js/
     app-shell-controls.js 顶栏、侧栏、全局控件和 shell 弹窗绑定
     console-runtime.js     控制台日志、状态卡、导出和命令输入装配
     experimental-features.js 实验性功能入口挂载与显隐状态
+    loading-curves.js      数学曲线注册表与纯采样逻辑
+    loading-system.js      加载实例、按钮 busy 与共享动画调度器
     *.js                 可复用 UI/命令组件
   state/
     app-state.js         全局状态容器
@@ -148,9 +150,10 @@ update-client.js
 tokens.css
 base.css
 layout.css
+legacy.css
+loading-system.css
 components.css
 pages.css
-legacy.css
 ```
 
 职责：
@@ -161,6 +164,7 @@ legacy.css
 - `components.css`：按钮、弹窗、开关、通知、可复用组件。
 - `pages.css`：页面专属区块，如 dashboard、settings、stream、update。
 - `legacy.css`：迁移期保留样式，后续逐步归并。
+- `loading-system.css`：全局加载反馈和紧凑 busy 的唯一动画来源。
 - `main.css`：只作为入口，不再承接新样式。
 
 新增样式时先判断是组件还是页面。不要把新样式继续堆进 `main.css`。
@@ -198,6 +202,7 @@ legacy.css
 | `update.page.js` | 更新弹窗、徽章、更新页面展示、更新通道、更新源控件、来源诊断、完整性检查、本地安装入口、下载/安装进度、手动检查、强制更新、待安装更新、版本回滚和更新日志渲染 |
 | `announcement.page.js` | 公告管理、公告弹窗轮询、系统通知和回执状态 |
 | `about.page.js` | 关于页版本、运行时、仓库链接和仓库元数据渲染 |
+| `ui-lab.page.js` | UI 实验室曲线预览、场景切换、静态画廊和本地诊断 |
 
 已迁移的跨页面组件还包括 `components/security-dialogs.js`，用于密钥接管、撤销和设备删除相关的安全弹窗。
 
@@ -223,3 +228,15 @@ legacy.css
 - 表格行 hover 不得改变布局尺寸；禁止在数据表行上使用会造成表头/内容视觉错位的 scale/translate。
 - 长标题、长内容、URL、路径等必须省略并提供 `title`，不得把操作列或状态列挤变形。
 - 表单卡片和列表卡片之间保留稳定纵向间距，常规建议 20-24px；表单 footer 顶部间距不低于 16px。
+
+## 加载反馈规范
+
+加载反馈统一遵循 [数学曲线加载系统与 UI 实验室](./math-curve-loading-system.md) 的语义矩阵：非确定的大区域等待使用曲线，按钮使用紧凑 busy，结构化首屏使用骨架屏，可计算任务使用进度条，静默后台任务使用状态文字或徽章。
+
+- 页面不得新增私有旋转 keyframes；兼容图标统一使用 `.ph-spin`，新按钮优先调用 `LoadingSystem.setButtonBusy()` 或 `UIHelpers.setButtonBusy()`。
+- 曲线只服务加载状态，禁止作为常驻装饰、空态插图、成功动画或页面背景。
+- 新预设必须注册到 `components/loading-curves.js`，不得在页面里临时写公式或 SVG path。
+- 新预设必须声明用户可读用途和动效性格；不得默认套用匀速绕圈或整体旋转，除非加载语义需要。
+- 所有加载状态必须有明确文字；动画 SVG 自身不承担语义。
+- 必须支持 `prefers-reduced-motion`、forced colors、页面隐藏和元素离屏暂停。
+- 正式页面同时活动实例不得超过 4，UI 实验室画廊只能有一个活动预览。
