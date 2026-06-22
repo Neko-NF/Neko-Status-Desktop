@@ -38,10 +38,12 @@
             <a class="nav-item active" data-target="mainDashboardArea"><i class="ph ph-squares-four"></i>仪表盘</a>
             <a class="nav-item" data-target="page-device-status"><i class="ph ph-hard-drives"></i>设备状态</a>
             <a class="nav-item" data-target="page-screenshot"><i class="ph ph-image"></i>截图与活动</a>
+            <a class="nav-item conditional-nav" id="navActivity" data-target="page-activity" aria-hidden="true" tabindex="-1"><i class="ph ph-users-three"></i>关注动态</a>
             <a class="nav-item conditional-nav" id="navStream" data-target="page-stream"><i class="ph ph-broadcast"></i>直播推流</a>
             <a class="nav-item" data-target="page-services"><i class="ph ph-cpu"></i>服务与自启动</a>
             <a class="nav-item" data-target="page-update"><i class="ph ph-cloud-arrow-down"></i>更新中心</a>
             <a class="nav-item conditional-nav" id="navAnnouncement" data-target="page-announcement" aria-hidden="true" tabindex="-1"><i class="ph ph-megaphone"></i>公告管理</a>
+            <a class="nav-item conditional-nav" id="navUiLab" data-target="page-ui-lab" aria-hidden="true" tabindex="-1"><i class="ph ph-bezier-curve"></i>UI 实验室</a>
             <!-- 隐藏的控制台入口，默认不显示 -->
             <a class="nav-item console-nav" id="navConsole" data-target="consoleArea" style="display: flex; color: var(--theme-color);"><i class="ph ph-terminal-window"></i>控制台</a>
             <a class="nav-item" data-target="page-settings"><i class="ph ph-gear"></i>设置</a>
@@ -482,25 +484,26 @@
                                 <i class="ph ph-caret-down auth-collapse-icon collapsed" id="authCollapseIcon"></i>
                             </div>
                         </div>
+                        <div class="device-permission-loader" id="devicePermissionLoaderHost"></div>
                         <div class="auth-list auth-list-collapsible collapsed" id="metaAuthList">
                             <div class="auth-list-inner">
                                 <div class="auth-item" id="metaAuthAutoStart">
-                                    <div>开机自启</div><i class="ph ph-spinner"></i>
+                                    <div>开机自启</div><i class="ph ph-circle-dashed"></i>
                                 </div>
                                 <div class="auth-item" id="metaAuthScreenCapture">
-                                    <div>屏幕捕获 API</div><i class="ph ph-spinner"></i>
+                                    <div>屏幕捕获 API</div><i class="ph ph-circle-dashed"></i>
                                 </div>
                                 <div class="auth-item" id="metaAuthProcessEnum">
-                                    <div>进程遍历(WMI)</div><i class="ph ph-spinner"></i>
+                                    <div>进程遍历(WMI)</div><i class="ph ph-circle-dashed"></i>
                                 </div>
                                 <div class="auth-item" id="metaAuthPowerControl">
-                                    <div>系统电源控制</div><i class="ph ph-spinner"></i>
+                                    <div>系统电源控制</div><i class="ph ph-circle-dashed"></i>
                                 </div>
                                 <div class="auth-item" id="metaAuthNetwork">
-                                    <div>网络访问</div><i class="ph ph-spinner"></i>
+                                    <div>网络访问</div><i class="ph ph-circle-dashed"></i>
                                 </div>
                                 <div class="auth-item" id="metaAuthFileIO">
-                                    <div>文件读写</div><i class="ph ph-spinner"></i>
+                                    <div>文件读写</div><i class="ph ph-circle-dashed"></i>
                                 </div>
                             </div>
                         </div>
@@ -1001,6 +1004,120 @@
                 </div>
             </div>
 
+    <!-- ========== 用户关注与应用在线提醒页 ========== -->
+    <div class="page" id="page-activity" style="display:none; animation: fadeIn 0.3s ease;">
+        <div class="content-safe-area activity-page-shell">
+            <div class="page-header activity-page-header">
+                <div>
+                    <h2 class="page-title-text"><i class="ph ph-bell-ringing"></i> 应用上线提醒</h2>
+                    <span class="page-subtitle">公开你愿意分享的应用，也为关心的人设置上线提醒；默认不上传截图，快照提醒需单独开启</span>
+                </div>
+                <div class="activity-agent-summary">
+                    <span class="status-badge" id="activityAgentBadge" aria-live="polite">未启用</span>
+                    <button class="action-btn x-small" id="activityRepairBtn" type="button"><i class="ph ph-wrench"></i> 修复后台提醒</button>
+                </div>
+            </div>
+            <div class="activity-page-status" id="activityPageStatus" aria-live="polite" hidden></div>
+
+            <section class="activity-guide-strip" aria-label="关注动态使用步骤">
+                <div class="activity-guide-step">
+                    <span>1</span>
+                    <div><strong>先选择公开哪些应用</strong><small>默认不公开新应用，你来决定。</small></div>
+                </div>
+                <div class="activity-guide-step">
+                    <span>2</span>
+                    <div><strong>关注用户并设置提醒</strong><small>只能选择对方已公开的应用。</small></div>
+                </div>
+                <div class="activity-guide-step">
+                    <span>3</span>
+                    <div><strong>需要时留在后台</strong><small>客户端退出后也能继续提醒。</small></div>
+                </div>
+            </section>
+
+            <div class="activity-grid activity-settings-grid">
+                <section class="glass-card activity-card">
+                    <div class="activity-card-title"><i class="ph ph-power"></i> 开启与后台提醒</div>
+                    <div class="activity-setting-row">
+                        <div><strong>启用关注动态</strong><small>打开后可管理公开应用、关注用户和上线提醒。</small></div>
+                        <div class="toggle-switch" id="activityEnabledSwitch" role="switch" tabindex="0" aria-label="启用关注动态"></div>
+                    </div>
+                    <div class="activity-setting-row">
+                        <div><strong>在这台电脑分享应用在线</strong><small>只在你公开的应用稳定打开后显示在线。</small></div>
+                        <div class="toggle-switch" id="activityPublishingSwitch" role="switch" tabindex="0" aria-label="在此设备共享前台活动"></div>
+                    </div>
+                    <div class="activity-setting-row">
+                        <div><strong>上线提醒附带应用窗口快照</strong><small>关注者的系统通知可显示公开应用窗口缩略图；命中隐私保护时自动改为无图提醒。</small></div>
+                        <div class="toggle-switch" id="activitySnapshotsSwitch" role="switch" tabindex="0" aria-label="上线提醒附带应用窗口快照"></div>
+                    </div>
+                    <div class="activity-setting-row">
+                        <div><strong>退出客户端后继续提醒</strong><small>只保留轻量后台提醒，不启动主窗口。</small></div>
+                        <div class="toggle-switch" id="activityBackgroundSwitch" role="switch" tabindex="0" aria-label="独立后台运行"></div>
+                    </div>
+                    <div class="activity-setting-row">
+                        <div><strong>开机后自动准备提醒</strong><small>适合经常需要离线接收好友应用上线提醒。</small></div>
+                        <div class="toggle-switch" id="activityAutoStartSwitch" role="switch" tabindex="0" aria-label="Windows 登录时启动代理"></div>
+                    </div>
+                    <div class="activity-agent-details" id="activityAgentDetails" aria-live="polite">代理尚未运行</div>
+                    <div class="activity-inline-actions">
+                        <button class="action-btn" id="activityPauseBtn" type="button"><i class="ph ph-pause"></i> 临时暂停</button>
+                        <button class="action-btn" id="activityRefreshBtn" type="button"><i class="ph ph-arrows-clockwise"></i> 刷新状态</button>
+                    </div>
+                </section>
+
+                <section class="glass-card activity-card">
+                    <div class="activity-card-title"><i class="ph ph-eye"></i> 谁能看到我的公开应用</div>
+                    <p class="activity-card-copy">可见范围只作用于你已经公开的应用；未公开应用永远不会出现在对方列表里。</p>
+                    <div class="activity-privacy-options" id="activityPrivacyOptions">
+                        <button type="button" data-visibility="private"><i class="ph ph-lock"></i><strong>只有我</strong><small>任何人都看不到</small></button>
+                        <button type="button" data-visibility="admins"><i class="ph ph-shield-check"></i><strong>管理员</strong><small>仅已关注你的管理员</small></button>
+                        <button type="button" data-visibility="followers"><i class="ph ph-users"></i><strong>关注我的人</strong><small>关注者和管理员可见</small></button>
+                    </div>
+                    <div class="activity-security-note"><i class="ph ph-shield-check"></i> 锁屏、休眠、暂停或切到未公开应用时，会立即结束对外在线状态。</div>
+                </section>
+            </div>
+
+            <section class="glass-card activity-card activity-search-card">
+                <div class="activity-card-title"><i class="ph ph-user-plus"></i> 查找并关注用户</div>
+                <div class="activity-search-row">
+                    <input id="activityUserSearchInput" class="activity-input" maxlength="64" placeholder="输入用户名（模糊搜索）或 #UID（精确搜索）">
+                    <button class="action-btn primary" id="activityUserSearchBtn" type="button"><i class="ph ph-magnifying-glass"></i> 搜索</button>
+                </div>
+                <div class="activity-list activity-search-results" id="activitySearchResults">
+                    <div class="activity-empty">搜索结果只返回 UID、用户名和头像。</div>
+                </div>
+            </section>
+
+            <div class="activity-grid">
+                <section class="glass-card activity-card">
+                    <div class="activity-card-title"><i class="ph ph-bell-ringing"></i> 我关注的用户</div>
+                    <div class="activity-list" id="activityFollowsList"><div class="activity-empty">暂无关注用户</div></div>
+                </section>
+                <section class="glass-card activity-card">
+                    <div class="activity-card-title"><i class="ph ph-users"></i> 关注我的用户</div>
+                    <div class="activity-list" id="activityFollowersList"><div class="activity-empty">暂无关注者</div></div>
+                </section>
+            </div>
+
+            <div class="activity-grid">
+                <section class="glass-card activity-card">
+                    <div class="activity-card-title"><i class="ph ph-app-window"></i> 我愿意公开的应用</div>
+                    <p class="activity-card-copy">新检测到的应用默认不公开。选择窗口后只会填入应用进程名，不保存窗口标题。</p>
+                    <div class="activity-app-composer">
+                        <button class="action-btn" id="activityActiveAppBtn" type="button"><i class="ph ph-crosshair"></i> 从窗口选择应用</button>
+                        <input id="activityAppKeyInput" class="activity-input" maxlength="128" placeholder="进程名，例如 Code.exe">
+                        <input id="activityAppNameInput" class="activity-input" maxlength="64" placeholder="显示名称（可选）">
+                        <button class="action-btn primary" id="activityAddAppBtn" type="button"><i class="ph ph-eye"></i> 公开此应用</button>
+                    </div>
+                    <div class="activity-list" id="activityAppsList"><div class="activity-empty">尚未检测到可配置的应用</div></div>
+                </section>
+                <section class="glass-card activity-card">
+                    <div class="activity-card-title"><i class="ph ph-user-minus"></i> 已拉黑用户</div>
+                    <div class="activity-list" id="activityBlocksList"><div class="activity-empty">暂无拉黑用户</div></div>
+                </section>
+            </div>
+        </div>
+    </div>
+
     <!-- ========== 直播推流页 ========== -->
     <div class="page" id="page-stream" style="display:none; animation: fadeIn 0.3s ease;">
         <div class="content-safe-area">
@@ -1033,11 +1150,63 @@
             <div class="stream-card stream-guide-card" id="streamGuideCard">
                 <div class="guide-icon"><i class="ph ph-broadcast"></i></div>
                 <h3>开始使用直播推流</h3>
-                <p>你还没有配置 SRS 流媒体服务器。前往设置填写服务器地址后，即可自动生成专属推流链接。</p>
+                <p>你还没有配置 SRS 流媒体服务器。填写下方服务器地址后，即可自动生成专属推流链接。</p>
                 <div class="stream-guide-action-row">
                     <button class="action-btn primary stream-guide-btn" id="goToStreamSettings">
-                        <i class="ph ph-gear-six"></i>前往推流配置
+                        <i class="ph ph-gear-six"></i>配置推流服务器
                     </button>
+                </div>
+            </div>
+
+            <!-- 推流服务器配置 -->
+            <div class="stream-card stream-config-card" id="settings-stream">
+                <div class="card-section-title"><i class="ph ph-sliders-horizontal"></i> 推流服务器配置</div>
+                <div class="settings-row">
+                    <div class="settings-row-left">
+                        <i class="ph ph-globe settings-row-icon"></i>
+                        <div class="settings-row-info">
+                            <div class="settings-row-name">SRS 服务器地址</div>
+                            <div class="settings-row-desc">填写 SRS 服务器 IP 或域名（不含协议头）</div>
+                        </div>
+                    </div>
+                    <input type="text" class="glass-input srs-input-host" id="srsHost" placeholder="例：192.168.1.100 或 live.example.com" />
+                </div>
+                <div class="settings-row">
+                    <div class="settings-row-left">
+                        <i class="ph ph-network settings-row-icon"></i>
+                        <div class="settings-row-info">
+                            <div class="settings-row-name">RTMP 端口</div>
+                            <div class="settings-row-desc">默认 1935，如有端口映射请填最终公网端口</div>
+                        </div>
+                    </div>
+                    <input type="number" class="glass-input srs-input-port" id="srsRtmpPort" placeholder="51935" value="51935" min="1" max="65535" />
+                </div>
+                <div class="settings-row">
+                    <div class="settings-row-left">
+                        <i class="ph ph-tag settings-row-icon"></i>
+                        <div class="settings-row-info">
+                            <div class="settings-row-name">应用名（App）</div>
+                            <div class="settings-row-desc">SRS 推流应用名，默认为 live</div>
+                        </div>
+                    </div>
+                    <input type="text" class="glass-input srs-input-app" id="srsApp" placeholder="live" value="live" />
+                </div>
+                <div class="settings-row">
+                    <div class="settings-row-left">
+                        <i class="ph ph-plugs settings-row-icon"></i>
+                        <div class="settings-row-info">
+                            <div class="settings-row-name">SRS HTTP API 端口</div>
+                            <div class="settings-row-desc">用于查询推流状态，默认 1985；如有映射请填公网端口</div>
+                        </div>
+                    </div>
+                    <input type="number" class="glass-input srs-input-port" id="srsApiPort" placeholder="51985" value="51985" min="1" max="65535" />
+                </div>
+                <div class="settings-row srs-settings-action-row">
+                    <div class="settings-row-left">
+                        <button class="action-btn primary stream-btn" id="saveSrsSettingsBtn"><i class="ph ph-floppy-disk"></i> 保存配置</button>
+                        <button class="action-btn stream-btn" id="testSrsConnectionBtn"><i class="ph ph-wifi-high"></i> 测试连通性</button>
+                        <span class="test-result-label" id="srsTestResult"></span>
+                    </div>
                 </div>
             </div>
 
@@ -1143,6 +1312,7 @@
                             <div class="update-ver-tag">Stable</div>
                         </div>
                         <div class="update-ver-desc" id="updateVerDesc">Loading...</div>
+                        <div class="update-checking-loader" id="updateCheckingLoaderHost"></div>
                         <!-- 进度条（仅在检查/下载时显示） -->
                         <div class="update-progress-row" id="updateProgressRow" style="display:none">
                             <span class="update-progress-label" id="updateProgressLabel">检查中...</span>
@@ -1556,6 +1726,115 @@
         </div>
     </div>
 
+    <!-- ========== UI 实验室（实验性入口） ========== -->
+    <div class="page" id="page-ui-lab" style="display: none;">
+        <div class="content-safe-area">
+            <div class="ui-lab-layout">
+                <section class="glass-card ui-lab-intro-card">
+                    <div class="ui-lab-intro-copy">
+                        <span class="ui-lab-kicker"><i class="ph ph-flask"></i> UI Lab · Loading Feedback</span>
+                        <h2>加载反馈实验室</h2>
+                        <p>这里不是单纯的曲线展柜，而是用来验证“用户在等待什么、界面该给什么反馈”。曲线只服务非确定加载；按钮、骨架屏和确定进度仍各自使用更合适的反馈形式。</p>
+                    </div>
+                    <div class="ui-lab-apply-control">
+                        <div>
+                            <strong>应用到正式界面</strong>
+                            <span id="uiLabApplyState">仅在实验室预览</span>
+                        </div>
+                        <button class="toggle-switch" id="uiLabApplySwitch" type="button" role="switch" aria-label="在应用中启用数学曲线加载器"></button>
+                    </div>
+                </section>
+
+                <div class="ui-lab-workbench">
+                    <section class="glass-card ui-lab-preview-card">
+                        <div class="ui-lab-section-head">
+                            <div>
+                                <span class="ui-lab-section-label">场景预览</span>
+                                <h3 id="uiLabPreviewName">猫耳巡游</h3>
+                            </div>
+                            <span class="ui-lab-mode-badge" id="uiLabPreviewMode">自动 · 启动与系统</span>
+                        </div>
+                        <div class="ui-lab-preview-stage" id="uiLabPreviewStage"></div>
+                        <p class="ui-lab-preview-desc" id="uiLabPreviewDesc"></p>
+
+                        <div class="ui-lab-preview-insight">
+                            <div>
+                                <span>正式使用位置</span>
+                                <div class="ui-lab-chip-row" id="uiLabPreviewWhere"></div>
+                            </div>
+                            <div>
+                                <span>动效反馈</span>
+                                <p id="uiLabMotionSummary">轻微摆动与非线性速度，避免持续绕圈。</p>
+                            </div>
+                        </div>
+
+                        <details class="ui-lab-formula-panel">
+                            <summary>开发备注 / 公式</summary>
+                            <code class="ui-lab-formula" id="uiLabPreviewFormula"></code>
+                        </details>
+
+                        <div class="ui-lab-context-row">
+                            <span>切换真实加载场景</span>
+                            <div class="ui-lab-context-group" id="uiLabContextGroup">
+                                <button class="ui-lab-scene-btn active" type="button" data-loading-context="startup">
+                                    <strong>启动</strong><small>启动更新 / 系统初始化</small>
+                                </button>
+                                <button class="ui-lab-scene-btn" type="button" data-loading-context="network">
+                                    <strong>网络</strong><small>同步 / 更新源检查</small>
+                                </button>
+                                <button class="ui-lab-scene-btn" type="button" data-loading-context="search">
+                                    <strong>诊断</strong><small>搜索 / 扫描 / 探测</small>
+                                </button>
+                                <button class="ui-lab-scene-btn" type="button" data-loading-context="background">
+                                    <strong>后台</strong><small>安静准备 / 缓存刷新</small>
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <aside class="glass-card ui-lab-diagnostics-card">
+                        <div class="ui-lab-section-head">
+                            <div>
+                                <span class="ui-lab-section-label">保护机制</span>
+                                <h3>体验与性能</h3>
+                            </div>
+                            <i class="ph ph-gauge"></i>
+                        </div>
+                        <div class="ui-lab-diagnostics-grid">
+                            <div><span>正在动的加载器</span><strong id="uiLabDiagActive">0 / 4</strong></div>
+                            <div><span>自动静态保护</span><strong id="uiLabDiagPaused">0 个</strong></div>
+                            <div><span>本地渲染开销</span><strong id="uiLabDiagFrame">0.00 ms</strong></div>
+                            <div><span>系统动态偏好</span><strong id="uiLabDiagMotion">完整</strong></div>
+                        </div>
+                        <p>这些数字用于确认“不会满屏乱动”：缩略图保持静态，实验室只运行主预览；窗口隐藏、离屏或系统要求减少动态效果时自动暂停。</p>
+                    </aside>
+                </div>
+
+                <section class="glass-card ui-lab-gallery-card">
+                    <div class="ui-lab-gallery-head">
+                        <div>
+                            <span class="ui-lab-section-label">可选风格 · 12 个预设</span>
+                            <h3>选择全局加载风格</h3>
+                            <p>每张卡片说明它适合哪类等待，以及动起来时给用户什么感觉。固定风格会覆盖自动场景；自动搭配则按真实用途选择。</p>
+                        </div>
+                        <button class="action-btn ui-lab-auto-btn active" id="uiLabAutoBtn" type="button" aria-pressed="true">
+                            <i class="ph ph-sparkle"></i> 自动搭配
+                        </button>
+                    </div>
+                    <div class="ui-lab-curve-grid" id="uiLabCurveGrid"></div>
+                </section>
+
+                <section class="glass-card ui-lab-future-card">
+                    <i class="ph ph-stack-plus"></i>
+                    <div>
+                        <strong>这是 UI 实验室的第一个模块</strong>
+                        <p>后续按钮、卡片、主题、排版和转场实验可以继续接入这里；加载曲线只是第一组可被验证、开关和回滚的 UIUX 资产。</p>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
     <!-- ========== 设置 ========== -->
     <div class="page" id="page-settings" style="display: none; animation: fadeIn 0.3s ease;">
         <div class="content-safe-area">
@@ -1870,10 +2149,40 @@
                                     <i class="ph ph-test-tube settings-row-icon"></i>
                                     <div class="settings-row-info">
                                         <div class="settings-row-name">开启实验性内容</div>
-                                        <div class="settings-row-desc" id="stgExperimentalDesc">关闭后将隐藏所有仍在验证中的功能入口、页面和相关设置。</div>
+                                        <div class="settings-row-desc" id="stgExperimentalDesc">开启后可选择要显示的实验功能入口；具体功能设置仍在各自页面里完成。</div>
                                     </div>
                                 </div>
                                 <div class="toggle-switch" id="stgExperimentalSwitch"></div>
+                            </div>
+                            <div class="settings-row settings-experimental-entry-row" id="stgExperimentalActivityRow">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-users-three settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">关注动态入口</div>
+                                        <div class="settings-row-desc">显示“关注动态”页面，用于公开应用、关注用户和设置上线提醒。</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="stgExperimentalActivitySwitch"></div>
+                            </div>
+                            <div class="settings-row settings-experimental-entry-row" id="stgExperimentalStreamRow">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-broadcast settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">直播推流入口</div>
+                                        <div class="settings-row-desc">显示“直播推流”页面；SRS、RTMP 和 OBS 设置在该页面内配置。</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="stgExperimentalStreamSwitch"></div>
+                            </div>
+                            <div class="settings-row settings-experimental-entry-row" id="stgExperimentalUiLabRow">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-bezier-curve settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">UI 实验室入口</div>
+                                        <div class="settings-row-desc">显示独立的前端实验页面，用于预览、选择和诊断数学曲线加载器。</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-switch" id="stgExperimentalUiLabSwitch"></div>
                             </div>
                         </div>
 
@@ -1900,70 +2209,6 @@
                                 <div class="toggle-switch" id="stgDeveloperUiInspectSwitch"></div>
                             </div>
                         </div>
-
-                        <!-- ========== 直播推流配置 ========== -->
-                        <div class="settings-group-label" id="streamSettingsLabel"><i class="ph ph-broadcast"></i> 直播推流</div>
-                        <div class="glass-card settings-group-card experimental-settings-note" id="streamSettingsDisabledNotice" style="display:none;">
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-info settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">实验性功能未开启</div>
-                                        <div class="settings-row-desc">开启上方“实验性内容”后，才会显示直播推流的前后端联调配置项。</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="glass-card settings-group-card" id="settings-stream">
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-globe settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">SRS 服务器地址</div>
-                                        <div class="settings-row-desc">填写 SRS 服务器 IP 或域名（不含协议头）</div>
-                                    </div>
-                                </div>
-                                <input type="text" class="glass-input srs-input-host" id="srsHost" placeholder="例：192.168.1.100 或 live.example.com" />
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-network settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">RTMP 端口</div>
-                                        <div class="settings-row-desc">默认 1935，如有端口映射请填最终公网端口</div>
-                                    </div>
-                                </div>
-                                <input type="number" class="glass-input srs-input-port" id="srsRtmpPort" placeholder="51935" value="51935" min="1" max="65535" />
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-tag settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">应用名（App）</div>
-                                        <div class="settings-row-desc">SRS 推流应用名，默认为 live</div>
-                                    </div>
-                                </div>
-                                <input type="text" class="glass-input srs-input-app" id="srsApp" placeholder="live" value="live" />
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-row-left">
-                                    <i class="ph ph-plugs settings-row-icon"></i>
-                                    <div class="settings-row-info">
-                                        <div class="settings-row-name">SRS HTTP API 端口</div>
-                                        <div class="settings-row-desc">查询推流状态，默认 1985，如有映射请填公网端口</div>
-                                    </div>
-                                </div>
-                                <input type="number" class="glass-input srs-input-port" id="srsApiPort" placeholder="51985" value="51985" min="1" max="65535" />
-                            </div>
-                            <div class="settings-row srs-settings-action-row">
-                                <div class="settings-row-left">
-                                    <button class="action-btn primary stream-btn" id="saveSrsSettingsBtn"><i class="ph ph-floppy-disk"></i> 保存配置</button>
-                                    <button class="action-btn stream-btn" id="testSrsConnectionBtn"><i class="ph ph-wifi-high"></i> 测试连通性</button>
-                                    <span class="test-result-label" id="srsTestResult"></span>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- /直播推流配置 -->
 
                     </div>
                 </div>
@@ -2376,7 +2621,7 @@
                     <label class="first-time-server-label">
                         <i class="ph ph-globe"></i> 服务器地址
                     </label>
-                    <input type="text" id="firstTimeServerUrl" class="first-time-server-input" placeholder="例如: https://nf.koirin.com">
+                    <input type="text" id="firstTimeServerUrl" class="first-time-server-input" placeholder="例如: https://nekostatus.koirin.com">
                     <div class="first-time-server-status" id="firstTimeServerStatus"></div>
                 </div>
                 <div class="first-time-actions">
@@ -2639,7 +2884,10 @@
     <script src="./js/services/stream-client.js"></script>
     <script src="./js/services/update-client.js"></script>
     <script src="./js/services/announcement-client.js"></script>
+    <script src="./js/services/activity-client.js"></script>
     <script src="./js/components/ui-helpers.js"></script>
+    <script src="./js/components/loading-curves.js"></script>
+    <script src="./js/components/loading-system.js"></script>
     <!-- 1.5 模块化基础设施（core → components → state，在 app.js 之前加载） -->
     <script src="./js/core/event-bus.js"></script>
     <script src="./js/core/theme.js"></script>
@@ -2668,6 +2916,8 @@
     <script src="./js/pages/update.page.js"></script>
     <script src="./js/pages/auth.page.js"></script>
     <script src="./js/pages/announcement.page.js"></script>
+    <script src="./js/pages/activity.page.js"></script>
+    <script src="./js/pages/ui-lab.page.js"></script>
     <script src="./js/pages/about.page.js"></script>
     <!-- 2. 原有 UI 交互逻辑 -->
     <script src="./js/app.js"></script>

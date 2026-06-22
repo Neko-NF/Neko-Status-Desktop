@@ -47,6 +47,8 @@ neko-status-android/
 
 # Local release archives
 releases/
+native/presence-agent/target/
+build/native/
 
 # Publishing Environment Credentials
 gitea_token.txt

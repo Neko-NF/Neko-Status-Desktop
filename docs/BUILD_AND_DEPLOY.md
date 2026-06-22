@@ -15,6 +15,7 @@
 | npm              | 10+          | `npm ci` 比 `npm install` 更可靠                                                  |
 | electron         | 40.8.0       | 首次构建会下载 ~138MB electron zip                                                |
 | electron-builder | 25.1.8+      | `devDependencies` 中已声明                                                        |
+| Rust toolchain   | stable MSVC  | 构建 `NekoPresenceAgent.exe`；没有安装时需先安装 rustup / MSVC 工具链             |
 | Python + Pillow  | 3.11+        | **仅生成图标时需要**，非必须                                                      |
 | curl.exe         | Windows 自带 | 上传大文件到 GitHub 必须用 curl，PowerShell 的 `Invoke-RestMethod` 对大文件有 bug |
 | Git              | 2.40+        | 推送 workflow 文件需要 PAT 有 `workflow` scope                                    |
@@ -110,8 +111,22 @@ npm ci
 ```powershell
 cd "d:\VScode project\Neko_Status"
 npm run build
-# 等价于: npx electron-builder --win --x64
+# 等价于: npm run build:agent && electron-builder --win --x64
 ```
+
+从用户关注活动功能开始，Windows 构建会先编译 Rust Presence Agent：
+
+```powershell
+npm run build:agent
+```
+
+该命令把 release 产物复制到：
+
+```text
+build/native/NekoPresenceAgent.exe
+```
+
+`electron-builder` 通过 `extraResources` 把该文件打入 NSIS 和 ZIP。构建机没有 .NET SDK 不影响 Agent；需要的是 Rust MSVC toolchain。普通用户安装客户端不需要 Rust、.NET SDK 或 Node 环境。
 
 构建产物在 `dist/` 目录：
 
@@ -122,6 +137,14 @@ npm run build
 | `NekoStatus-Setup-{ver}.exe.blockmap` | ~100 KB      | 增量更新映射（可忽略）       |
 | `builder-effective-config.yaml`       | —            | 构建配置快照                 |
 | `win-unpacked/`                       | —            | 解压后的应用目录（中间产物） |
+
+安装目录中还必须包含：
+
+```text
+resources/NekoPresenceAgent.exe
+```
+
+发布校验需要确认该文件存在、版本匹配且可启动。
 
 ### 3.2 构建踩坑
 
@@ -477,3 +500,10 @@ release_notes.txt
 3. `.exe` 直接交给安装器；`.zip` 由主进程解压后拉起内部可执行文件；`.7z` 交给系统打开。
 
 安装交接后当前应用会退出。NSIS `.exe` 自动更新安装时，主进程默认使用 `/S --force-run`，由安装器完成覆盖安装后拉起新版本 `NekoStatus.exe`。隐藏重启 watcher 只作为显式兜底策略保留：需要时设置 `NEKO_UPDATE_RELAUNCH_STRATEGY=watcher`。
+
+用户关注活动 Agent 的更新/卸载处理：
+
+- 自动更新前，客户端会向 Agent 发送 `shutdown(update)`，等待代理退出后再交给 NSIS。
+- NSIS install/uninstall 阶段会调用 `NekoPresenceAgent.exe --shutdown-for-update` 作为兜底，避免二进制文件被占用。
+- 卸载时删除 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\NekoStatusPresenceAgent`。
+- ZIP 手动覆盖前，应提示用户先选择“退出全部（本次）”，否则后台代理可能占用旧文件。

@@ -1,0 +1,41 @@
+[package]
+name = "neko-presence-agent"
+version = "0.1.0"
+edition = "2021"
+license = "ISC"
+
+[[bin]]
+name = "NekoPresenceAgent"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22.1"
+chrono = { version = "0.4.41", default-features = false, features = ["clock"] }
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tray-icon = "0.19.2"
+windows-sys = { version = "0.59.0", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Security_Cryptography",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Memory",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+  "Win32_Networking_WinHttp",
+  "Win32_Security_Authorization",
+  "Win32_System_ProcessStatus",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+winreg = "0.52.0"
+winrt-notification = "0.5.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "symbols"

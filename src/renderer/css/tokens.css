@@ -7,9 +7,12 @@
 /* ── 暗色模式（默认） ──────────────────────────────────────────── */
 :root {
     --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    --uiux-glass-opacity: 0.05;
+    --uiux-text-secondary-opacity: 0.6;
+    --uiux-text-muted-opacity: 0.42;
     /* 玻璃质感 */
-    --glass-bg: rgba(255, 255, 255, 0.05);
-    --glass-bg-hover: rgba(255, 255, 255, 0.08);
+    --glass-bg: rgb(255 255 255 / var(--uiux-glass-opacity));
+    --glass-bg-hover: rgb(255 255 255 / min(0.32, calc(var(--uiux-glass-opacity) + 0.03)));
     --glass-border: 1px solid rgba(255, 255, 255, 0.1);
     --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     --glass-blur: blur(20px);
@@ -20,7 +23,8 @@
     --dock-blur: blur(20px) saturate(180%);
     --dropdown-bg: rgba(15, 23, 42, 0.95);
     /* 主题色 */
-    --theme-color: #0ea5e9;
+    --theme-color-seed: #0ea5e9;
+    --theme-color: var(--theme-color-seed);
     --accent-cyan: var(--theme-color);
     /* 语义色 */
     --success-mint: #10b981;
@@ -29,12 +33,12 @@
     --error-coral: #ef4444;
     /* 文本 */
     --text-main: rgba(255, 255, 255, 0.95);
-    --text-secondary: rgba(255, 255, 255, 0.6);
-    --text-muted: rgba(255, 255, 255, 0.42);
+    --text-secondary: rgb(255 255 255 / var(--uiux-text-secondary-opacity));
+    --text-muted: rgb(255 255 255 / var(--uiux-text-muted-opacity));
     --glass-bg-solid: #111827;
     --border-color: color-mix(in srgb, var(--text-main) 12%, transparent);
-    --surface-raised: color-mix(in srgb, var(--text-main) 5%, transparent);
-    --surface-raised-hover: color-mix(in srgb, var(--text-main) 8%, transparent);
+    --surface-raised: rgb(255 255 255 / var(--uiux-glass-opacity));
+    --surface-raised-hover: rgb(255 255 255 / min(0.34, calc(var(--uiux-glass-opacity) + 0.03)));
     /* 阴影 */
     --shadow-sm: 0 4px 12px color-mix(in srgb, var(--theme-color) 10%, rgba(0,0,0,0.15));
     --shadow-md: 0 12px 24px color-mix(in srgb, var(--theme-color) 12%, rgba(0,0,0,0.25));
@@ -110,8 +114,9 @@
 /* ── 浅色模式 ──────────────────────────────────────────────────── */
 html[data-theme="light"] body {
     --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-    --glass-bg: rgba(255, 255, 255, 0.5);
-    --glass-bg-hover: rgba(255, 255, 255, 0.7);
+    --theme-color: color-mix(in srgb, var(--theme-color-seed) 58%, #0f172a 42%);
+    --glass-bg: rgb(255 255 255 / min(0.88, calc(var(--uiux-glass-opacity) + 0.45)));
+    --glass-bg-hover: rgb(255 255 255 / min(0.96, calc(var(--uiux-glass-opacity) + 0.65)));
     --glass-border: 1px solid rgba(255, 255, 255, 0.6);
     --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
     --dock-bg: rgba(255, 255, 255, 0.6);
@@ -123,11 +128,15 @@ html[data-theme="light"] body {
     --shadow-lg: 0 12px 40px color-mix(in srgb, var(--theme-color) 15%, rgba(0,0,0,0.1));
     --shadow-xl: 0 24px 48px color-mix(in srgb, var(--theme-color) 20%, rgba(0,0,0,0.14));
     --text-main: rgba(15, 23, 42, 0.95);
-    --text-secondary: rgba(15, 23, 42, 0.6);
-    --text-muted: rgba(15, 23, 42, 0.42);
+    --text-secondary: rgb(15 23 42 / var(--uiux-text-secondary-opacity));
+    --text-muted: rgb(15 23 42 / var(--uiux-text-muted-opacity));
+    --success-mint: #047857;
+    --success-green: var(--success-mint);
+    --warning-amber: #b45309;
+    --error-coral: #dc2626;
     --glass-bg-solid: #ffffff;
     --border-color: rgba(15, 23, 42, 0.1);
-    --surface-raised: rgba(255, 255, 255, 0.72);
-    --surface-raised-hover: rgba(255, 255, 255, 0.92);
+    --surface-raised: rgb(255 255 255 / min(0.94, calc(var(--uiux-glass-opacity) + 0.67)));
+    --surface-raised-hover: rgb(255 255 255 / min(1, calc(var(--uiux-glass-opacity) + 0.87)));
     --sidebar-border: rgba(0, 0, 0, 0.05);
 }

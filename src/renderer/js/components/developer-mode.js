@@ -170,9 +170,9 @@
     document.body?.style?.setProperty?.(name, value);
   }
 
-  function rgbaForCurrentTheme(alpha) {
-    const light = document.documentElement.getAttribute('data-theme') === 'light';
-    return light ? `rgba(15, 23, 42, ${alpha})` : `rgba(255, 255, 255, ${alpha})`;
+  function removeUiuxVar(name) {
+    document.documentElement.style.removeProperty?.(name);
+    document.body?.style?.removeProperty?.(name);
   }
 
   function applyUiuxTuning(tuning) {
@@ -187,13 +187,17 @@
     setUiuxVar('--radius-compact', `${Math.max(6, buttonRadius - 6)}px`);
 
     const glassAlpha = Math.round(next.glassOpacity) / 100;
-    setUiuxVar('--glass-bg', `rgba(255, 255, 255, ${glassAlpha})`);
-    setUiuxVar('--glass-bg-hover', `rgba(255, 255, 255, ${Math.min(0.32, glassAlpha + 0.03)})`);
-    setUiuxVar('--surface-raised', `rgba(255, 255, 255, ${Math.min(0.34, glassAlpha + 0.02)})`);
-
     const textAlpha = Math.round(next.textOpacity) / 100;
-    setUiuxVar('--text-secondary', rgbaForCurrentTheme(textAlpha));
-    setUiuxVar('--text-muted', rgbaForCurrentTheme(Math.max(0.22, textAlpha - 0.18)));
+    [
+      '--glass-bg',
+      '--glass-bg-hover',
+      '--surface-raised',
+      '--text-secondary',
+      '--text-muted',
+    ].forEach(removeUiuxVar);
+    setUiuxVar('--uiux-glass-opacity', String(glassAlpha));
+    setUiuxVar('--uiux-text-secondary-opacity', String(textAlpha));
+    setUiuxVar('--uiux-text-muted-opacity', String(Math.max(0.22, textAlpha - 0.18)));
 
     const fontScale = next.fontScale / 100;
     setUiuxVar('--developer-font-scale-factor', String(fontScale));

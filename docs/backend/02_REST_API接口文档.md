@@ -592,7 +592,75 @@ POST /api/v1/stream/on-publish
 
 ---
 
-## 七、速率限制说明
+## 七、用户关注与应用在线提醒接口
+
+> 该功能使用 Rust `NekoPresenceAgent.exe` + REST/SSE。完整说明见 [用户关注与应用在线提醒](../用户关注与应用在线提醒/README.md)。
+
+### 7.1 Agent Enroll
+
+```
+POST /api/activity/agent/enroll
+DELETE /api/activity/agent/enroll
+```
+
+- 鉴权：用户 JWT/Cookie。
+- `POST` 为当前用户设备签发一次性明文 Agent Token。
+- `DELETE` 撤销当前用户设备的 Agent Token。
+- Agent Token 只能用于 `presence:write`、`events:read`、`bootstrap:read`。
+
+### 7.2 Agent Bootstrap / Presence / Events
+
+```
+GET  /api/activity/agent/bootstrap
+POST /api/activity/presence
+GET  /api/activity/events/stream
+GET  /api/activity/events
+```
+
+- 鉴权：Agent Token。
+- `presence` 请求体最大 2KiB。
+- 服务端从 Agent Token 推导用户和设备，拒绝客户端伪造归属关系。
+- SSE 事件写入 Outbox 后再发送，支持 `Last-Event-ID`。
+- SSE 不可用时 Agent 使用 `/api/activity/events` 做 5 秒游标轮询。
+
+Presence 示例：
+
+```json
+{
+  "protocolVersion": 1,
+  "agentVersion": "0.1.0",
+  "clientEventId": "evt-42",
+  "sequence": 42,
+  "state": "entered",
+  "appKey": "win32:code.exe",
+  "displayName": "code.exe",
+  "stableSince": "2026-06-21T08:00:00.000Z",
+  "observedAt": "2026-06-21T08:00:03.000Z",
+  "detectorKind": "interactive"
+}
+```
+
+### 7.3 用户管理接口
+
+```
+GET              /api/activity/users/search
+GET/POST/DELETE /api/activity/follows
+GET/POST/PATCH/DELETE /api/activity/rules
+GET/PUT          /api/activity/me/privacy
+GET/PATCH        /api/activity/me/apps
+GET              /api/activity/me/followers
+GET/POST/DELETE  /api/activity/blocks
+```
+
+- 鉴权：用户 JWT/Cookie。
+- 搜索只返回 UID、用户名和头像。
+- 关注为单向关系。
+- 默认隐私为 `private`。
+- 关注者只能读取当前状态和属于自己的事件，不开放对方完整会话历史。
+
+---
+
+## 八、速率限制说明
 
 | 接口类型        | 限制             |
 | --------------- | ---------------- |
@@ -600,6 +668,8 @@ POST /api/v1/stream/on-publish
 | 截图上传        | 10 次/分钟/设备  |
 | 更新检查        | 10 次/小时/设备  |
 | Stream Key 重置 | 3 次/分钟/设备   |
+| Activity 搜索   | 30 次/分钟/用户  |
+| Activity Presence | 6 次/分钟/Agent，心跳按 10 秒节奏 |
 | 其他接口        | 120 次/分钟/设备 |
 
 超限返回 `429 Too Many Requests`，响应头包含 `Retry-After: <秒数>`。

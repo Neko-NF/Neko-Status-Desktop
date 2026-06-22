@@ -35,7 +35,10 @@
     const iconMap = { success: 'ph-check-circle', warn: 'ph-warning', error: 'ph-x-circle', info: 'ph-info' };
     const el = document.createElement('div');
     el.className = `neko-island ${type}`;
-    el.innerHTML = `<i class="ph ${iconMap[type] || 'ph-info'} neko-island-icon"></i><span>${escapeHtml(String(text))}</span>`;
+    el.title = String(text);
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    el.innerHTML = `<i class="ph ${iconMap[type] || 'ph-info'} neko-island-icon"></i><span class="neko-island-text">${escapeHtml(String(text))}</span>`;
     host.appendChild(el);
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('visible')));
     setTimeout(() => {

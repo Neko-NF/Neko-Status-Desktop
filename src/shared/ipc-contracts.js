@@ -31,6 +31,7 @@ const IPC_CHANNELS = Object.freeze({
   SYSTEM_FONTS: 'system:fonts',
 
   PRIVACY_PICK_WINDOW: 'privacy:pickWindow',
+  ACTIVITY_PICK_APP_WINDOW: 'activity:pickAppWindow',
 
   PAIRING_HANDSHAKE: 'pairing:handshake',
 
@@ -92,6 +93,13 @@ const IPC_CHANNELS = Object.freeze({
   ANNOUNCEMENT_DELETE: 'announcement:delete',
   ANNOUNCEMENT_RECEIPT: 'announcement:receipt',
 
+  ACTIVITY_GET_STATE: 'activity:getState',
+  ACTIVITY_UPDATE_SETTINGS: 'activity:updateSettings',
+  ACTIVITY_PROVISION_AGENT: 'activity:provisionAgent',
+  ACTIVITY_PAUSE_AGENT: 'activity:pauseAgent',
+  ACTIVITY_RESUME_AGENT: 'activity:resumeAgent',
+  ACTIVITY_MANAGE: 'activity:manage',
+
   DEV_RENDERER_ERROR: 'dev:rendererError',
   DEV_MODE_PANEL_OPEN: 'dev:modePanel:open',
   DEV_MODE_PANEL_CLOSE: 'dev:modePanel:close',
@@ -113,6 +121,8 @@ const IPC_EVENTS = Object.freeze({
   STARTUP_UPDATE_STATUS: 'startup-update:status',
   SYSTEM_METRICS_UPDATE: 'system:metricsUpdate',
   ANNOUNCEMENT_RECEIVED: 'announcement:received',
+  ACTIVITY_STATE_CHANGED: 'activity:stateChanged',
+  APP_OPEN_PAGE: 'app:openPage',
   DEV_MODE_PANEL_COMMAND: 'dev:modePanel:command',
   DEV_MODE_PANEL_STATE: 'dev:modePanel:state',
 });

@@ -4,6 +4,22 @@
   const meta = document.getElementById('startupMeta');
   const track = document.getElementById('progressTrack');
   const fill = document.getElementById('progressFill');
+  const panel = document.querySelector('.startup-panel');
+  const curveStage = document.getElementById('startupCurveLoaderStage');
+  const loadingSystem = window._nekoModules?.components?.LoadingSystem;
+  const curveController = loadingSystem?.create?.(curveStage, {
+    context: 'startup',
+    mode: 'section',
+    size: 'lg',
+    label: '正在准备 Neko Status',
+    delayMs: 0,
+    minVisibleMs: 0,
+  }) || null;
+  const curvePreferences = {
+    enableExperimentalFeatures: false,
+    enableExperimentalCurveLoaders: false,
+    loadingCurveStyle: 'auto',
+  };
 
   const contracts = window.__NEKO_IPC_CONTRACTS__ || {};
   const events = contracts.IPC_EVENTS || {};
@@ -27,10 +43,21 @@
     if (Number.isFinite(numeric) && numeric >= 0) {
       track.classList.remove('is-indeterminate');
       fill.style.width = `${Math.max(0, Math.min(100, numeric))}%`;
+      syncCurveLoader(false);
       return;
     }
     track.classList.add('is-indeterminate');
     fill.style.width = '';
+    syncCurveLoader(true);
+  }
+
+  function syncCurveLoader(indeterminate) {
+    const enabled = curvePreferences.enableExperimentalFeatures === true
+      && curvePreferences.enableExperimentalCurveLoaders === true;
+    const visible = enabled && indeterminate;
+    panel?.classList.toggle('has-curve-loader', visible);
+    if (visible) curveController?.show?.();
+    else curveController?.hide?.();
   }
 
   function applyStatus(payload = {}) {
@@ -46,8 +73,18 @@
     }
     const themeColor = payload.themeColor || payload.customThemeColor;
     if (themeColor) {
-      document.documentElement.style.setProperty('--theme-color', themeColor);
+      document.documentElement.style.setProperty('--theme-color-seed', themeColor);
+      document.documentElement.style.removeProperty('--theme-color');
     }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'enableExperimentalFeatures')) {
+      curvePreferences.enableExperimentalFeatures = payload.enableExperimentalFeatures === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'enableExperimentalCurveLoaders')) {
+      curvePreferences.enableExperimentalCurveLoaders = payload.enableExperimentalCurveLoaders === true;
+    }
+    if (payload.loadingCurveStyle) curvePreferences.loadingCurveStyle = payload.loadingCurveStyle;
+    loadingSystem?.applyPreferences?.(curvePreferences);
 
     setProgress(payload.pct);
   }

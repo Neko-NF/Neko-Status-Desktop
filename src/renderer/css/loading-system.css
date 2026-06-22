@@ -1,0 +1,167 @@
+/* Neko loading system: shared by the main renderer and startup update window. */
+
+@keyframes neko-busy-spin {
+    to { transform: rotate(360deg); }
+}
+
+.neko-loading-host {
+    position: relative;
+}
+
+.neko-loading {
+    --neko-loading-size: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--theme-color, currentColor);
+}
+
+.neko-loading[hidden] {
+    display: none !important;
+}
+
+.neko-loading--inline {
+    --neko-loading-size: 24px;
+    gap: 7px;
+}
+
+.neko-loading--size-sm { --neko-loading-size: 28px; }
+.neko-loading--size-md { --neko-loading-size: 48px; }
+.neko-loading--size-lg { --neko-loading-size: 76px; }
+
+.neko-loading--section {
+    width: 100%;
+    min-height: 112px;
+    flex-direction: column;
+    padding: 18px;
+}
+
+.neko-loading--overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--glass-bg-solid, #111827) 82%, transparent);
+    backdrop-filter: blur(8px);
+    border-radius: inherit;
+}
+
+.neko-loading-visual {
+    width: var(--neko-loading-size);
+    height: var(--neko-loading-size);
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+}
+
+.neko-loading--inline .neko-loading-visual {
+    width: 24px;
+    height: 24px;
+}
+
+.neko-curve-svg {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    color: currentColor;
+}
+
+.neko-curve-track {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 4.2;
+    opacity: 0.11;
+    vector-effect: non-scaling-stroke;
+}
+
+.neko-curve-svg--static .neko-curve-track {
+    stroke-width: 2.4;
+    opacity: 0.72;
+}
+
+.neko-curve-particle {
+    color: currentColor;
+}
+
+.neko-loading-classic,
+.neko-busy-indicator {
+    width: 17px;
+    height: 17px;
+    border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    animation: neko-busy-spin 0.82s linear infinite;
+}
+
+.neko-loading-classic {
+    grid-area: 1 / 1;
+    width: 42%;
+    height: 42%;
+}
+
+.neko-loading.is-curve .neko-loading-classic,
+.neko-loading.is-classic .neko-curve-svg {
+    display: none;
+}
+
+.neko-loading-label {
+    color: var(--text-secondary, currentColor);
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.neko-button-busy {
+    cursor: wait;
+}
+
+.neko-busy-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Compatibility while legacy pages are migrated to LoadingSystem.setButtonBusy(). */
+.ph-spin,
+.diag-spinner,
+.settings-link-btn i.spinning,
+.developer-mode-btn.loading i,
+.dev-action-btn.loading i,
+.dev-tool-btn.loading i {
+    display: inline-block;
+    animation: neko-busy-spin 0.82s linear infinite !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .neko-loading-classic,
+    .neko-busy-indicator,
+    .ph-spin,
+    .diag-spinner,
+    .settings-link-btn i.spinning,
+    .developer-mode-btn.loading i,
+    .dev-action-btn.loading i,
+    .dev-tool-btn.loading i,
+    .diag-running {
+        animation: none !important;
+    }
+
+    .neko-loading-classic,
+    .neko-busy-indicator {
+        border-color: currentColor;
+        border-right-color: transparent;
+    }
+}
+
+@media (forced-colors: active) {
+    .neko-loading,
+    .neko-curve-svg,
+    .neko-loading-classic,
+    .neko-busy-indicator {
+        color: CanvasText;
+        forced-color-adjust: auto;
+    }
+}

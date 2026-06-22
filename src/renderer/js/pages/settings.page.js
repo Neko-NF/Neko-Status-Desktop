@@ -73,6 +73,7 @@
   const SettingsPage = {
     _inited: false,
     _actionsBound: false,
+    _experimentalDelegated: false,
     _dndPollStarted: false,
     _dndUserAction: false,
     _deps: defaultDeps(),
@@ -115,6 +116,87 @@
       this._deps.showNotice(message, type, duration);
     },
 
+    async handleExperimentalSwitchClick(switchEl, key, label) {
+      if (!switchEl || switchEl.classList.contains('loading')) return;
+      const next = !switchEl.classList.contains('on');
+      const currentConfig = {
+        enableExperimentalFeatures: $('stgExperimentalSwitch')?.classList.contains('on') === true,
+        enableExperimentalActivityEntry: $('stgExperimentalActivitySwitch')?.classList.contains('on') === true,
+        enableExperimentalStreamEntry: $('stgExperimentalStreamSwitch')?.classList.contains('on') === true,
+        enableExperimentalUiLabEntry: $('stgExperimentalUiLabSwitch')?.classList.contains('on') === true,
+      };
+      switchEl.classList.toggle('on', next);
+      switchEl.classList.add('loading');
+      try {
+        let payload = null;
+        if (key === 'enableExperimentalFeatures' && next === false) {
+          payload = {
+              enableExperimentalFeatures: false,
+              enableExperimentalActivityEntry: false,
+              enableExperimentalStreamEntry: false,
+              enableExperimentalUiLabEntry: false,
+              enableExperimentalCurveLoaders: false,
+              enableActivityFeature: false,
+              enableActivityPublishing: false,
+              enableActivityBackground: false,
+            };
+        } else if (key === 'enableExperimentalActivityEntry' && next === false) {
+          payload = {
+            enableExperimentalActivityEntry: false,
+            enableActivityFeature: false,
+            enableActivityPublishing: false,
+            enableActivityBackground: false,
+          };
+        }
+        this._deps.applyExperimentalFeatureState({
+          ...currentConfig,
+          ...(payload || { [key]: next }),
+        });
+        const saved = payload
+          ? await this.config()?.setMany?.(payload)
+          : await this.config()?.set?.(key, next);
+        if (saved && saved.ok === false) throw new Error(saved.error || saved.message || '保存失败');
+        const cfg = await this.config()?.getAll?.();
+        this._deps.applyExperimentalFeatureState(cfg || { [key]: next });
+        this.log('INFO', `${label} -> ${next ? '已开启' : '已关闭'}`);
+      } catch (error) {
+        switchEl.classList.toggle('on', !next);
+        this.notice(error.message || `${label}保存失败`, 'error');
+        let cfg = null;
+        try { cfg = await this.config()?.getAll?.(); } catch {}
+        if (cfg) this._deps.applyExperimentalFeatureState(cfg);
+      } finally {
+        switchEl.classList.remove('loading');
+      }
+    },
+
+    bindExperimentalSwitchDelegation() {
+      if (this._experimentalDelegated) return;
+      this._experimentalDelegated = true;
+      const metaById = {
+        stgExperimentalSwitch: ['enableExperimentalFeatures', '实验性内容'],
+        stgExperimentalActivitySwitch: ['enableExperimentalActivityEntry', '关注动态入口'],
+        stgExperimentalStreamSwitch: ['enableExperimentalStreamEntry', '直播推流入口'],
+        stgExperimentalUiLabSwitch: ['enableExperimentalUiLabEntry', 'UI 实验室入口'],
+      };
+      document.addEventListener?.('click', (event) => {
+        const switchEl = event.target.closest?.('#stgExperimentalSwitch, #stgExperimentalActivitySwitch, #stgExperimentalStreamSwitch, #stgExperimentalUiLabSwitch');
+        const meta = switchEl ? metaById[switchEl.id] : null;
+        if (!meta) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.handleExperimentalSwitchClick(switchEl, meta[0], meta[1]);
+      }, true);
+      Object.entries(metaById).forEach(([id, meta]) => {
+        const switchEl = $(id);
+        switchEl?.addEventListener?.('click', (event) => {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          this.handleExperimentalSwitchClick(switchEl, meta[0], meta[1]);
+        });
+      });
+    },
+
     bindBackendControls() {
       if (this._actionsBound) return;
       if (!this.config() && !this.system()) return;
@@ -136,12 +218,7 @@
         SettingsPage.log('INFO', `自动下载更新 -> ${isOn ? '开启（后台静默下载，下次启动时安装）' : '已关闭'}`);
       });
 
-      $('stgExperimentalSwitch')?.addEventListener('click', async function handleExperimentalSwitch() {
-        const isOn = this.classList.contains('on');
-        await SettingsPage.config()?.set?.('enableExperimentalFeatures', isOn);
-        SettingsPage._deps.applyExperimentalFeatureState({ enableExperimentalFeatures: isOn });
-        SettingsPage.log('INFO', `实验性内容 -> ${isOn ? '已开启' : '已关闭'}`);
-      });
+      this.bindExperimentalSwitchDelegation();
 
       $('openExperimentalSettingsBtn')?.addEventListener('click', () => {
         document.querySelector('.nav-item[data-target="page-settings"]')?.click();
@@ -463,8 +540,7 @@
       button.classList.add('loading');
       const icon = $('clearCacheIcon');
       if (icon) {
-        icon.className = 'ph ph-spinner';
-        icon.classList.add('spinning');
+        icon.className = 'ph ph-spinner ph-spin';
       }
       const label = button.childNodes?.[button.childNodes.length - 1] || null;
       if (label) label.textContent = ' 清理中...';
@@ -476,7 +552,6 @@
           this.log('SUCCESS', `cache cleared: ${this._deps.formatBytes(result.clearedBytes || 0)} freed, ${result.removedCount || 0} paths touched`);
           if (icon) {
             icon.className = 'ph ph-check-circle';
-            icon.classList.remove('spinning');
           }
           if (label) label.textContent = ' 已完成';
           const cacheDesc = $('cacheSizeDesc');
@@ -492,7 +567,6 @@
 
       if (icon) {
         icon.className = 'ph ph-broom';
-        icon.classList.remove('spinning');
       }
       if (label) label.textContent = ' 清理缓存';
       button.classList.remove('loading');

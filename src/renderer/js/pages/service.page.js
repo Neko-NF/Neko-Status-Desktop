@@ -121,16 +121,16 @@
 
         const running = await this.service()?.isRunning?.();
         btn.className = 'status-toggle-btn btn-pending';
-        btn.innerHTML = running
-          ? '<i class="ph ph-spinner ph-spin"></i> 停止中...'
-          : '<i class="ph ph-spinner ph-spin"></i> 连接中...';
+        window._nekoUIHelpers?.setButtonBusy?.(btn, true, { label: running ? '停止中…' : '连接中…' });
+        let finalRunning = !!running;
 
         try {
           if (running) {
             const result = await this.service()?.stop?.();
+            finalRunning = result && typeof result.isRunning === 'boolean' ? result.isRunning : false;
             this.log('INFO', '已手动停止上报服务');
             this.notice('上报服务已停止', 'info', 2000);
-            this._deps.applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : false);
+            this._deps.applyServiceState(finalRunning);
             return;
           }
 
@@ -143,13 +143,21 @@
           }
 
           const result = await this.service()?.start?.();
+          finalRunning = result && typeof result.isRunning === 'boolean' ? result.isRunning : true;
           this.log('INFO', '已手动启动上报服务');
           this.notice('上报服务已启动', 'success', 2000);
-          this._deps.applyServiceState(result && typeof result.isRunning === 'boolean' ? result.isRunning : true);
+          this._deps.applyServiceState(finalRunning);
         } catch (error) {
           this.log('ERROR', `服务切换失败: ${error.message}`);
           this.notice('服务切换失败', 'error', 3000);
-          this._deps.applyServiceState(await this.service()?.isRunning?.());
+          finalRunning = !!(await this.service()?.isRunning?.());
+          this._deps.applyServiceState(finalRunning);
+        } finally {
+          window._nekoUIHelpers?.setButtonBusy?.(btn, false);
+          btn.className = `status-toggle-btn ${finalRunning ? 'btn-stop' : 'btn-start'}`;
+          btn.innerHTML = finalRunning
+            ? '<i class="ph ph-stop-circle"></i> 停止上报'
+            : '<i class="ph ph-play-circle"></i> 开始上报';
         }
       });
     },
@@ -337,8 +345,7 @@
       const list = $('healthResultsList');
       if (!btn || !list) return;
 
-      btn.disabled = true;
-      btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 0.8s linear infinite;"></i> 体检中...';
+      window._nekoUIHelpers?.setButtonBusy?.(btn, true, { label: '体检中…' });
       list.innerHTML = '';
       this.refreshHealthResultsScrollFx();
       const startedAt = Date.now();
@@ -353,7 +360,7 @@
         list.appendChild(this.renderHealthItem(failedResult));
       }
 
-      btn.disabled = false;
+      window._nekoUIHelpers?.setButtonBusy?.(btn, false);
       btn.innerHTML = '<i class="ph ph-heartbeat"></i> 重新检测';
       this.refreshHealthResultsScrollFx();
     },

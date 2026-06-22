@@ -19,7 +19,7 @@ const DEFAULTS = {
   deviceId: null,
   reportInterval: 10,
   serverMode: 'production',
-  serverUrlProd: 'https://nf.koirin.com',
+  serverUrlProd: 'https://nekostatus.koirin.com',
   serverUrlLocal: 'http://127.0.0.1:3000',
   enableScreenshot: false,
   screenshotInterval: 60,
@@ -36,6 +36,18 @@ const DEFAULTS = {
   seedColor: '#0ea5e9',
   customSeedColor: '',
   enableExperimentalFeatures: false,
+  enableExperimentalActivityEntry: false,
+  enableExperimentalStreamEntry: false,
+  enableExperimentalUiLabEntry: false,
+  enableExperimentalCurveLoaders: false,
+  loadingCurveStyle: 'auto',
+  enableActivityFeature: false,
+  enableActivityPublishing: false,
+  enableActivitySnapshots: false,
+  enableActivityBackground: false,
+  enableActivityAutoStart: true,
+  activityDeviceId: null,
+  activityDeviceName: '',
   glassEffect: true,
   uiScale: 100,
   uiFont: '',
@@ -97,6 +109,7 @@ const DEFAULTS = {
 };
 
 function mergeDefaults(data = {}) {
+  const hasStreamEntry = Object.prototype.hasOwnProperty.call(data, 'enableExperimentalStreamEntry');
   const merged = {
     ...DEFAULTS,
     ...data,
@@ -113,6 +126,16 @@ function mergeDefaults(data = {}) {
       ...(data.streamConfig || {}),
     },
   };
+  if (data.enableExperimentalFeatures === true) {
+    if (!hasStreamEntry) merged.enableExperimentalStreamEntry = true;
+  }
+  if (typeof merged.loadingCurveStyle !== 'string' || !merged.loadingCurveStyle.trim()) {
+    merged.loadingCurveStyle = 'auto';
+  }
+  if (merged.enableExperimentalFeatures !== true) {
+    merged.enableExperimentalUiLabEntry = false;
+    merged.enableExperimentalCurveLoaders = false;
+  }
   merged.enableIncognito = false;
 
   const streamConfig = merged.streamConfig || {};

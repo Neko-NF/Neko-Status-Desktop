@@ -124,6 +124,7 @@ stream.ipc.js
 system.ipc.js
 service.ipc.js
 update.ipc.js
+activity.ipc.js
 ```
 
 统一由 `src/main/ipc/index.js` 注册。禁止在 `main.js` 新增内联 handler。
@@ -151,6 +152,7 @@ src/renderer/js/services/service-client.js
 src/renderer/js/services/system-client.js
 src/renderer/js/services/stream-client.js
 src/renderer/js/services/update-client.js
+src/renderer/js/services/activity-client.js
 ```
 
 约束：
@@ -210,6 +212,55 @@ privacy-picker-result-${token}
 - 复杂 payload 有 schema。
 - Renderer 页面没有新增直接 `window.nekoIPC` 调用。
 - 文档说明了新增或废弃的接口。
+
+## 用户关注活动 IPC
+
+活动功能的 Electron IPC 只负责配置、代理控制和服务端管理接口转发，不实现前台应用检测或实时事件长连接。
+
+Invoke channel：
+
+| 常量 | channel | 用途 |
+| --- | --- | --- |
+| `ACTIVITY_GET_STATE` | `activity:getState` | 获取本地开关、代理状态、版本、PID、内存、连接状态 |
+| `ACTIVITY_UPDATE_SETTINGS` | `activity:updateSettings` | 更新启用、发布、活动快照、后台、自启动设置 |
+| `ACTIVITY_PROVISION_AGENT` | `activity:provisionAgent` | 通过用户登录态 enroll Agent Token 并 Provision 到代理 |
+| `ACTIVITY_PAUSE_AGENT` | `activity:pauseAgent` | 临时暂停活动代理 |
+| `ACTIVITY_RESUME_AGENT` | `activity:resumeAgent` | 恢复活动代理 |
+| `ACTIVITY_MANAGE` | `activity:manage` | 关注、规则、隐私、公开应用、关注者、拉黑等管理动作 |
+| `ACTIVITY_PICK_APP_WINDOW` | `activity:pickAppWindow` | 复用隐私窗口框选层选择要公开的应用窗口，只把进程名交给 renderer |
+
+Event channel：
+
+| 常量 | channel | 用途 |
+| --- | --- | --- |
+| `ACTIVITY_STATE_CHANGED` | `activity:stateChanged` | 主进程向 renderer 推送代理状态变化 |
+
+`activity:manage` 的 `action` 当前包括：
+
+```text
+bootstrap
+searchUsers
+follow / unfollow
+createRule / updateRule / deleteRule
+getPrivacy / setPrivacy
+getApps / upsertApp / setAppHidden
+getFollowers
+getBlocks / block / unblock
+```
+
+约束：
+
+- Renderer 页面只能通过 `ActivityClient` 调用。
+- `schemas.js` 必须校验 activity settings 和 manage payload。
+- activity settings 的 `snapshots` 为可选布尔值；保存时同步服务端 `shareSnapshots` 和 Agent Profile，任一步失败都回滚。
+- Agent Token 明文只能出现在主进程 enroll 响应到命名管道 Provision 的短链路中，不能暴露给 renderer。
+- 活动实时事件使用 Agent 与 `neko-server` 的 SSE/轮询，不经过 Electron IPC 长连接。
+- Renderer 可通过窗口框选后调用 `upsertApp` 主动公开某个应用，也可手填 `.exe` 进程名；`setAppHidden` 只改变 Activity 公开目录，不影响截图、完整状态上报或应用历史。
+- 活动快照不经过 renderer IPC 传输；采集、上传、事件图片下载和 Toast 全部在 Agent/服务端链路内完成。
+
+## Agent 命名管道协议
+
+Electron 主进程与 `NekoPresenceAgent.exe` 使用当前用户命名管道通信。该协议不属于 renderer IPC，但属于本地安全边界的一部分。详细命令、ACL、DPAPI 和协议版本规则见 [Agent 本地 IPC 与安全协议](./用户关注与应用在线提醒/06_Agent本地IPC与安全协议.md)。
 ## 更新 IPC 说明
 
 更新模块继续复用现有 channel：

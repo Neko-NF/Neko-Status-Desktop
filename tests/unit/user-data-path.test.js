@@ -126,4 +126,23 @@ describe('user data path compatibility', () => {
     assert.equal(result.userDataPath, path.join(appDataDir, DEV_USER_DATA_DIR));
     assert.equal(app.paths.userData, path.join(appDataDir, DEV_USER_DATA_DIR));
   });
+
+  it('uses an explicit absolute directory without migrating existing config', () => {
+    const appDataDir = makeTempAppData();
+    const overrideDir = makeTempAppData();
+    const app = createApp(appDataDir);
+    writeConfig(appDataDir, 'Neko Status Dev', { deviceKey: 'personal-key' });
+
+    const result = configureUserDataPath({
+      app,
+      isDevRuntime: true,
+      displayName: 'Neko Status Dev',
+      userDataDir: overrideDir,
+    });
+
+    assert.equal(result.userDataPath, overrideDir);
+    assert.equal(app.paths.userData, overrideDir);
+    assert.equal(result.migration.copied, false);
+    assert.equal(fs.existsSync(path.join(overrideDir, 'neko-config.json')), false);
+  });
 });

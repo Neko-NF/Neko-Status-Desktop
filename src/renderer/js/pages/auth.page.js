@@ -187,8 +187,7 @@
         return;
       }
 
-      authLoginBtn.disabled = true;
-      authLoginBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 登录中...';
+      window._nekoUIHelpers?.setButtonBusy?.(authLoginBtn, true, { label: '登录中…' });
 
       const result = await callAuth('login', 'authLogin', username, password);
 
@@ -205,8 +204,7 @@
         addLogLine('ERROR', `登录失败: ${errMsg}`);
       }
 
-      authLoginBtn.disabled = false;
-      authLoginBtn.innerHTML = '<i class="ph ph-sign-in"></i> 登录';
+      window._nekoUIHelpers?.setButtonBusy?.(authLoginBtn, false);
     });
   }
 
@@ -234,8 +232,7 @@
         return;
       }
 
-      authRegBtn.disabled = true;
-      authRegBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 注册中...';
+      window._nekoUIHelpers?.setButtonBusy?.(authRegBtn, true, { label: '注册中…' });
 
       const result = await callAuth('register', 'authRegister', username, password);
 
@@ -252,8 +249,7 @@
         addLogLine('ERROR', `注册失败: ${errMsg}`);
       }
 
-      authRegBtn.disabled = false;
-      authRegBtn.innerHTML = '<i class="ph ph-user-plus"></i> 注册';
+      window._nekoUIHelpers?.setButtonBusy?.(authRegBtn, false);
     });
   }
 
@@ -809,8 +805,7 @@
         data.newPassword = newPassword;
       }
 
-      setButtonBusyState(clone, true, clone.innerHTML);
-      clone.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 保存中...';
+      window._nekoUIHelpers?.setButtonBusy?.(clone, true, { label: '保存中…' });
 
       const result = await callAuth('updateProfile', 'authUpdateProfile', data);
 
@@ -828,7 +823,7 @@
         showAuthNotice(result.message || result.error || '保存失败', 'error');
       }
 
-      setButtonBusyState(clone, false, clone.innerHTML);
+      window._nekoUIHelpers?.setButtonBusy?.(clone, false);
       clone.innerHTML = '<i class="ph ph-check-circle"></i> 保存更改';
     });
   }
@@ -911,8 +906,7 @@
         return;
       }
 
-      firstTimeTestBtn.disabled = true;
-      firstTimeTestBtn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> 测试中...';
+      window._nekoUIHelpers?.setButtonBusy?.(firstTimeTestBtn, true, { label: '测试中…' });
       if (statusEl) {
         statusEl.textContent = '正在测试连接...';
         statusEl.className = 'first-time-server-status first-time-status-testing';
@@ -959,8 +953,7 @@
         }
       }
 
-      firstTimeTestBtn.disabled = false;
-      firstTimeTestBtn.innerHTML = '<i class="ph ph-plugs"></i> 测试并继续';
+      window._nekoUIHelpers?.setButtonBusy?.(firstTimeTestBtn, false);
     });
   }
 

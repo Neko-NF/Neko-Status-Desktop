@@ -49,6 +49,9 @@ function registerSystemIpc(deps) {
   ipcMain.handle(IPC_CHANNELS.SYSTEM_ACTIVE_WINDOW, async () => createIpcSuccess(await systemUtils.getActiveWindow()));
   ipcMain.handle(IPC_CHANNELS.SYSTEM_LIST_WINDOWS, async () => createIpcSuccess(await systemUtils.listVisibleWindows()));
   ipcMain.handle(IPC_CHANNELS.PRIVACY_PICK_WINDOW, async () => createIpcSuccess(await pickPrivacyWindow()));
+  ipcMain.handle(IPC_CHANNELS.ACTIVITY_PICK_APP_WINDOW, async () => createIpcSuccess(await pickPrivacyWindow({
+    hintText: '移动鼠标点选要公开的应用窗口，单击确认，Esc 取消',
+  })));
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_INFO, async () => {
     const battery = await systemUtils.getBatteryInfo().catch(() => ({}));

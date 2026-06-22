@@ -18,9 +18,6 @@
       const zone = document.getElementById('settingsExperimentalZone');
       const settingsExperimentalLabel = document.getElementById('settingsExperimentalLabel');
       const settingsExperimental = document.getElementById('settings-experimental');
-      const streamSettingsLabel = document.getElementById('streamSettingsLabel');
-      const streamSettings = document.getElementById('settings-stream');
-      const streamSettingsDisabledNotice = document.getElementById('streamSettingsDisabledNotice');
       const experimentalDesc = document.getElementById('stgExperimentalDesc');
 
       if (!zone || !settingsExperimental || zone.dataset.mounted === '1') return;
@@ -36,17 +33,8 @@
       settingsExperimental.classList.add('settings-experimental-shell');
       zone.appendChild(settingsExperimental);
 
-      const featureStack = document.createElement('div');
-      featureStack.id = 'settingsExperimentalFeatures';
-      featureStack.className = 'settings-experimental-features';
-      zone.appendChild(featureStack);
-
-      if (streamSettingsLabel) featureStack.appendChild(streamSettingsLabel);
-      if (streamSettingsDisabledNotice) streamSettingsDisabledNotice.remove();
-      if (streamSettings) featureStack.appendChild(streamSettings);
-
       if (experimentalDesc) {
-        experimentalDesc.textContent = '开启后会显示仍在验证中的新功能、配套入口和相关设置；关闭后这些内容会从侧边栏和设置页一起隐藏。';
+        experimentalDesc.textContent = '开启后可选择要显示的实验功能入口；具体功能设置仍在各自页面里完成。';
       }
 
       zone.dataset.mounted = '1';
@@ -54,42 +42,80 @@
 
     function applyState(cfg = {}) {
       const enabled = !!cfg.enableExperimentalFeatures;
+      const activityEntryEnabled = enabled && cfg.enableExperimentalActivityEntry === true;
+      const streamEntryEnabled = enabled && cfg.enableExperimentalStreamEntry === true;
+      const uiLabEntryEnabled = enabled && cfg.enableExperimentalUiLabEntry === true;
       const streamGate = document.getElementById('streamExperimentalGate');
       const streamContent = document.getElementById('streamExperimentalContent');
-      const streamSettings = document.getElementById('settings-stream');
-      const settingsExperimentalFeatures = document.getElementById('settingsExperimentalFeatures');
-      const streamSettingsLabel = document.getElementById('streamSettingsLabel');
-      const streamSettingsDisabledNotice = document.getElementById('streamSettingsDisabledNotice');
       const streamPage = document.getElementById('page-stream');
       const experimentalSwitch = document.getElementById('stgExperimentalSwitch');
+      const activitySwitch = document.getElementById('stgExperimentalActivitySwitch');
+      const streamSwitch = document.getElementById('stgExperimentalStreamSwitch');
+      const uiLabSwitch = document.getElementById('stgExperimentalUiLabSwitch');
+      const activityRow = document.getElementById('stgExperimentalActivityRow');
+      const streamRow = document.getElementById('stgExperimentalStreamRow');
+      const uiLabRow = document.getElementById('stgExperimentalUiLabRow');
       const experimentalDesc = document.getElementById('stgExperimentalDesc');
       const navStream = document.getElementById('navStream');
+      const navActivity = document.getElementById('navActivity');
+      const navUiLab = document.getElementById('navUiLab');
+      const activityPage = document.getElementById('page-activity');
+      const uiLabPage = document.getElementById('page-ui-lab');
+      const settingsExperimental = document.getElementById('settings-experimental');
 
       if (experimentalSwitch) experimentalSwitch.classList.toggle('on', enabled);
-      setExpandableSectionState(streamGate, !enabled, { display: 'flex' });
-      if (streamContent) streamContent.style.display = enabled ? '' : 'none';
-      setExpandableSectionState(streamSettings, enabled, { display: 'flex' });
-      setExpandableSectionState(settingsExperimentalFeatures, enabled, { display: 'flex' });
-      setExpandableSectionState(streamSettingsLabel, enabled, { display: 'flex' });
-      if (streamSettingsDisabledNotice) streamSettingsDisabledNotice.style.display = 'none';
+      if (activitySwitch) activitySwitch.classList.toggle('on', activityEntryEnabled);
+      if (streamSwitch) streamSwitch.classList.toggle('on', streamEntryEnabled);
+      if (uiLabSwitch) uiLabSwitch.classList.toggle('on', uiLabEntryEnabled);
+      if (settingsExperimental) {
+        settingsExperimental.classList.toggle('is-experimental-expanded', enabled);
+      }
+      [activityRow, streamRow, uiLabRow].forEach((row) => {
+        if (!row) return;
+        row.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+        row.classList.toggle('is-expanded', enabled);
+        row.classList.toggle('is-collapsed', !enabled);
+        if (row.style) {
+          row.style.removeProperty?.('display');
+          row.style.removeProperty?.('max-height');
+          row.style.removeProperty?.('opacity');
+          row.style.removeProperty?.('transform');
+        }
+      });
+      setExpandableSectionState(streamGate, !streamEntryEnabled, { display: 'flex' });
+      if (streamContent) streamContent.style.display = streamEntryEnabled ? '' : 'none';
       if (experimentalDesc) {
         experimentalDesc.textContent = enabled
-          ? '实验性内容已开启，仍在验证中的新功能会显示对应入口、页面和设置项。'
-          : '关闭后会隐藏所有仍在验证中的功能入口、页面和相关设置，仅保留稳定功能。';
+          ? '选择下方入口后，对应页面会出现在侧边栏；功能细节请进入对应页面设置。'
+          : '关闭后会隐藏仍在验证中的功能入口，仅保留稳定功能。';
       }
-      if (streamPage && !enabled) streamPage.style.display = 'none';
-      if (navStream) {
-        navStream.classList.toggle('show', enabled);
-        navStream.setAttribute('aria-hidden', enabled ? 'false' : 'true');
-        if (enabled) navStream.removeAttribute('tabindex');
-        else navStream.setAttribute('tabindex', '-1');
-        navStream.classList.toggle('experimental-off', !enabled);
-        syncNavIndicator();
-      }
-      if (!enabled && document.querySelector('.nav-item.active[data-target="page-stream"]')) {
+      if (streamPage && !streamEntryEnabled) streamPage.style.display = 'none';
+      if (activityPage && !activityEntryEnabled) activityPage.style.display = 'none';
+      if (uiLabPage && !uiLabEntryEnabled) uiLabPage.style.display = 'none';
+
+      [
+        [navActivity, activityEntryEnabled],
+        [navStream, streamEntryEnabled],
+        [navUiLab, uiLabEntryEnabled],
+      ].forEach(([navItem, visible]) => {
+        if (!navItem) return;
+        navItem.classList.toggle('show', visible);
+        navItem.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (visible) navItem.removeAttribute('tabindex');
+        else navItem.setAttribute('tabindex', '-1');
+        navItem.classList.toggle('experimental-off', !visible);
+      });
+      syncNavIndicator();
+      window.setTimeout?.(() => syncNavIndicator(), 340);
+      const activeStreamNav = document.querySelector('.nav-item.active[data-target="page-stream"]');
+      const activeActivityNav = document.querySelector('.nav-item.active[data-target="page-activity"]');
+      const activeUiLabNav = document.querySelector('.nav-item.active[data-target="page-ui-lab"]');
+      if ((activeStreamNav && !streamEntryEnabled)
+        || (activeActivityNav && !activityEntryEnabled)
+        || (activeUiLabNav && !uiLabEntryEnabled)) {
         document.querySelector('.nav-item[data-target="mainDashboardArea"]')?.click();
       }
-      if (!enabled) stopStreamStatusPolling();
+      if (!streamEntryEnabled) stopStreamStatusPolling();
     }
 
     return { mountSettingsZone, applyState };

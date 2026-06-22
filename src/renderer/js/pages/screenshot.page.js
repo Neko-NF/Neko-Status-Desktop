@@ -267,6 +267,7 @@
       const privacyRulesEmpty = document.getElementById('privacyRulesEmpty');
       const incognitoScopeGroup = document.getElementById('incognitoScopeGroup');
       const incognitoScopePill = document.getElementById('incognitoScopePill');
+      let privacyWindowLoader = null;
       
       // 从 localStorage 加载规则
       function loadPrivacyRulesFromStorage() {
@@ -362,6 +363,8 @@
       
       function renderPrivacyWindowPicker(windows) {
           if (!privacyWindowPicker || !privacyWindowPickerList) return;
+          privacyWindowLoader?.destroy?.();
+          privacyWindowLoader = null;
           privacyWindowPicker.hidden = false;
           privacyWindowPickerList.innerHTML = '';
       
@@ -412,10 +415,14 @@
           if (!privacyWindowPicker || !privacyWindowPickerList) return;
           privacyWindowPicker.hidden = false;
           privacyWindowPickerList.innerHTML = '';
-          const loading = document.createElement('div');
-          loading.className = 'privacy-rules-empty';
-          loading.textContent = '正在读取窗口列表...';
-          privacyWindowPickerList.appendChild(loading);
+          privacyWindowLoader?.destroy?.();
+          privacyWindowLoader = window._nekoModules?.components?.LoadingSystem?.create?.(privacyWindowPickerList, {
+              context: 'search',
+              mode: 'section',
+              size: 'md',
+              label: '正在读取窗口列表…',
+          }) || null;
+          privacyWindowLoader?.show?.();
           try {
               const windows = await systemClient()?.listWindows?.();
               renderPrivacyWindowPicker(windows || []);

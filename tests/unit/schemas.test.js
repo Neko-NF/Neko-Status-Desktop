@@ -9,6 +9,8 @@ const {
   validateDeveloperModePanelStatePayload,
   validateAnnouncementPayload,
   validateAnnouncementReceiptPayload,
+  validateActivitySettingsPayload,
+  validateActivityManagePayload,
   validateStreamConfigPayload,
   validateUpdateDownloadPayload,
   validateUpdateInstallPayload,
@@ -94,6 +96,24 @@ test('validateAnnouncementReceiptPayload validates id and action', () => {
   assert.equal(validateAnnouncementReceiptPayload({ id: '2', action: 'ack' }).ok, true);
   assert.equal(validateAnnouncementReceiptPayload({ id: '' }).ok, false);
   assert.equal(validateAnnouncementReceiptPayload({ id: 1, action: 'dismiss' }).ok, false);
+});
+
+test('activity payload validators keep settings and management actions controlled', () => {
+  assert.equal(validateActivitySettingsPayload({
+    enabled: true,
+    publishing: false,
+    snapshots: true,
+    background: true,
+    autoStart: true,
+  }).ok, true);
+  assert.equal(validateActivitySettingsPayload({ enabled: 'yes' }).ok, false);
+  assert.equal(validateActivitySettingsPayload({ snapshots: 'yes' }).ok, false);
+  assert.equal(validateActivitySettingsPayload(null).ok, false);
+
+  assert.equal(validateActivityManagePayload({ action: 'searchUsers', data: { q: 'alice' } }).ok, true);
+  assert.equal(validateActivityManagePayload({ action: 'setPrivacy', data: { visibility: 'followers' } }).ok, true);
+  assert.equal(validateActivityManagePayload({ action: 'run-shell', data: {} }).ok, false);
+  assert.equal(validateActivityManagePayload({ action: 'follow', data: 'not-object' }).ok, false);
 });
 
 test('developer mode payload validators keep sidecar commands controlled', () => {

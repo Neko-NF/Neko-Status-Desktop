@@ -47,6 +47,7 @@ function createRendererBridge() {
     getActiveWindow: () => invokeCompat(IPC_CHANNELS.SYSTEM_ACTIVE_WINDOW),
     listWindows: () => invokeCompat(IPC_CHANNELS.SYSTEM_LIST_WINDOWS),
     pickPrivacyWindow: () => invokeCompat(IPC_CHANNELS.PRIVACY_PICK_WINDOW),
+    pickActivityAppWindow: () => invokeCompat(IPC_CHANNELS.ACTIVITY_PICK_APP_WINDOW),
 
     getSystemInfo: () => invokeCompat(IPC_CHANNELS.SYSTEM_INFO),
     getBattery: () => invokeCompat(IPC_CHANNELS.SYSTEM_BATTERY),
@@ -129,6 +130,13 @@ function createRendererBridge() {
     updateAnnouncement: (id, payload) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_UPDATE, id, payload),
     deleteAnnouncement: (id) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_DELETE, id),
     recordAnnouncementReceipt: (id, action) => invokeCompat(IPC_CHANNELS.ANNOUNCEMENT_RECEIPT, id, action),
+
+    getActivityState: () => invokeCompat(IPC_CHANNELS.ACTIVITY_GET_STATE),
+    updateActivitySettings: (payload) => invokeCompat(IPC_CHANNELS.ACTIVITY_UPDATE_SETTINGS, payload),
+    provisionActivityAgent: () => invokeCompat(IPC_CHANNELS.ACTIVITY_PROVISION_AGENT),
+    pauseActivityAgent: () => invokeCompat(IPC_CHANNELS.ACTIVITY_PAUSE_AGENT),
+    resumeActivityAgent: () => invokeCompat(IPC_CHANNELS.ACTIVITY_RESUME_AGENT),
+    manageActivity: (action, data) => invokeCompat(IPC_CHANNELS.ACTIVITY_MANAGE, { action, data: data || {} }),
 
     openDeveloperModePanel: () => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_OPEN),
     closeDeveloperModePanel: () => invokeCompat(IPC_CHANNELS.DEV_MODE_PANEL_CLOSE),

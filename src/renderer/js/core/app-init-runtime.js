@@ -9,10 +9,12 @@
     'page-device-status',
     'page-screenshot',
     'page-services',
+    'page-activity',
     'page-stream',
     'page-update',
     'page-about',
     'page-announcement',
+    'page-ui-lab',
   ]);
 
   function create(deps = {}) {
@@ -113,6 +115,21 @@
 
       const autoDownloadSwitch = document.getElementById('stgAutoDownloadSwitch');
       if (autoDownloadSwitch) autoDownloadSwitch.classList.toggle('on', !!cfg.autoDownload);
+
+      const experimentalSwitch = document.getElementById('stgExperimentalSwitch');
+      if (experimentalSwitch) experimentalSwitch.classList.toggle('on', !!cfg.enableExperimentalFeatures);
+      const experimentalActivitySwitch = document.getElementById('stgExperimentalActivitySwitch');
+      if (experimentalActivitySwitch) {
+        experimentalActivitySwitch.classList.toggle('on', !!cfg.enableExperimentalFeatures && cfg.enableExperimentalActivityEntry === true);
+      }
+      const experimentalStreamSwitch = document.getElementById('stgExperimentalStreamSwitch');
+      if (experimentalStreamSwitch) {
+        experimentalStreamSwitch.classList.toggle('on', !!cfg.enableExperimentalFeatures && cfg.enableExperimentalStreamEntry === true);
+      }
+      const experimentalUiLabSwitch = document.getElementById('stgExperimentalUiLabSwitch');
+      if (experimentalUiLabSwitch) {
+        experimentalUiLabSwitch.classList.toggle('on', !!cfg.enableExperimentalFeatures && cfg.enableExperimentalUiLabEntry === true);
+      }
 
       const reportMode = cfg.reportIntervalMode || 'auto';
       document.querySelectorAll('#stgReportModeGroup .toggle-btn').forEach((btn) => {
@@ -249,7 +266,8 @@
 
     function syncSeedColor(cfg) {
       if (!cfg.seedColor) return;
-      document.documentElement.style.setProperty('--theme-color', cfg.seedColor);
+      document.documentElement.style.setProperty('--theme-color-seed', cfg.seedColor);
+      document.documentElement.style.removeProperty('--theme-color');
       localStorage.setItem('neko-theme-color', cfg.seedColor);
       const builtinSwatches = document.querySelectorAll('.settings-swatch, .color-swatch[data-color]');
       let matchedBuiltin = false;
@@ -298,7 +316,7 @@
       const serverDesc = document.querySelector('#stgConfigBtn')?.closest('.settings-row')?.querySelector('.settings-row-desc');
       if (!serverDesc) return;
       const mode = cfg.serverMode || 'production';
-      const url = mode === 'local' ? (cfg.serverUrlLocal || '127.0.0.1:3000') : (cfg.serverUrlProd || 'nf.koirin.com');
+      const url = mode === 'local' ? (cfg.serverUrlLocal || '127.0.0.1:3000') : (cfg.serverUrlProd || 'https://nekostatus.koirin.com');
       serverDesc.textContent = url.replace(/^https?:\/\//, '');
     }
 
@@ -310,7 +328,12 @@
 
     function restoreLastPage(cfg) {
       if (!cfg.restoreLastState || !cfg.lastPage || !RESTORABLE_PAGES.has(cfg.lastPage)) return;
-      if (!cfg.enableExperimentalFeatures && cfg.lastPage === 'page-stream') return;
+      if (cfg.lastPage === 'page-stream'
+        && (!cfg.enableExperimentalFeatures || cfg.enableExperimentalStreamEntry !== true)) return;
+      if (cfg.lastPage === 'page-activity'
+        && (!cfg.enableExperimentalFeatures || cfg.enableExperimentalActivityEntry !== true)) return;
+      if (cfg.lastPage === 'page-ui-lab'
+        && (!cfg.enableExperimentalFeatures || cfg.enableExperimentalUiLabEntry !== true)) return;
       const navItem = document.querySelector(`.nav-item[data-target="${cfg.lastPage}"]`);
       if (navItem?.getAttribute?.('aria-hidden') === 'true') return;
       if (navItem?.classList.contains('conditional-nav') && !navItem.classList.contains('show')) return;
@@ -387,7 +410,23 @@
       } catch {}
     }
 
+    let permissionLoader = null;
+
+    function getPermissionLoader() {
+      if (permissionLoader) return permissionLoader;
+      const host = document.getElementById('devicePermissionLoaderHost');
+      permissionLoader = window._nekoModules?.components?.LoadingSystem?.create?.(host, {
+        context: 'system',
+        mode: 'section',
+        size: 'md',
+        label: '正在检查关键权限…',
+      }) || null;
+      return permissionLoader;
+    }
+
     async function syncPermissionSummary(data, cfg) {
+      const loader = getPermissionLoader();
+      loader?.show?.();
       try {
         const perms = await callService('checkPermissions', 'checkPermissions');
         const permUI = {
@@ -490,7 +529,9 @@
             deniedListEl.style.display = 'none';
           }
         }
-      } catch {}
+      } catch {} finally {
+        loader?.hide?.();
+      }
     }
 
     function syncDiagnostics(data) {

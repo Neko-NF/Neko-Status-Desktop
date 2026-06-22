@@ -2,6 +2,15 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## 1.4.0 - 2026-06-22
+
+- Added the opt-in experimental following activity module with per-app publishing, follow rules, privacy controls, Windows notifications, and optional application-window snapshots.
+- Added the standalone Rust presence agent with scoped credentials, SSE/polling event delivery, background operation, tray handoff, and update-safe lifecycle management.
+- Added the optional mathematical-curve loading system and UI Lab, with shared scheduling, reduced-motion fallbacks, and independently controlled experimental entries.
+- Standardized loading and button-busy feedback across startup, updates, announcements, settings, authentication, service, and activity flows.
+- Updated the default production service endpoint to `https://nekostatus.koirin.com`.
+- Improved cleanup when signing out, switching servers, disabling experiments, updating, or uninstalling.
+
 ## 1.3.0-beta.3 - 2026-05-31
  
 - Added screenshot compression and optimization core algorithm, supporting configuration of resolution, format selection (JPEG/PNG/auto), target/max bytes, and resolution scaling bounds.

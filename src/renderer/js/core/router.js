@@ -20,17 +20,20 @@
     'page-device-status': { icon: 'ph-hard-drives',       title: '设备状态 / Device Status',        flex: false },
     'page-screenshot':    { icon: 'ph-image',             title: '截图与活动 / Screenshot & Activity', flex: false },
     'page-services':      { icon: 'ph-cpu',               title: '服务与自启动 / Services',          flex: false },
+    'page-activity':      { icon: 'ph-users-three',       title: '关注动态 / Following Activity',    flex: false },
     'page-stream':        { icon: 'ph-broadcast',         title: '直播推流 / Live Stream',          flex: false },
     'page-update':        { icon: 'ph-cloud-arrow-down',  title: '更新中心 / Update Center',        flex: false },
     'page-settings':      { icon: 'ph-gear',              title: '设置 / Settings',                flex: false },
     'page-about':         { icon: 'ph-info',              title: '关于 / About',                   flex: false },
-    'page-announcement': { icon: 'ph-megaphone',         title: '公告管理 / Announcements',        flex: false },
+    'page-announcement':  { icon: 'ph-megaphone',         title: '公告管理 / Announcements',        flex: false },
+    'page-ui-lab':        { icon: 'ph-bezier-curve',       title: 'UI 实验室 / UI Lab',              flex: false },
   };
 
   // 可被 lastPage 持久化的页面
   const RESTORABLE_PAGES = new Set([
     'mainDashboardArea', 'consoleArea', 'page-device-status', 'page-screenshot',
-    'page-services', 'page-stream', 'page-update', 'page-about', 'page-announcement'
+    'page-services', 'page-activity', 'page-stream', 'page-update', 'page-about', 'page-announcement',
+    'page-ui-lab'
   ]);
 
   let _navMenu = null;
