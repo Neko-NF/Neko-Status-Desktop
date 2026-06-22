@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 
 const {
   ActivityAgentController,
@@ -326,6 +327,6 @@ test('agent profile sync carries snapshot limits and screenshot privacy rules', 
   assert.equal(commandPayload.snapshotMaxBytes, 512 * 1024);
   assert.equal(commandPayload.snapshotMaxWidth, 640);
   assert.equal(commandPayload.snapshotMaxHeight, 360);
-  assert.equal(commandPayload.snapshotCacheDir, 'C:\\NekoData\\activity-snapshots');
+  assert.equal(commandPayload.snapshotCacheDir, path.join('C:\\NekoData', 'activity-snapshots'));
   assert.deepEqual(commandPayload.snapshotBlockedProcesses, ['code.exe', 'keepass.exe']);
 });
