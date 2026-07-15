@@ -77,9 +77,18 @@ jobs:
           $sumsPath = "$distDir\SHA256SUMS.txt"
           if (Test-Path $sumsPath) { Remove-Item $sumsPath }
 
-          Get-ChildItem -Path $distDir -Include "*.exe","*.zip" -Recurse | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Out-File -FilePath $sumsPath -Append -Encoding utf8
+          $releaseAssets = @(
+            "$distDir\NekoStatus-Setup-$env:VERSION.exe",
+            "$distDir\NekoStatus-$env:VERSION-win.zip"
+          )
+          foreach ($asset in $releaseAssets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
+              Write-Error "Release asset missing: $asset"
+              exit 1
+            }
+            $item = Get-Item -LiteralPath $asset
+            $hash = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($item.Name)" | Out-File -FilePath $sumsPath -Append -Encoding utf8
           }
 
       - name: Resolve release flags
