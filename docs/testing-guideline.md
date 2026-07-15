@@ -60,7 +60,7 @@ Rust Agent 测试覆盖：
 - 未稳定新候选不覆盖旧状态。
 - 无候选进入 idle。
 - 锁屏或恢复异常采样间隔立即 idle。
-- WinHTTP URL 解析；后续继续补 SSE、退避和 DPAPI 损坏恢复。
+- WinHTTP URL、HTTP/MIME 分类、SSE 心跳/id/多行 data、退避与轮询恢复；DPAPI 损坏恢复继续补充。
 
 Smoke 覆盖：
 
@@ -204,6 +204,8 @@ npm run dev:startup-update:up-to-date
 - 验证关注动态不依赖截图/完整状态上报设备密钥；关闭或重置截图链路不应撤销 Activity Agent Token。
 - 验证新检测应用默认不公开；发布方主动公开后，关注方才能从目录选择或手填同一 `.exe` 创建提醒规则。
 - 验证弱网下开关显示处理中，失败后恢复旧状态且不显示假成功。
+- 验证 Presence 与事件接收状态互不覆盖；HTML、登录跳转、错误 MIME、401/403、429、5xx、SSE EOF 和轮询恢复都有独立断言。
+- 验证 Renderer 只接受更新 revision，健康轮询不触发五个管理接口全量刷新，局部加载失败保留旧数据并提供重试。
 
 涉及 UI：
 

@@ -1010,111 +1010,197 @@
             <div class="page-header activity-page-header">
                 <div>
                     <h2 class="page-title-text"><i class="ph ph-bell-ringing"></i> 应用上线提醒</h2>
-                    <span class="page-subtitle">公开你愿意分享的应用，也为关心的人设置上线提醒；默认不上传截图，快照提醒需单独开启</span>
-                </div>
-                <div class="activity-agent-summary">
-                    <span class="status-badge" id="activityAgentBadge" aria-live="polite">未启用</span>
-                    <button class="action-btn x-small" id="activityRepairBtn" type="button"><i class="ph ph-wrench"></i> 修复后台提醒</button>
+                    <span class="page-subtitle">分别查看本机服务、提醒接收与应用分享状态；默认不上传截图，快照提醒需单独开启</span>
                 </div>
             </div>
-            <div class="activity-page-status" id="activityPageStatus" aria-live="polite" hidden></div>
+            <div class="activity-page-status" id="activityPageStatus" aria-live="off" hidden></div>
 
-            <section class="activity-guide-strip" aria-label="关注动态使用步骤">
+            <section class="glass-card activity-health-card" id="activityHealthCard" data-tone="disabled" aria-labelledby="activityHealthTitle">
+                <div class="activity-health-head">
+                    <div class="activity-health-heading">
+                        <span class="activity-health-icon" id="activityHealthIcon" aria-hidden="true"><i class="ph ph-bell-simple-slash"></i></span>
+                        <div>
+                            <span class="activity-health-eyebrow">提醒服务状态</span>
+                            <h3 id="activityHealthTitle">尚未开启</h3>
+                            <span class="visually-hidden" id="activityAgentBadge" aria-hidden="true">未启用</span>
+                            <p id="activityHealthSummary">开启后可接收关注对象的应用上线提醒，并选择是否分享自己的应用。</p>
+                        </div>
+                    </div>
+                    <div class="activity-health-actions">
+                        <span class="activity-health-freshness" id="activityHealthFreshness">等待首次检查</span>
+                        <button class="action-btn primary" id="activityHealthActionBtn" type="button" data-health-action="enable">
+                            <i class="ph ph-power"></i><span>开启上线提醒</span>
+                        </button>
+                        <button class="action-btn" id="activityHealthRefreshBtn" type="button"><i class="ph ph-arrows-clockwise"></i> 立即检查</button>
+                        <button class="action-btn" id="activityDiagnosticsToggle" type="button" aria-expanded="false" aria-controls="activityDiagnosticsPanel">
+                            <i class="ph ph-info"></i><span>查看详情</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="activity-health-rows">
+                    <div class="activity-health-row" id="activityLocalHealth" data-state="disabled">
+                        <span class="activity-health-row-icon" aria-hidden="true"><i class="ph ph-desktop-tower"></i></span>
+                        <div><strong>本机提醒服务</strong><small id="activityLocalHealthDetail">尚未启动</small></div>
+                        <span class="activity-health-pill" id="activityLocalHealthLabel">未启用</span>
+                    </div>
+                    <div class="activity-health-row" id="activityReceiverHealth" data-state="disabled">
+                        <span class="activity-health-row-icon" aria-hidden="true"><i class="ph ph-bell-ringing"></i></span>
+                        <div><strong>接收上线提醒</strong><small id="activityReceiverHealthDetail">尚未启用</small></div>
+                        <span class="activity-health-pill" id="activityReceiverHealthLabel">未启用</span>
+                    </div>
+                    <div class="activity-health-row" id="activityPublisherHealth" data-state="disabled">
+                        <span class="activity-health-row-icon" aria-hidden="true"><i class="ph ph-share-network"></i></span>
+                        <div><strong>分享我的应用</strong><small id="activityPublisherHealthDetail">尚未启用</small></div>
+                        <span class="activity-health-pill" id="activityPublisherHealthLabel">未启用</span>
+                    </div>
+                </div>
+                <div class="activity-diagnostics-panel" id="activityDiagnosticsPanel" hidden>
+                    <div class="activity-diagnostics-head">
+                        <div><strong>诊断详情</strong><small>仅包含状态、版本和时间，不会复制登录凭据。</small></div>
+                        <button class="action-btn x-small" id="activityCopyDiagnosticsBtn" type="button"><i class="ph ph-copy"></i> 复制诊断信息</button>
+                    </div>
+                    <pre id="activityDiagnosticsContent">尚无诊断数据</pre>
+                </div>
+                <p class="visually-hidden" id="activityHealthAnnouncer" role="status" aria-live="polite" aria-atomic="true">提醒服务尚未开启</p>
+            </section>
+
+            <section class="activity-guide-strip" id="activityOnboarding" aria-label="首次使用步骤">
                 <div class="activity-guide-step">
                     <span>1</span>
-                    <div><strong>先选择公开哪些应用</strong><small>默认不公开新应用，你来决定。</small></div>
+                    <div><strong>开启上线提醒</strong><small>先准备本机轻量提醒服务。</small></div>
                 </div>
                 <div class="activity-guide-step">
                     <span>2</span>
-                    <div><strong>关注用户并设置提醒</strong><small>只能选择对方已公开的应用。</small></div>
+                    <div><strong>关注并选择应用</strong><small>只会提醒对方主动公开的应用。</small></div>
                 </div>
                 <div class="activity-guide-step">
                     <span>3</span>
-                    <div><strong>需要时留在后台</strong><small>客户端退出后也能继续提醒。</small></div>
+                    <div><strong>按需分享和后台运行</strong><small>分享、快照与后台运行都可独立关闭。</small></div>
                 </div>
             </section>
 
-            <div class="activity-grid activity-settings-grid">
-                <section class="glass-card activity-card">
-                    <div class="activity-card-title"><i class="ph ph-power"></i> 开启与后台提醒</div>
-                    <div class="activity-setting-row">
-                        <div><strong>启用关注动态</strong><small>打开后可管理公开应用、关注用户和上线提醒。</small></div>
-                        <div class="toggle-switch" id="activityEnabledSwitch" role="switch" tabindex="0" aria-label="启用关注动态"></div>
-                    </div>
-                    <div class="activity-setting-row">
-                        <div><strong>在这台电脑分享应用在线</strong><small>只在你公开的应用稳定打开后显示在线。</small></div>
-                        <div class="toggle-switch" id="activityPublishingSwitch" role="switch" tabindex="0" aria-label="在此设备共享前台活动"></div>
-                    </div>
-                    <div class="activity-setting-row">
-                        <div><strong>上线提醒附带应用窗口快照</strong><small>关注者的系统通知可显示公开应用窗口缩略图；命中隐私保护时自动改为无图提醒。</small></div>
-                        <div class="toggle-switch" id="activitySnapshotsSwitch" role="switch" tabindex="0" aria-label="上线提醒附带应用窗口快照"></div>
-                    </div>
-                    <div class="activity-setting-row">
-                        <div><strong>退出客户端后继续提醒</strong><small>只保留轻量后台提醒，不启动主窗口。</small></div>
-                        <div class="toggle-switch" id="activityBackgroundSwitch" role="switch" tabindex="0" aria-label="独立后台运行"></div>
-                    </div>
-                    <div class="activity-setting-row">
-                        <div><strong>开机后自动准备提醒</strong><small>适合经常需要离线接收好友应用上线提醒。</small></div>
-                        <div class="toggle-switch" id="activityAutoStartSwitch" role="switch" tabindex="0" aria-label="Windows 登录时启动代理"></div>
-                    </div>
-                    <div class="activity-agent-details" id="activityAgentDetails" aria-live="polite">代理尚未运行</div>
-                    <div class="activity-inline-actions">
-                        <button class="action-btn" id="activityPauseBtn" type="button"><i class="ph ph-pause"></i> 临时暂停</button>
-                        <button class="action-btn" id="activityRefreshBtn" type="button"><i class="ph ph-arrows-clockwise"></i> 刷新状态</button>
-                    </div>
-                </section>
-
-                <section class="glass-card activity-card">
-                    <div class="activity-card-title"><i class="ph ph-eye"></i> 谁能看到我的公开应用</div>
-                    <p class="activity-card-copy">可见范围只作用于你已经公开的应用；未公开应用永远不会出现在对方列表里。</p>
-                    <div class="activity-privacy-options" id="activityPrivacyOptions">
-                        <button type="button" data-visibility="private"><i class="ph ph-lock"></i><strong>只有我</strong><small>任何人都看不到</small></button>
-                        <button type="button" data-visibility="admins"><i class="ph ph-shield-check"></i><strong>管理员</strong><small>仅已关注你的管理员</small></button>
-                        <button type="button" data-visibility="followers"><i class="ph ph-users"></i><strong>关注我的人</strong><small>关注者和管理员可见</small></button>
-                    </div>
-                    <div class="activity-security-note"><i class="ph ph-shield-check"></i> 锁屏、休眠、暂停或切到未公开应用时，会立即结束对外在线状态。</div>
-                </section>
+            <div class="activity-section-tabs" role="tablist" aria-label="上线提醒设置区域" id="activitySectionTabs">
+                <button type="button" role="tab" id="activityTabReceive" aria-controls="activityPanelReceive" aria-selected="true" tabindex="0" data-activity-section="receive"><i class="ph ph-bell-ringing"></i> 接收提醒</button>
+                <button type="button" role="tab" id="activityTabShare" aria-controls="activityPanelShare" aria-selected="false" tabindex="-1" data-activity-section="share"><i class="ph ph-share-network"></i> 分享我的应用</button>
+                <button type="button" role="tab" id="activityTabBackground" aria-controls="activityPanelBackground" aria-selected="false" tabindex="-1" data-activity-section="background"><i class="ph ph-desktop-tower"></i> 后台与启动</button>
+                <button type="button" role="tab" id="activityTabPeople" aria-controls="activityPanelPeople" aria-selected="false" tabindex="-1" data-activity-section="people"><i class="ph ph-users"></i> 关注者与黑名单</button>
             </div>
 
-            <section class="glass-card activity-card activity-search-card">
-                <div class="activity-card-title"><i class="ph ph-user-plus"></i> 查找并关注用户</div>
-                <div class="activity-search-row">
-                    <input id="activityUserSearchInput" class="activity-input" maxlength="64" placeholder="输入用户名（模糊搜索）或 #UID（精确搜索）">
-                    <button class="action-btn primary" id="activityUserSearchBtn" type="button"><i class="ph ph-magnifying-glass"></i> 搜索</button>
+            <section class="activity-section-panel" id="activityPanelReceive" role="tabpanel" aria-labelledby="activityTabReceive" data-activity-panel="receive">
+                <div class="activity-section-heading">
+                    <div><span>接收提醒</span><h3>关注谁、提醒哪些应用</h3><p>搜索用户后，只能为对方已公开的应用创建上线提醒。</p></div>
+                    <span class="activity-section-data-state" id="activityReceiveDataStatus" hidden></span>
                 </div>
-                <div class="activity-list activity-search-results" id="activitySearchResults">
-                    <div class="activity-empty">搜索结果只返回 UID、用户名和头像。</div>
-                </div>
-            </section>
-
-            <div class="activity-grid">
+                <section class="glass-card activity-card activity-settings-card">
+                    <div class="activity-card-title"><i class="ph ph-power"></i> 上线提醒总开关</div>
+                    <div class="activity-setting-row">
+                        <div><label id="activityEnabledLabel" for="activityEnabledSwitch"><strong>启用上线提醒</strong><small>打开后可关注用户、接收提醒，并按需分享自己的应用。</small></label></div>
+                        <button class="toggle-switch" id="activityEnabledSwitch" type="button" role="switch" aria-label="启用上线提醒" aria-labelledby="activityEnabledLabel" aria-checked="false"></button>
+                    </div>
+                </section>
+                <section class="glass-card activity-card activity-search-card">
+                    <div class="activity-card-title"><i class="ph ph-user-plus"></i> 查找并关注用户</div>
+                    <label class="visually-hidden" for="activityUserSearchInput">用户名或 UID</label>
+                    <div class="activity-search-row">
+                        <input id="activityUserSearchInput" class="activity-input activity-remote-control" maxlength="64" autocomplete="off" placeholder="输入用户名（模糊搜索）或 #UID（精确搜索）">
+                        <button class="action-btn primary activity-remote-control" id="activityUserSearchBtn" type="button"><i class="ph ph-magnifying-glass"></i> 搜索</button>
+                    </div>
+                    <div class="activity-list activity-search-results" id="activitySearchResults">
+                        <div class="activity-empty">搜索结果只返回 UID、用户名和头像。</div>
+                    </div>
+                </section>
                 <section class="glass-card activity-card">
                     <div class="activity-card-title"><i class="ph ph-bell-ringing"></i> 我关注的用户</div>
                     <div class="activity-list" id="activityFollowsList"><div class="activity-empty">暂无关注用户</div></div>
                 </section>
-                <section class="glass-card activity-card">
-                    <div class="activity-card-title"><i class="ph ph-users"></i> 关注我的用户</div>
-                    <div class="activity-list" id="activityFollowersList"><div class="activity-empty">暂无关注者</div></div>
-                </section>
-            </div>
+            </section>
 
-            <div class="activity-grid">
-                <section class="glass-card activity-card">
-                    <div class="activity-card-title"><i class="ph ph-app-window"></i> 我愿意公开的应用</div>
-                    <p class="activity-card-copy">新检测到的应用默认不公开。选择窗口后只会填入应用进程名，不保存窗口标题。</p>
-                    <div class="activity-app-composer">
-                        <button class="action-btn" id="activityActiveAppBtn" type="button"><i class="ph ph-crosshair"></i> 从窗口选择应用</button>
-                        <input id="activityAppKeyInput" class="activity-input" maxlength="128" placeholder="进程名，例如 Code.exe">
-                        <input id="activityAppNameInput" class="activity-input" maxlength="64" placeholder="显示名称（可选）">
-                        <button class="action-btn primary" id="activityAddAppBtn" type="button"><i class="ph ph-eye"></i> 公开此应用</button>
+            <section class="activity-section-panel" id="activityPanelShare" role="tabpanel" aria-labelledby="activityTabShare" data-activity-panel="share" hidden>
+                <div class="activity-section-heading">
+                    <div><span>分享我的应用</span><h3>我的应用可见性</h3><p>新应用默认不公开；窗口标题不会保存或上传。</p></div>
+                    <span class="activity-section-data-state" id="activityShareDataStatus" hidden></span>
+                </div>
+                <section class="glass-card activity-card activity-settings-card">
+                    <div class="activity-card-title"><i class="ph ph-share-network"></i> 分享方式</div>
+                    <div class="activity-setting-row">
+                        <div><label id="activityPublishingLabel" for="activityPublishingSwitch"><strong>分享这台电脑上的应用在线</strong><small>只在你公开的应用稳定打开后显示在线。</small></label></div>
+                        <button class="toggle-switch" id="activityPublishingSwitch" type="button" role="switch" aria-labelledby="activityPublishingLabel" aria-checked="false"></button>
                     </div>
-                    <div class="activity-list" id="activityAppsList"><div class="activity-empty">尚未检测到可配置的应用</div></div>
+                    <div class="activity-setting-row">
+                        <div><label id="activitySnapshotsLabel" for="activitySnapshotsSwitch"><strong>上线提醒附带窗口快照</strong><small>只截取公开应用；命中隐私保护时自动改为无图提醒。</small></label></div>
+                        <button class="toggle-switch" id="activitySnapshotsSwitch" type="button" role="switch" aria-labelledby="activitySnapshotsLabel" aria-checked="false"></button>
+                    </div>
                 </section>
-                <section class="glass-card activity-card">
-                    <div class="activity-card-title"><i class="ph ph-user-minus"></i> 已拉黑用户</div>
-                    <div class="activity-list" id="activityBlocksList"><div class="activity-empty">暂无拉黑用户</div></div>
+                <div class="activity-grid">
+                    <section class="glass-card activity-card">
+                        <div class="activity-card-title"><i class="ph ph-app-window"></i> 我的应用可见性</div>
+                        <p class="activity-card-copy">优先从已打开的窗口选择。只有点击公开后，对方才可能看到此应用在线。</p>
+                        <div class="activity-app-composer">
+                            <button class="action-btn primary activity-remote-control" id="activityActiveAppBtn" type="button"><i class="ph ph-crosshair"></i> 从窗口选择应用</button>
+                            <details class="activity-advanced-composer" id="activityAdvancedComposer">
+                                <summary>高级添加：手动输入 .exe</summary>
+                                <div class="activity-advanced-fields">
+                                    <label for="activityAppKeyInput">进程名</label>
+                                    <input id="activityAppKeyInput" class="activity-input activity-remote-control" maxlength="128" autocomplete="off" placeholder="例如 Code.exe">
+                                    <label for="activityAppNameInput">显示名称（可选）</label>
+                                    <input id="activityAppNameInput" class="activity-input activity-remote-control" maxlength="64" autocomplete="off" placeholder="例如 Visual Studio Code">
+                                    <button class="action-btn primary activity-remote-control" id="activityAddAppBtn" type="button"><i class="ph ph-eye"></i> 公开此应用</button>
+                                </div>
+                            </details>
+                        </div>
+                        <div class="activity-list" id="activityAppsList"><div class="activity-empty">尚未检测到可配置的应用</div></div>
+                    </section>
+
+                    <section class="glass-card activity-card">
+                        <div class="activity-card-title"><i class="ph ph-eye"></i> 谁能看到我的公开应用</div>
+                        <p class="activity-card-copy">范围只作用于已经公开的应用；未公开应用始终不可见。</p>
+                        <div class="activity-privacy-options" id="activityPrivacyOptions">
+                            <button type="button" class="activity-remote-control" data-visibility="private"><i class="ph ph-lock"></i><strong>只有我</strong><small>任何人都看不到</small></button>
+                            <button type="button" class="activity-remote-control" data-visibility="admins"><i class="ph ph-shield-check"></i><strong>管理员</strong><small>仅已关注你的管理员</small></button>
+                            <button type="button" class="activity-remote-control" data-visibility="followers"><i class="ph ph-users"></i><strong>关注我的人</strong><small>关注者和管理员可见</small></button>
+                        </div>
+                        <div class="activity-security-note"><i class="ph ph-shield-check"></i> 锁屏、休眠、暂停或切到未公开应用时，会立即结束对外在线状态。</div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="activity-section-panel" id="activityPanelBackground" role="tabpanel" aria-labelledby="activityTabBackground" data-activity-panel="background" hidden>
+                <div class="activity-section-heading">
+                    <div><span>后台与启动</span><h3>决定这台电脑何时运行提醒</h3><p>控制退出主窗口后的后台驻留，以及 Windows 登录后的自动准备。</p></div>
+                </div>
+                <section class="glass-card activity-card activity-settings-card">
+                    <div class="activity-card-title"><i class="ph ph-desktop-tower"></i> 后台运行方式</div>
+                    <div class="activity-setting-row">
+                        <div><label id="activityBackgroundLabel" for="activityBackgroundSwitch"><strong>退出客户端后继续提醒</strong><small>只保留轻量后台服务，不启动主窗口。</small></label></div>
+                        <button class="toggle-switch" id="activityBackgroundSwitch" type="button" role="switch" aria-labelledby="activityBackgroundLabel" aria-checked="false"></button>
+                    </div>
+                    <div class="activity-setting-row">
+                        <div><label id="activityAutoStartLabel" for="activityAutoStartSwitch"><strong>Windows 登录后自动准备</strong><small>仅在“退出后继续提醒”开启时生效。</small></label></div>
+                        <button class="toggle-switch" id="activityAutoStartSwitch" type="button" role="switch" aria-labelledby="activityAutoStartLabel" aria-checked="false"></button>
+                    </div>
+                    <div class="activity-inline-actions">
+                        <button class="action-btn" id="activityPauseBtn" type="button"><i class="ph ph-pause"></i> 临时暂停</button>
+                        <span class="activity-effective-hint" id="activityEffectiveSettingsHint">设置将在保存后生效</span>
+                    </div>
                 </section>
-            </div>
+            </section>
+
+            <section class="activity-section-panel" id="activityPanelPeople" role="tabpanel" aria-labelledby="activityTabPeople" data-activity-panel="people" hidden>
+                <div class="activity-section-heading">
+                    <div><span>关注者与黑名单</span><h3>管理谁能与你互动</h3><p>拉黑会立即撤销双方相关的关注动态。</p></div>
+                    <span class="activity-section-data-state" id="activityPeopleDataStatus" hidden></span>
+                </div>
+                <div class="activity-grid">
+                    <section class="glass-card activity-card">
+                        <div class="activity-card-title"><i class="ph ph-users"></i> 关注我的用户</div>
+                        <div class="activity-list" id="activityFollowersList"><div class="activity-empty">暂无关注者</div></div>
+                    </section>
+                    <section class="glass-card activity-card">
+                        <div class="activity-card-title"><i class="ph ph-user-minus"></i> 已拉黑用户</div>
+                        <div class="activity-list" id="activityBlocksList"><div class="activity-empty">暂无拉黑用户</div></div>
+                    </section>
+                </div>
+            </section>
         </div>
     </div>
 

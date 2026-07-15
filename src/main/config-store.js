@@ -60,6 +60,13 @@ class ConfigStore {
         ...DEFAULTS.developerScreenshotTuning,
         ...(value || {}),
       };
+    } else if (key === 'activityDeviceBindings') {
+      this._data.activityDeviceBindings = {
+        version: 1,
+        entries: {
+          ...(value?.entries || {}),
+        },
+      };
     } else {
       this._data[key] = value;
     }
@@ -85,6 +92,14 @@ class ConfigStore {
       this._data.developerScreenshotTuning = {
         ...DEFAULTS.developerScreenshotTuning,
         ...(obj.developerScreenshotTuning || {}),
+      };
+    }
+    if (Object.prototype.hasOwnProperty.call(obj, 'activityDeviceBindings')) {
+      this._data.activityDeviceBindings = {
+        version: 1,
+        entries: {
+          ...(obj.activityDeviceBindings?.entries || {}),
+        },
       };
     }
     this._save();

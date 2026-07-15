@@ -30,6 +30,7 @@ function createAppShell(deps) {
     getPrivacyPickerWindow,
     setPrivacyPickerWindow,
     activityAgent,
+    startupPage,
     requestActivityQuit,
   } = deps;
 
@@ -92,6 +93,7 @@ function createAppShell(deps) {
       processName: path.basename(process.execPath),
       pid: process.pid,
       isAdmin: isRunAsAdmin(),
+      startupPage,
     });
   }
 

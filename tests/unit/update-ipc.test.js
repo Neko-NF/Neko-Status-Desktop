@@ -4,6 +4,9 @@
  */
 const { describe, it, beforeEach, mock } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 function createMocks() {
   const handlers = {};
@@ -99,6 +102,40 @@ describe('registerUpdateIpc', () => {
   it('update:install 拒绝缺少 filePath 的 payload', async () => {
     const result = await handlers['update:install'](null, {});
     assert.equal(result.ok, false);
+  });
+
+  it('安装器启动失败时不退出应用', async () => {
+    const installerPath = path.join(os.tmpdir(), `neko-update-ipc-${process.pid}-${Date.now()}.exe`);
+    fs.writeFileSync(installerPath, 'test-installer');
+    mocks.launchInstaller.mock.mockImplementationOnce(async () => 'Agent 未能安全退出');
+    try {
+      const result = await handlers['update:install'](null, { filePath: installerPath });
+      assert.equal(result.ok, false);
+      assert.equal(result.error.code, 'INSTALL_LAUNCH_FAILED');
+      assert.equal(mocks.app.quit.mock.callCount(), 0);
+      assert.equal(mocks.setIsQuitting.mock.callCount(), 0);
+    } finally {
+      fs.rmSync(installerPath, { force: true });
+    }
+  });
+
+  it('待安装更新启动失败时保留记录以便重试', async () => {
+    const installerPath = path.join(os.tmpdir(), `neko-pending-update-${process.pid}-${Date.now()}.exe`);
+    fs.writeFileSync(installerPath, 'test-installer');
+    const pending = { stage: 'ready', version: '9.9.9', filePath: installerPath };
+    mocks._setState(pending);
+    mocks.configStore.set('pendingInstall', pending);
+    mocks.launchInstaller.mock.mockImplementationOnce(async () => '停止 Activity Agent 失败');
+    try {
+      const result = await handlers['update:installPending']();
+      assert.equal(result.ok, false);
+      assert.equal(result.error.code, 'INSTALL_LAUNCH_FAILED');
+      assert.deepEqual(mocks._getState(), pending);
+      assert.deepEqual(mocks.configStore.get('pendingInstall'), pending);
+      assert.equal(mocks.app.quit.mock.callCount(), 0);
+    } finally {
+      fs.rmSync(installerPath, { force: true });
+    }
   });
 
   it('update:integrity 返回诊断结果数组', async () => {

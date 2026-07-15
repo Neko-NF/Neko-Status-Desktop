@@ -8,6 +8,8 @@
 \\.\pipe\NekoStatusPresenceAgent-v1
 ```
 
+开发构建使用带 `-dev` 后缀的独立命名管道、互斥锁和配置目录，不能读取或覆盖正式版 Agent 凭据。
+
 协议：
 
 - 长度前缀 JSON 帧。
@@ -29,9 +31,23 @@
 | `pause` | Client → Agent | 临时暂停 |
 | `resume` | Client → Agent | 恢复 |
 | `refresh_bootstrap` | Client → Agent | 重新拉取规则摘要 |
-| `shutdown(session|disable|logout|update)` | Client → Agent | 按原因退出 |
-| `activity_event` | Agent → Client | 活动事件同步到 UI |
-| `connection_changed` | Agent → Client | 网络状态变化 |
+| `shutdown(reason)` | Client → Agent | 按原因退出；`disable/logout/account_change/credential_invalid/server_change` 同时撤销本地身份 |
+
+协议 v1 是严格的请求—响应协议，不发送未经请求的 `activity_event` 或 `connection_changed` 帧。Electron 在 Activity 页面可见时通过轻量 `get_status` 轮询状态；业务事件由 Agent 直接处理通知和游标。若未来加入推送，必须先升级带 `kind`、`requestId` 和能力协商的协议，不能让事件帧占用普通命令响应。
+
+显式登出、切换账号/服务器或凭据失效时，Agent 必须在回复成功前原子清除 Token、游标、去重记录、用户/设备绑定和私有快照缓存。若 pipe 无法连接，Electron 释放 socket 后调用同通道的 `--clear-activity-identity` 离线清理器；清理器持有对应正式版或开发版互斥锁，避免与新 Agent 启动并发写 profile。
+
+## `get_status` 健康快照
+
+返回值使用加法兼容的 v2 健康快照，分别表达：
+
+- `lifecycle`：进程和 embedded/background/paused 运行方式。
+- `localIpc`：本地 pipe 状态，由 Electron 补充。
+- `provision`：凭据和当前账号绑定。
+- `receiver`：SSE/轮询接收链路及最近心跳、事件、重试时间。
+- `publisher`：Presence 发布链路及最近成功时间。
+
+旧 `state` / `connection` 只保留为派生兼容字段。Presence 和事件接收线程不得写同一个连接字段。
 
 ## Provision 流程
 

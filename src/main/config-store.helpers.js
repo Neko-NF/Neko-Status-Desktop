@@ -46,8 +46,13 @@ const DEFAULTS = {
   enableActivitySnapshots: false,
   enableActivityBackground: false,
   enableActivityAutoStart: true,
+  activityInstallationId: '',
+  activityDeviceBindings: { version: 1, entries: {} },
+  activityBoundUserId: null,
   activityDeviceId: null,
   activityDeviceName: '',
+  activityOnboardingSeen: false,
+  activitySnapshotPrivacyPending: { version: 1, entries: {} },
   glassEffect: true,
   uiScale: 100,
   uiFont: '',
@@ -124,6 +129,12 @@ function mergeDefaults(data = {}) {
     streamConfig: {
       ...DEFAULTS.streamConfig,
       ...(data.streamConfig || {}),
+    },
+    activityDeviceBindings: {
+      version: 1,
+      entries: {
+        ...(data.activityDeviceBindings?.entries || {}),
+      },
     },
   };
   if (data.enableExperimentalFeatures === true) {

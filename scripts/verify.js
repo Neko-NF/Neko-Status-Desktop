@@ -411,6 +411,7 @@ function checkConfigDefaults() {
     'githubOwner', 'githubRepo',
     'enableActivityFeature', 'enableActivityPublishing', 'enableActivitySnapshots',
     'enableActivityBackground', 'enableActivityAutoStart',
+    'activityInstallationId', 'activityDeviceBindings', 'activityBoundUserId',
     'activityDeviceId', 'activityDeviceName',
     'enableExperimentalUiLabEntry', 'enableExperimentalCurveLoaders',
     'loadingCurveStyle',
@@ -537,7 +538,11 @@ function checkActivityPresenceFeature() {
   if (page.includes('confirmActivityDanger') && page.includes('window.confirm') && page.includes('toggle-app')) pass('关注动态危险操作包含二次确认');
   else fail('关注动态危险操作缺少确认保护');
 
-  if (html.includes('aria-label="启用关注动态"') && html.includes('aria-live="polite"') && page.includes('aria-pressed')) pass('关注动态 UI 包含基础可访问性语义');
+  if (html.includes('id="activityEnabledSwitch"')
+    && html.includes('role="switch"')
+    && html.includes('aria-labelledby="activityEnabledLabel"')
+    && html.includes('aria-live="polite"')
+    && page.includes('aria-pressed')) pass('关注动态 UI 包含基础可访问性语义');
   else fail('关注动态 UI 可访问性语义不完整');
 
   if (html.includes('activity-empty') && html.includes('activity-security-note') && page.includes('没有找到匹配的用户')) pass('关注动态包含空状态、安全说明和搜索失败状态');

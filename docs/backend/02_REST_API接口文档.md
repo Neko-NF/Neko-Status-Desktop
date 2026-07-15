@@ -606,7 +606,7 @@ DELETE /api/activity/agent/enroll
 - 鉴权：用户 JWT/Cookie。
 - `POST` 为当前用户设备签发一次性明文 Agent Token。
 - `DELETE` 撤销当前用户设备的 Agent Token。
-- Agent Token 只能用于 `presence:write`、`events:read`、`bootstrap:read`。
+- Agent Token 只能用于 `presence:write`、`events:read`、`bootstrap:read`、`snapshot:write`。
 
 ### 7.2 Agent Bootstrap / Presence / Events
 
@@ -631,7 +631,7 @@ Presence 示例：
   "agentVersion": "0.1.0",
   "clientEventId": "evt-42",
   "sequence": 42,
-  "state": "entered",
+  "state": "active",
   "appKey": "win32:code.exe",
   "displayName": "code.exe",
   "stableSince": "2026-06-21T08:00:00.000Z",
@@ -639,6 +639,11 @@ Presence 示例：
   "detectorKind": "interactive"
 }
 ```
+
+`sequence` 的服务端存储范围为非负 signed BIGINT。JSON number 仅接受
+`Number.isSafeInteger` 范围；超过 `9007199254740991` 时必须发送十进制字符串，
+避免 JSON 解析阶段发生精度丢失。同一逻辑请求的重试必须复用相同的
+`sequence` 与 `clientEventId`。
 
 ### 7.3 用户管理接口
 

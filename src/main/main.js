@@ -12,6 +12,7 @@ const { configureUserDataPath } = require('./user-data-path');
 
 // ─── 应用身份（必须尽早设置，影响 Windows 任务栏/任务管理器展示）─────────
 const IS_DEV_RUNTIME = !!process.env.NEKO_DEV_RUNTIME_EXE;
+const STARTUP_PAGE = process.argv.includes('--page=activity') ? 'page-activity' : null;
 const APP_NAME = IS_DEV_RUNTIME ? 'Neko Status Dev' : 'Neko Status';
 const APP_USER_MODEL_ID = IS_DEV_RUNTIME ? 'com.koirin.neko-status.dev' : 'com.koirin.neko-status';
 app.setName(APP_NAME);
@@ -81,6 +82,7 @@ const {
 const {
   launchInstaller: launchUpdateInstaller,
 } = require('./update-installer');
+const { launchInstallerAfterAgentShutdown } = require('./update-launch-coordinator');
 const {
   getAssetPath: resolveAppAssetPath,
   getAppIconPath: resolveAppIconPath,
@@ -89,7 +91,11 @@ const {
 
 // ─── 常量 ─────────────────────────────────────────────────────────────
 const APP_VERSION = app.getVersion();
-const activityAgent = new ActivityAgentController({ app, configStore });
+const activityAgent = new ActivityAgentController({
+  app,
+  configStore,
+  isDevRuntime: IS_DEV_RUNTIME,
+});
 let activityExitAllRequested = false;
 let activityQuitPrepared = false;
 
@@ -238,12 +244,16 @@ async function removeCacheTargets(sessionRef) {
 }
 
 function launchInstaller(filePath, { silent = true, relaunchAfterInstall = true } = {}) {
-  activityAgent.shutdownForUpdateSync();
-  return launchUpdateInstaller(filePath, {
-    silent,
-    relaunchAfterInstall,
-    shell,
-    platform: process.platform,
+  return launchInstallerAfterAgentShutdown({
+    activityAgent,
+    launchInstaller: launchUpdateInstaller,
+    filePath,
+    options: {
+      silent,
+      relaunchAfterInstall,
+      shell,
+      platform: process.platform,
+    },
   });
 }
 
@@ -288,6 +298,7 @@ const appShell = createAppShell({
   getPrivacyPickerWindow: () => privacyPickerWindow,
   setPrivacyPickerWindow: (value) => { privacyPickerWindow = value; },
   activityAgent,
+  startupPage: STARTUP_PAGE,
   requestActivityQuit: (exitAll) => {
     activityExitAllRequested = exitAll === true;
     isQuitting = true;
@@ -611,10 +622,20 @@ async function autoDownloadUpdate(result) {
     if (result.forceUpdate) {
       // 强制更新：立即安装
       console.log('[AutoDL] 强制更新，立即启动安装程序...');
+      const installError = await launchInstaller(filePath, { silent: true });
+      if (installError) {
+        console.error('[AutoDL] installer launch failed:', installError);
+        const pendingInstall = { version: result.latestVersion, filePath, sha256 };
+        configStore.set('pendingInstall', pendingInstall);
+        _autoDownloadState = { stage: 'ready', ...pendingInstall };
+        sendToRenderer(IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED, {
+          version: result.latestVersion,
+          error: installError,
+        });
+        return;
+      }
       _autoDownloadState = null;
       sendToRenderer(IPC_EVENTS.UPDATE_FORCE_INSTALL_STARTED, { version: result.latestVersion });
-      const installError = await launchInstaller(filePath, { silent: true });
-      if (installError) console.error('[AutoDL] installer launch failed:', installError);
       setTimeout(() => { isQuitting = true; app.quit(); }, 1500);
     } else {
       // 普通自动下载：持久化到配置文件（跨进程存活），内存状态同步保留
@@ -1074,7 +1095,7 @@ async function waitForNetwork(timeoutMs = 30000) {
 app.whenReady().then(async () => {
   traceStartup('whenReady entered', `packaged=${app.isPackaged}`);
   ensureWindowsAppIdentity();
-  if (process.argv.some((arg) => arg === '--page=activity')) {
+  if (STARTUP_PAGE) {
     configStore.set('lastPage', 'page-activity');
   }
   setupIPC();
@@ -1104,12 +1125,19 @@ app.whenReady().then(async () => {
 
   traceStartup('create main window begin');
   createWindow();
+  activityAgent.setStatusChangedCallback((snapshot) => {
+    sendToRenderer(IPC_EVENTS.ACTIVITY_STATE_CHANGED, snapshot);
+    refreshTrayMenu();
+  });
   if (activityAgent.isEnabled()) {
-    const startupAgent = await activityAgent.ensureRunning();
+    const startupAgent = await activityAgent.ensureRunning({ allowAfterShutdown: true });
     if (startupAgent.ok) {
       const status = await activityAgent.getStatus();
-      if (status.provisioned) await activityAgent.syncProfile();
-      else if (configStore.get('authToken') && configStore.get('deviceId')) await activityAgent.provision();
+      if (status.provisioned || status.health?.provision?.state === 'ready') {
+        await activityAgent.syncProfile();
+      } else if (configStore.get('authToken') && configStore.get('authUser')?.id) {
+        await activityAgent.provision();
+      }
       await activityAgent.claimTray();
     }
   }
@@ -1129,10 +1157,6 @@ app.whenReady().then(async () => {
     sendToRenderer(IPC_EVENTS.SERVICE_STATUS_CHANGED, { isRunning });
     refreshTrayMenu();
     showNotification('服务状态变更', isRunning ? '上报服务已启动' : '上报服务已停止');
-  });
-  activityAgent.setStatusChangedCallback((state) => {
-    sendToRenderer(IPC_EVENTS.ACTIVITY_STATE_CHANGED, state);
-    refreshTrayMenu();
   });
   statusService.setKeyStatusCallback((code, message) => {
     sendToRenderer(IPC_EVENTS.SERVICE_KEY_STATUS, { code, message });
@@ -1245,14 +1269,14 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
-  if (!activityQuitPrepared && activityAgent.isEnabled()) {
+  if (!activityQuitPrepared && (activityAgent.isEnabled() || activityAgent.isActive())) {
     event.preventDefault();
     activityQuitPrepared = true;
     if (tray && !tray.isDestroyed()) tray.destroy();
     tray = null;
     activityAgent.releaseForAppExit({
       exitAll: activityExitAllRequested,
-      reason: activityExitAllRequested ? 'session' : 'session',
+      reason: activityExitAllRequested ? 'exit_all' : 'session',
     }).finally(() => setTimeout(() => app.quit(), 0));
     return;
   }

@@ -111,6 +111,7 @@ test('activity payload validators keep settings and management actions controlle
   assert.equal(validateActivitySettingsPayload(null).ok, false);
 
   assert.equal(validateActivityManagePayload({ action: 'searchUsers', data: { q: 'alice' } }).ok, true);
+  assert.equal(validateActivityManagePayload({ action: 'getFollows', data: {} }).ok, true);
   assert.equal(validateActivityManagePayload({ action: 'setPrivacy', data: { visibility: 'followers' } }).ok, true);
   assert.equal(validateActivityManagePayload({ action: 'run-shell', data: {} }).ok, false);
   assert.equal(validateActivityManagePayload({ action: 'follow', data: 'not-object' }).ok, false);
