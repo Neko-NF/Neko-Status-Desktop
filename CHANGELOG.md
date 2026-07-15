@@ -2,6 +2,16 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## 1.4.1 - 2026-07-15
+
+- Reworked Activity connection health reporting around independent local IPC, receiver, publisher, provisioning, and lifecycle states, with stable degraded and recovery feedback instead of a single flickering connection flag.
+- Fixed Activity API redirect, HTML, unsupported-route, credential, throttling, and transient-error classification; added bounded SSE recovery, polling fallback, heartbeat tracking, cursor reset handling, and retry backoff.
+- Fixed hidden or locally detected applications being presented as actively shared; the client now reports an application as shared only after the server confirms an active Presence state.
+- Added stable per-installation Activity identity for development and production channels, improved re-enrollment and account/server switching cleanup, and prevented Activity-only devices from appearing as unknown status-reporting devices.
+- Redesigned the Activity page with a persistent service-status card, clearer per-capability feedback, actionable diagnostics, accessible status announcements, safer settings transactions, and explicit partial-data failure states.
+- Improved update installation coordination so the background Activity agent must exit cleanly before the installer is launched.
+- Expanded Native Agent, IPC, authentication lifecycle, renderer, update, smoke, and packaged-resource validation coverage.
+
 ## 1.4.0 - 2026-06-22
 
 - Added the opt-in experimental following activity module with per-app publishing, follow rules, privacy controls, Windows notifications, and optional application-window snapshots.

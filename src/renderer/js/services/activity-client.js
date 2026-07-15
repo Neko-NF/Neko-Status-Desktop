@@ -10,6 +10,7 @@
     resumeAgent: () => ipc()?.invoke?.('resumeActivityAgent'),
     manage: (action, data = {}) => ipc()?.invoke?.('manageActivity', action, data),
     bootstrap: () => ActivityClient.manage('bootstrap'),
+    getFollows: () => ActivityClient.manage('getFollows'),
     searchUsers: (query) => ActivityClient.manage('searchUsers', { query }),
     follow: (targetUserId) => ActivityClient.manage('follow', { targetUserId }),
     unfollow: (followId) => ActivityClient.manage('unfollow', { followId }),

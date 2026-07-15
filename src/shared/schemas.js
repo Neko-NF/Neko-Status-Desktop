@@ -119,7 +119,7 @@ function validateStreamConfigPayload(payload) {
 }
 
 const ACTIVITY_MANAGE_ACTIONS = new Set([
-  'bootstrap', 'searchUsers', 'follow', 'unfollow',
+  'bootstrap', 'getFollows', 'searchUsers', 'follow', 'unfollow',
   'createRule', 'updateRule', 'deleteRule',
   'getPrivacy', 'setPrivacy', 'getApps', 'upsertApp', 'setAppHidden',
   'getFollowers', 'getBlocks', 'block', 'unblock',

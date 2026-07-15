@@ -40,7 +40,7 @@ fn icon() -> Icon {
 impl AgentTray {
     pub fn create(state: &RuntimeState) -> Result<Self, Box<dyn std::error::Error>> {
         let menu = Menu::new();
-        let connection = state.connection.lock().unwrap().clone();
+        let connection = state.legacy_connection();
         let paused = state.paused.load(Ordering::Relaxed);
         let status = MenuItem::new(
             format!(

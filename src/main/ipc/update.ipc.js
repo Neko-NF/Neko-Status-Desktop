@@ -105,12 +105,19 @@ function registerUpdateIpc({
         return createIpcError('SHA256_MISMATCH', 'SHA256 校验失败，文件可能已损坏');
       }
     }
+    let installError;
+    try {
+      installError = await launchInstaller(resolvedPath, { silent: true });
+    } catch (error) {
+      installError = error.message;
+    }
+    if (installError) {
+      console.error('[Update] installer launch failed:', installError);
+      return createIpcError('INSTALL_LAUNCH_FAILED', installError);
+    }
     configStore.set('pendingInstall', null);
     setAutoDownloadState(null);
-    launchInstaller(resolvedPath, { silent: true }).then((error) => {
-      if (error) console.error('[Update] installer launch failed:', error);
-      setTimeout(() => { setIsQuitting(true); app.quit(); }, 1000);
-    });
+    setTimeout(() => { setIsQuitting(true); app.quit(); }, 1000);
     return createIpcSuccess({ success: true });
   });
 
@@ -200,11 +207,18 @@ function registerUpdateIpc({
         return createIpcError('SHA256_MISMATCH', `SHA256 校验失败（期望 ${expectedSha256}，实际 ${actual}）`);
       }
     }
-    // 启动安装程序，1s 后退出当前应用
-    launchInstaller(resolvedPath, { silent: !manual }).then((error) => {
-      if (error) console.error('[Update] installer launch failed:', error);
-      setTimeout(() => { setIsQuitting(true); app.quit(); }, 1000);
-    });
+    // 仅在安装器确认启动后退出；Agent 停止或安装器启动失败时留在应用内重试。
+    let installError;
+    try {
+      installError = await launchInstaller(resolvedPath, { silent: !manual });
+    } catch (error) {
+      installError = error.message;
+    }
+    if (installError) {
+      console.error('[Update] installer launch failed:', installError);
+      return createIpcError('INSTALL_LAUNCH_FAILED', installError);
+    }
+    setTimeout(() => { setIsQuitting(true); app.quit(); }, 1000);
     return createIpcSuccess({ success: true });
   });
 

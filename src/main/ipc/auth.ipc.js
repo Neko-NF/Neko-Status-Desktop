@@ -9,16 +9,93 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
   function authOk(data = {}) { return createIpcSuccess({ success: true, ...data }); }
   function authFail(message, code = 'AUTH_FAILED') { return createIpcError(code, message); }
 
-  function localLogin(username, password) {
+  function sameUser(left, right) {
+    return left !== undefined && left !== null && right !== undefined && right !== null
+      && String(left) === String(right);
+  }
+
+  async function syncActivityAfterAuth({ isLocal = false } = {}) {
+    if (!activityAgent || isLocal || !activityAgent.isEnabled?.()) return;
+    try {
+      // A completed logout/app-release intentionally leaves the controller in a
+      // stopped state. A successful authentication may resume it, while the
+      // controller itself still refuses this override during an active revoke.
+      const ready = await activityAgent.ensureRunning({ allowAfterShutdown: true });
+      if (!ready.ok) return;
+      const status = await activityAgent.getStatus();
+      if (status.provisioned === true || status.health?.provision?.state === 'ready') {
+        await activityAgent.syncProfile();
+      } else {
+        await activityAgent.provision();
+      }
+      await activityAgent.claimTray?.();
+    } catch (error) {
+      console.warn('[Auth] Activity 会话同步失败:', error.message);
+    }
+  }
+
+  async function commitAuthSession(token, user, { isLocal = false } = {}) {
+    const previousUser = configStore.get('authUser');
+    const previousToken = configStore.get('authToken');
+    const boundUserId = previousUser?.id ?? configStore.get('activityBoundUserId');
+    const nextUserId = user?.id;
+    const switchedUser = boundUserId !== undefined && boundUserId !== null
+      && nextUserId !== undefined && nextUserId !== null
+      && !sameUser(boundUserId, nextUserId);
+
+    if (activityAgent && previousToken && previousUser?.id && !sameUser(previousUser.id, nextUserId)) {
+      try { await activityAgent.revoke('account_change'); }
+      catch (error) { console.warn('[Auth] 清理旧 Activity 会话失败:', error.message); }
+    }
+    if (activityAgent && sameUser(previousUser?.id, nextUserId) && previousToken && previousToken !== token) {
+      activityAgent.invalidateProvisionGeneration?.();
+    }
+    if (!sameUser(previousUser?.id, nextUserId)) activityAgent?.resetActivitySessionCache?.();
+
+    const next = {
+      authToken: token,
+      authUser: user,
+      activityBoundUserId: nextUserId ?? null,
+      activityDeviceId: switchedUser ? null : configStore.get('activityDeviceId'),
+      activityDeviceName: switchedUser ? '' : (configStore.get('activityDeviceName') || ''),
+    };
+    if (switchedUser) {
+      next.enableActivityFeature = false;
+      next.enableActivityPublishing = false;
+      next.enableActivitySnapshots = false;
+    }
+    configStore.setMany(next);
+    if (switchedUser) activityAgent?.refreshSnapshot?.();
+    else await syncActivityAfterAuth({ isLocal });
+  }
+
+  async function invalidateAuthSession(reason = 'credential_invalid') {
+    const previousUser = configStore.get('authUser');
+    if (activityAgent) {
+      try { await activityAgent.revoke(reason); }
+      catch (error) { console.warn('[Auth] Activity 会话撤销失败:', error.message); }
+    }
+    activityAgent?.resetActivitySessionCache?.();
+    configStore.setMany({
+      authToken: '',
+      authUser: null,
+      activityBoundUserId: previousUser?.id ?? configStore.get('activityBoundUserId') ?? null,
+      activityDeviceId: null,
+      activityDeviceName: '',
+    });
+    activityAgent?.refreshSnapshot?.();
+  }
+
+  async function localLogin(username, password) {
     const accounts = configStore.get('localTestAccounts') || [];
     const found = accounts.find(a => a.username === username && a.password === password);
     if (!found) return authFail('用户名或密码错误');
     const user = { id: `local-${username}`, username, email: '', avatar: '', role: 'user' };
-    configStore.setMany({ authToken: 'local-test-token', authUser: user });
+    await commitAuthSession('local-test-token', user, { isLocal: true });
     return authOk({ token: 'local-test-token', user, isLocal: true });
   }
 
-  function localRegister(username, password) {
+  async function localRegister(username, password) {
     const accounts = configStore.get('localTestAccounts') || [];
     if (accounts.some(a => a.username === username)) {
       return authFail('用户名已存在');
@@ -26,7 +103,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
     accounts.push({ username, password, createdAt: new Date().toISOString() });
     configStore.set('localTestAccounts', accounts);
     const user = { id: `local-${username}`, username, email: '', avatar: '', role: 'user' };
-    configStore.setMany({ authToken: 'local-test-token', authUser: user });
+    await commitAuthSession('local-test-token', user, { isLocal: true });
     return authOk({ token: 'local-test-token', user, isLocal: true });
   }
 
@@ -89,7 +166,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
     try {
       const result = await apiService.authLogin(username, password);
       if (result.success && result.token) {
-        configStore.setMany({ authToken: result.token, authUser: result.user });
+        await commitAuthSession(result.token, result.user);
         return authOk(result);
       }
       return authFail(result.message || '登录失败');
@@ -114,7 +191,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
     try {
       const result = await apiService.authRegister(username, password);
       if (result.success && result.token) {
-        configStore.setMany({ authToken: result.token, authUser: result.user });
+        await commitAuthSession(result.token, result.user);
         return authOk(result);
       }
       return authFail(result.message || '注册失败');
@@ -140,7 +217,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       return authFail(result.message || '获取用户信息失败');
     } catch (err) {
       if (err.status === 401) {
-        configStore.setMany({ authToken: '', authUser: null });
+        await invalidateAuthSession();
       }
       return authFail(err.message);
     }
@@ -176,15 +253,14 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       return authFail(result.message || '更新用户信息失败');
     } catch (err) {
       if (err.status === 401 && !data.newPassword) {
-        configStore.setMany({ authToken: '', authUser: null });
+        await invalidateAuthSession();
       }
       return authFail(err.status === 401 ? '当前登录状态已失效，请重新登录' : err.message);
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async () => {
-    if (activityAgent) await activityAgent.revoke('logout');
-    configStore.setMany({ authToken: '', authUser: null });
+    await invalidateAuthSession('logout');
     return authOk();
   });
 
@@ -207,7 +283,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       return authFail(result.message || '生成设备密钥失败');
     } catch (err) {
       if (err.status === 401) {
-        configStore.setMany({ authToken: '', authUser: null });
+        await invalidateAuthSession();
       }
       return authFail(err.message);
     }

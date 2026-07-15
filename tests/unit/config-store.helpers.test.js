@@ -26,6 +26,27 @@ test('activity snapshots are private by default', () => {
   assert.equal(mergeDefaults({ enableActivitySnapshots: true }).enableActivitySnapshots, true);
 });
 
+test('activity installation identity and per-account bindings have isolated defaults', () => {
+  const first = mergeDefaults({});
+  const second = mergeDefaults({});
+  assert.equal(first.activityInstallationId, '');
+  assert.equal(first.activityBoundUserId, null);
+  assert.deepEqual(first.activityDeviceBindings, { version: 1, entries: {} });
+  first.activityDeviceBindings.entries.test = { deviceId: 1 };
+  assert.deepEqual(second.activityDeviceBindings, { version: 1, entries: {} });
+
+  const restored = mergeDefaults({
+    activityDeviceBindings: {
+      version: 99,
+      entries: { remembered: { deviceId: 31 } },
+    },
+  });
+  assert.deepEqual(restored.activityDeviceBindings, {
+    version: 1,
+    entries: { remembered: { deviceId: 31 } },
+  });
+});
+
 test('mergeDefaults repairs legacy API port copied from RTMP port', () => {
   const merged = mergeDefaults({
     streamConfig: {

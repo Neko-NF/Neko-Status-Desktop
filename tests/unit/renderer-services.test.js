@@ -3605,6 +3605,10 @@ test('app init runtime owns startup hydration and cross-page sync', async () => 
   ].forEach((id) => elements.set(id, makeElement(id)));
   const deviceBadge = makeElement('deviceBadge');
   const navUpdate = makeElement('navUpdate', { dataset: { target: 'page-update' } });
+  const navActivity = makeElement('navActivity', {
+    dataset: { target: 'page-activity' },
+    classes: ['conditional-nav', 'show'],
+  });
   const reportButtons = [
     makeElement('reportAuto', { dataset: { mode: 'auto' } }),
     makeElement('reportCustom', { dataset: { mode: 'custom' } }),
@@ -3638,6 +3642,7 @@ test('app init runtime owns startup hydration and cross-page sync', async () => 
       querySelector(selector) {
         if (selector === '.device-badge') return deviceBadge;
         if (selector === '.nav-item[data-target="page-update"]') return navUpdate;
+        if (selector === '.nav-item[data-target="page-activity"]') return navActivity;
         if (selector === '.rating-badge') return elements.get('ratingBadge') || null;
         return null;
       },
@@ -3798,6 +3803,25 @@ test('app init runtime owns startup hydration and cross-page sync', async () => 
   ]);
   assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'config' && call[2] === 'doNotDisturb'));
   assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'service' && call[1] === 'syncMeta'));
+
+  await runtime.handle({
+    version: '1.3.0',
+    deviceName: 'Desk One',
+    platform: 'win32',
+    isRunning: true,
+    isAdmin: true,
+    pid: 1234,
+    processName: 'neko.exe',
+    startupPage: 'page-activity',
+    config: {
+      restoreLastState: false,
+      lastPage: 'page-update',
+      enableExperimentalFeatures: true,
+      enableExperimentalActivityEntry: true,
+    },
+  });
+  assert.equal(navActivity.clicked, 1, '显式启动页应覆盖关闭的历史页面恢复设置');
+  assert.equal(navUpdate.clicked, 1, '显式启动页不应再次打开历史页面');
 });
 
 test('app-ipc is only a compatibility bootstrap for AppRuntime', () => {
@@ -3914,6 +3938,7 @@ test('router delegates conditional nav clicks to announcement page', () => {
       addEventListener() {},
     },
     document: {
+      title: 'Neko Status - 仪表盘',
       querySelector(selector) {
         if (selector === '.nav-menu') return navMenu;
         if (selector === '.page-title') return title;
@@ -3957,6 +3982,7 @@ test('router delegates conditional nav clicks to announcement page', () => {
   assert.equal(pages.get('page-announcement').style.display, 'block');
   assert.equal(navAnnouncement.classList.contains('active'), true);
   assert.equal(navDashboard.classList.contains('active'), false);
+  assert.equal(context.document.title, 'Neko Status - 公告管理');
 });
 
 test('app event runtime owns main-process event forwarding', async () => {

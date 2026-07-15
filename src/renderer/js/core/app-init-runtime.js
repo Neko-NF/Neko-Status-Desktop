@@ -326,15 +326,17 @@
       }
     }
 
-    function restoreLastPage(cfg) {
-      if (!cfg.restoreLastState || !cfg.lastPage || !RESTORABLE_PAGES.has(cfg.lastPage)) return;
-      if (cfg.lastPage === 'page-stream'
+    function restoreLastPage(cfg, startupPage) {
+      const requestedPage = RESTORABLE_PAGES.has(startupPage) ? startupPage : null;
+      const targetPage = requestedPage || (cfg.restoreLastState ? cfg.lastPage : null);
+      if (!targetPage || !RESTORABLE_PAGES.has(targetPage)) return;
+      if (targetPage === 'page-stream'
         && (!cfg.enableExperimentalFeatures || cfg.enableExperimentalStreamEntry !== true)) return;
-      if (cfg.lastPage === 'page-activity'
+      if (targetPage === 'page-activity'
         && (!cfg.enableExperimentalFeatures || cfg.enableExperimentalActivityEntry !== true)) return;
-      if (cfg.lastPage === 'page-ui-lab'
+      if (targetPage === 'page-ui-lab'
         && (!cfg.enableExperimentalFeatures || cfg.enableExperimentalUiLabEntry !== true)) return;
-      const navItem = document.querySelector(`.nav-item[data-target="${cfg.lastPage}"]`);
+      const navItem = document.querySelector(`.nav-item[data-target="${targetPage}"]`);
       if (navItem?.getAttribute?.('aria-hidden') === 'true') return;
       if (navItem?.classList.contains('conditional-nav') && !navItem.classList.contains('show')) return;
       if (navItem?.classList.contains('console-nav') && !navItem.classList.contains('show')) return;
@@ -573,7 +575,7 @@
       syncScaleDescription();
       syncServerDescription(cfg);
       await applyZoom(cfg);
-      restoreLastPage(cfg);
+      restoreLastPage(cfg, data.startupPage);
       syncUpdatePage(data, cfg);
       loadMetricsHistory();
       aboutPage()?.sync?.({ version: data.version, cfg, runtimeVersions });

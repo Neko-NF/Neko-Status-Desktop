@@ -46,6 +46,7 @@ ACTIVITY_FOLLOW_ENABLED=true
 `ActivityAgentCredential`：
 
 - 绑定用户和设备。
+- 额外绑定运行通道 `legacy / stable / dev` 与安装实例哈希；服务端只保存客户端 `installationId` 的 SHA-256，不保存原始 UUID。
 - 设备可以是关注动态专用设备；不要求复用截图/完整状态上报的设备密钥。
 - 数据库只保存 SHA-256 Token 哈希和安全前缀。
 - 每个用户设备只保留一个有效代理凭据，重新注册会轮换旧 Token。
@@ -66,6 +67,23 @@ Agent Token 不能：
 - 修改隐私。
 - 拉黑 / 解除拉黑。
 - 伪造用户或设备归属。
+
+桌面 Enroll 为加法兼容请求：
+
+```json
+{
+  "deviceId": 31,
+  "deviceName": "LAPTOP 的活动提醒（开发版）",
+  "capabilities": ["presence", "events", "tray", "snapshots"],
+  "installationId": "本机当前 dev/stable profile 的稳定 UUID",
+  "runtimeChannel": "dev"
+}
+```
+
+- `installationId` 在各自 userData 中永久保留，退出登录、停用功能和切换账号均不得重建。
+- 同一 `userId + runtimeChannel + installationHash` 重复 Enroll 必须复用同一 Activity Device；`dev` 与 `stable` 不得互相复用凭据。
+- DELETE 必须指定 `deviceId`，或同时指定 `installationId + runtimeChannel`。空请求不得撤销当前用户的全部 Agent 凭据。
+- 传入的旧 `deviceId` 已删除时返回 `404 DEVICE_NOT_FOUND`；客户端只清除该身份下的非敏感设备映射，并在同一次操作中无 `deviceId` 重试一次。
 
 服务端必须从 Token 推导用户和设备。
 
@@ -109,6 +127,10 @@ Agent Token 不能：
 }
 ```
 
+`sequence` 必须是非负 signed BIGINT。安全整数范围内可使用 JSON number；超过
+`9007199254740991` 后必须改用十进制字符串，禁止把已发生精度舍入的 JavaScript
+number 传给服务端。同一逻辑请求重试时复用原 `sequence/clientEventId`。
+
 `state`：
 
 - `active`：稳定进入目标应用；服务端事件类型仍使用 `activity.entered`
@@ -146,6 +168,8 @@ SSE 规则：
 - SSE 不可用时 Agent 自动使用 5 秒游标轮询。
 - 事件 payload 包含 `createdAtMs`，Agent 用于过滤超过 2 分钟的陈旧通知。
 - `activity.entered` 可选包含 `snapshot` 元数据和受保护下载 URL；无图事件保持兼容。
+- Poll 固定返回 `{ events, cursor, hasMore, reset? }`。游标过期时以 `reset: true` 和新 `cursor` 推进，不把历史事件重新作为通知发送。
+- SSE 的 `activity.connection_reset` 是控制事件；Agent 读取事件中的 `cursor`（缺失时使用 SSE `id`）并持久化，但不得弹出 Toast。
 
 ## 权限判定
 

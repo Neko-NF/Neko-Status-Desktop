@@ -118,6 +118,8 @@
     if (headerTitle) {
       headerTitle.innerHTML = `<i class="ph ${def.icon}" style="color: var(--theme-color);"></i>\n                    ${def.title}`;
     }
+    const primaryTitle = def.title.split(' / ')[0];
+    document.title = `Neko Status - ${primaryTitle}`;
 
     // 编辑按钮可见性
     const editBtn = document.getElementById('editLayoutBtn');

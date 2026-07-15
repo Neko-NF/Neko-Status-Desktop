@@ -1,6 +1,36 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, io, path::PathBuf};
+use std::{
+    env, fs, io,
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+static DEV_CHANNEL: AtomicBool = AtomicBool::new(false);
+
+pub fn configure_channel(dev: bool) {
+    DEV_CHANNEL.store(dev, Ordering::Relaxed);
+}
+
+pub fn is_dev_channel() -> bool {
+    DEV_CHANNEL.load(Ordering::Relaxed)
+}
+
+pub fn pipe_name() -> &'static str {
+    if is_dev_channel() {
+        r"\\.\pipe\NekoStatusPresenceAgent-v1-dev"
+    } else {
+        r"\\.\pipe\NekoStatusPresenceAgent-v1"
+    }
+}
+
+pub fn mutex_name() -> &'static str {
+    if is_dev_channel() {
+        "Local\\NekoStatusPresenceAgent-v1-dev"
+    } else {
+        "Local\\NekoStatusPresenceAgent-v1"
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +64,8 @@ pub struct AgentProfile {
     pub encrypted_agent_token: String,
     #[serde(default)]
     pub event_cursor: String,
+    #[serde(default)]
+    pub recent_event_ids: Vec<String>,
 }
 
 fn default_snapshot_max_bytes() -> usize {
@@ -71,6 +103,7 @@ impl Default for AgentProfile {
             snapshot_blocked_processes: Vec::new(),
             encrypted_agent_token: String::new(),
             event_cursor: "0".into(),
+            recent_event_ids: Vec::new(),
         }
     }
 }
@@ -79,7 +112,26 @@ pub fn profile_dir() -> PathBuf {
     let root = env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(env::temp_dir);
-    root.join("NekoStatus").join("presence-agent")
+    root.join(if is_dev_channel() {
+        "NekoStatus Dev"
+    } else {
+        "NekoStatus"
+    })
+    .join("presence-agent")
+}
+
+pub fn clear_activity_identity(profile: &mut AgentProfile) {
+    profile.feature_enabled = false;
+    profile.publish_enabled = false;
+    profile.snapshot_enabled = false;
+    profile.background_enabled = false;
+    profile.auto_start_enabled = false;
+    profile.encrypted_agent_token.clear();
+    profile.event_cursor = "0".into();
+    profile.recent_event_ids.clear();
+    profile.user_id = 0;
+    profile.device_id = 0;
+    profile.device_name.clear();
 }
 
 pub fn profile_path() -> PathBuf {
