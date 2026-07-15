@@ -142,6 +142,8 @@ jobs:
 
       - name: Sync personal Gitea Release
         if: env.HAS_GITEA_RELEASE_TOKEN == 'true'
+        continue-on-error: true
+        timeout-minutes: 5
         run: npm run release:gitea -- --version "${{ env.VERSION }}" --tag "${{ github.ref_name }}"
         env:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
