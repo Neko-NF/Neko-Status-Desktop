@@ -4,8 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neko Status - 仪表盘</title>
-    <!-- 主题初始化脚本 (前置执行，防止刷新闪烁) -->
-    
+    <script>
+        (() => {
+            const root = document.documentElement;
+            try {
+                const mode = localStorage.getItem('neko-theme-mode') || 'light';
+                if (mode === 'light') root.setAttribute('data-theme', 'light');
+                else root.removeAttribute('data-theme');
+
+                const color = localStorage.getItem('neko-theme-color');
+                if (/^#[0-9a-f]{6}$/i.test(color || '')) {
+                    root.style.setProperty('--theme-color-seed', color);
+                }
+                const profile = localStorage.getItem('neko-ui-appearance-profile');
+                root.dataset.uiProfile = profile === 'quiet' ? 'quiet' : 'classic';
+            } finally {
+                root.dataset.themeReady = 'true';
+            }
+        })();
+    </script>
+
     <!-- 引入 Phosphor Icons（本地加载，确保离线/弱网下图标正常显示） -->
     <link rel="stylesheet" href="../../node_modules/@phosphor-icons/web/src/regular/style.css">
     <!-- 模块化 CSS（tokens → base → layout → main） -->
@@ -13,6 +31,8 @@
     <link rel="stylesheet" href="./css/base.css">
     <link rel="stylesheet" href="./css/layout.css">
     <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./css/icon-system.css">
+    <link rel="stylesheet" href="./css/announcement.css">
 </head>
 <body>
     <!-- 灵动岛通知容器（固定顶部居中，动态弹出） -->
@@ -35,19 +55,19 @@
         </div>
         <div class="nav-menu">
             <div class="nav-active-indicator" id="navActiveIndicator"></div>
-            <a class="nav-item active" data-target="mainDashboardArea"><i class="ph ph-squares-four"></i>仪表盘</a>
-            <a class="nav-item" data-target="page-device-status"><i class="ph ph-hard-drives"></i>设备状态</a>
-            <a class="nav-item" data-target="page-screenshot"><i class="ph ph-image"></i>截图与活动</a>
-            <a class="nav-item conditional-nav" id="navActivity" data-target="page-activity" aria-hidden="true" tabindex="-1"><i class="ph ph-users-three"></i>关注动态</a>
-            <a class="nav-item conditional-nav" id="navStream" data-target="page-stream"><i class="ph ph-broadcast"></i>直播推流</a>
-            <a class="nav-item" data-target="page-services"><i class="ph ph-cpu"></i>服务与自启动</a>
-            <a class="nav-item" data-target="page-update"><i class="ph ph-cloud-arrow-down"></i>更新中心</a>
-            <a class="nav-item conditional-nav" id="navAnnouncement" data-target="page-announcement" aria-hidden="true" tabindex="-1"><i class="ph ph-megaphone"></i>公告管理</a>
-            <a class="nav-item conditional-nav" id="navUiLab" data-target="page-ui-lab" aria-hidden="true" tabindex="-1"><i class="ph ph-bezier-curve"></i>UI 实验室</a>
+            <a class="nav-item active" role="button" tabindex="0" data-target="mainDashboardArea" title="仪表盘" aria-label="仪表盘" aria-current="page"><i class="ph ph-squares-four"></i>仪表盘</a>
+            <a class="nav-item" role="button" tabindex="0" data-target="page-device-status" title="设备状态" aria-label="设备状态"><i class="ph ph-hard-drives"></i>设备状态</a>
+            <a class="nav-item" role="button" tabindex="0" data-target="page-screenshot" title="截图与活动" aria-label="截图与活动"><i class="ph ph-image"></i>截图与活动</a>
+            <a class="nav-item conditional-nav" id="navActivity" role="button" data-target="page-activity" title="关注动态" aria-label="关注动态" aria-hidden="true" tabindex="-1"><i class="ph ph-users-three"></i>关注动态</a>
+            <a class="nav-item conditional-nav" id="navStream" role="button" tabindex="-1" data-target="page-stream" title="直播推流" aria-label="直播推流" aria-hidden="true"><i class="ph ph-broadcast"></i>直播推流</a>
+            <a class="nav-item" role="button" tabindex="0" data-target="page-services" title="服务与自启动" aria-label="服务与自启动"><i class="ph ph-cpu"></i>服务与自启动</a>
+            <a class="nav-item" role="button" tabindex="0" data-target="page-update" title="更新中心" aria-label="更新中心"><i class="ph ph-cloud-arrow-down"></i>更新中心</a>
+            <a class="nav-item conditional-nav" id="navAnnouncement" role="button" data-target="page-announcement" title="公告管理" aria-label="公告管理" aria-hidden="true" tabindex="-1"><i class="ph ph-megaphone"></i>公告管理</a>
+            <a class="nav-item conditional-nav" id="navUiLab" role="button" data-target="page-ui-lab" title="UI 实验室" aria-label="UI 实验室" aria-hidden="true" tabindex="-1"><i class="ph ph-bezier-curve"></i>UI 实验室</a>
             <!-- 隐藏的控制台入口，默认不显示 -->
-            <a class="nav-item console-nav" id="navConsole" data-target="consoleArea" style="display: flex; color: var(--theme-color);"><i class="ph ph-terminal-window"></i>控制台</a>
-            <a class="nav-item" data-target="page-settings"><i class="ph ph-gear"></i>设置</a>
-            <a class="nav-item" data-target="page-about"><i class="ph ph-info"></i>关于</a>
+            <a class="nav-item console-nav" id="navConsole" role="button" tabindex="0" data-target="consoleArea" title="控制台" aria-label="控制台" style="display: flex; color: var(--theme-color);"><i class="ph ph-terminal-window"></i>控制台</a>
+            <a class="nav-item" role="button" tabindex="0" data-target="page-settings" title="设置" aria-label="设置"><i class="ph ph-gear"></i>设置</a>
+            <a class="nav-item" role="button" tabindex="0" data-target="page-about" title="关于" aria-label="关于"><i class="ph ph-info"></i>关于</a>
         </div>
     </nav>
 
@@ -67,34 +87,35 @@
             </div>
             <div class="topbar-actions">
                 <!-- 昼夜光暗切换按钮 -->
-                <button class="icon-btn" id="themeModeBtn" title="切换昼夜模式"><i class="ph ph-moon" id="themeModeIcon"></i></button>
+                <button class="icon-btn" id="themeModeBtn" type="button" title="切换昼夜模式" aria-label="切换昼夜模式"><i class="ph ph-moon" id="themeModeIcon"></i></button>
+                <button class="icon-btn quiet-return-control" id="returnClassicUiBtn" type="button" data-ui-profile-option="classic" title="退回经典界面" aria-label="退回经典界面"><i class="ph ph-arrow-counter-clockwise"></i></button>
 
                 <!-- 主题色切换按钮及隐藏调色板 -->
                 <div style="position: relative; display: flex; align-items: center;" id="colorPaletteContainer">
-                    <button class="icon-btn" id="themeColorBtn" title="切换主题色"><i class="ph ph-palette"></i></button>
+                    <button class="icon-btn" id="themeColorBtn" type="button" title="切换主题色" aria-label="切换主题色" aria-haspopup="dialog" aria-expanded="false" aria-controls="colorPalette"><i class="ph ph-palette"></i></button>
                     <!-- 调色板悬浮面板 -->
-                    <div class="color-palette-dropdown" id="colorPalette">
+                    <div class="color-palette-dropdown" id="colorPalette" role="dialog" aria-label="主题色选择" aria-hidden="true">
                         <div class="color-palette-swatches">
-                            <button class="color-swatch active" style="background: #0ea5e9;" data-color="#0ea5e9" title="晴空蓝"></button>
-                            <button class="color-swatch" style="background: #14b8a6;" data-color="#14b8a6" title="湖水青"></button>
-                            <button class="color-swatch" style="background: #22c55e;" data-color="#22c55e" title="生长绿"></button>
-                            <button class="color-swatch" style="background: #f59e0b;" data-color="#f59e0b" title="琥珀黄"></button>
-                            <button class="color-swatch" style="background: #f97316;" data-color="#f97316" title="活力橙"></button>
-                            <button class="color-swatch" style="background: #f43f5e;" data-color="#f43f5e" title="珊瑚红"></button>
-                            <button class="color-swatch" style="background: #8b5cf6;" data-color="#8b5cf6" title="紫罗兰"></button>
-                            <button class="color-swatch" style="background: #6366f1;" data-color="#6366f1" title="靛蓝"></button>
-                            <button class="color-swatch color-swatch-custom" id="topCustomColorBtn" title="编辑自定义颜色">
+                            <button class="color-swatch active" type="button" style="background: #0ea5e9;" data-color="#0ea5e9" title="晴空蓝" aria-label="选择晴空蓝"></button>
+                            <button class="color-swatch" type="button" style="background: #14b8a6;" data-color="#14b8a6" title="湖水青" aria-label="选择湖水青"></button>
+                            <button class="color-swatch" type="button" style="background: #22c55e;" data-color="#22c55e" title="生长绿" aria-label="选择生长绿"></button>
+                            <button class="color-swatch" type="button" style="background: #f59e0b;" data-color="#f59e0b" title="琥珀黄" aria-label="选择琥珀黄"></button>
+                            <button class="color-swatch" type="button" style="background: #f97316;" data-color="#f97316" title="活力橙" aria-label="选择活力橙"></button>
+                            <button class="color-swatch" type="button" style="background: #f43f5e;" data-color="#f43f5e" title="珊瑚红" aria-label="选择珊瑚红"></button>
+                            <button class="color-swatch" type="button" style="background: #8b5cf6;" data-color="#8b5cf6" title="紫罗兰" aria-label="选择紫罗兰"></button>
+                            <button class="color-swatch" type="button" style="background: #6366f1;" data-color="#6366f1" title="靛蓝" aria-label="选择靛蓝"></button>
+                            <button class="color-swatch color-swatch-custom" id="topCustomColorBtn" type="button" title="编辑自定义颜色" aria-label="编辑自定义颜色">
                                 <i class="ph ph-drop-half"></i>
                             </button>
                         </div>
-                        <div class="top-custom-color-editor" id="topCustomColorEditor" hidden>
+                        <div class="top-custom-color-editor ui-expandable" id="topCustomColorEditor" aria-hidden="true" inert style="display:none;">
                             <div class="top-color-picker" id="topColorPicker">
-                                <button class="top-color-picker-plane" id="topColorPickerPlane" type="button" aria-label="选择主题色明度和饱和度">
+                                <button class="top-color-picker-plane" id="topColorPickerPlane" type="button" title="选择主题色明度和饱和度" aria-label="选择主题色明度和饱和度">
                                     <span id="topColorPickerHandle"></span>
                                 </button>
                                 <input class="top-color-hue" id="topColorHue" type="range" min="0" max="360" value="199" aria-label="选择主题色色相">
                             </div>
-                            <button class="top-custom-color-preview" id="topCustomColorPreview" type="button" title="编辑 Hex 颜色"></button>
+                            <button class="top-custom-color-preview" id="topCustomColorPreview" type="button" title="编辑 Hex 颜色" aria-label="编辑 Hex 颜色"></button>
                             <div class="top-custom-color-body">
                                 <span>自定义</span>
                                 <div class="top-custom-color-controls">
@@ -107,24 +128,24 @@
                 </div>
 
                 <!-- 布局编辑按钮 -->
-                <button class="icon-btn" id="editLayoutBtn" title="编辑布局" ><i class="ph ph-pencil-simple"></i></button>
-                <button class="icon-btn"><i class="ph ph-bell"></i></button>
+                <button class="icon-btn" id="editLayoutBtn" type="button" title="编辑布局" aria-label="编辑布局"><i class="ph ph-pencil-simple"></i></button>
+                <button class="icon-btn" type="button" title="通知" aria-label="查看通知"><i class="ph ph-bell"></i></button>
                 
                 <!-- 用户头像与下拉菜单 -->
                 <div class="user-profile-container">
-                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=NekoAdmin&backgroundColor=0f172a" alt="User Avatar" class="user-avatar" id="userAvatar">
-                    <div class="user-dropdown" id="userDropdown">
+                    <img src="../../assets/app_icon.png" alt="用户头像" class="user-avatar" id="userAvatar" data-avatar-fallback="app" role="button" tabindex="0" aria-label="打开账户菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="userDropdown">
+                    <div class="user-dropdown" id="userDropdown" role="menu" aria-hidden="true">
                         <div style="padding: 4px 10px; margin-bottom: 4px;">
                             <div style="font-weight: 600; color: var(--text-main);" id="dropdownUsername">未登录</div>
                             <div style="font-size: 12px; color: var(--text-secondary);" id="dropdownRole">设备密钥模式</div>
                         </div>
                         <div class="dropdown-divider"></div>
                         <!-- 未登录时显示 -->
-                        <a class="dropdown-item" id="btnOpenLogin" style="color: var(--theme-color);"><i class="ph ph-sign-in"></i> 登录 / 注册</a>
+                        <a class="dropdown-item" id="btnOpenLogin" role="menuitem" tabindex="0" style="color: var(--theme-color);"><i class="ph ph-sign-in"></i> 登录 / 注册</a>
                         <!-- 已登录时显示 -->
-                        <a class="dropdown-item" id="btnProfileSettings" style="display: none;"><i class="ph ph-user-circle"></i> 账户个人信息设置</a>
+                        <a class="dropdown-item" id="btnProfileSettings" role="menuitem" tabindex="0" style="display: none;"><i class="ph ph-user-circle"></i> 账户个人信息设置</a>
                         <div class="dropdown-divider" id="logoutDivider" style="display: none;"></div>
-                        <a class="dropdown-item" id="btnLogout" style="color: var(--error-coral); display: none;"><i class="ph ph-sign-out"></i> 退出登录</a>
+                        <a class="dropdown-item" id="btnLogout" role="menuitem" tabindex="0" style="color: var(--error-coral); display: none;"><i class="ph ph-sign-out"></i> 退出登录</a>
                     </div>
                 </div>
             </div>
@@ -252,9 +273,9 @@
                                 </div>
                                 <div class="quick-action-trailing">
                                 <div class="neko-stepper quick-action-stepper" id="quickIntervalStepper" style="display:none;">
-                                    <button class="neko-stepper-btn" id="quickIntervalDown"><i class="ph ph-minus"></i></button>
+                                    <button class="neko-stepper-btn" id="quickIntervalDown" type="button" title="减少检查间隔" aria-label="减少检查间隔"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                     <input type="number" class="neko-stepper-input" id="quickIntervalInput" min="5" max="3600" value="10">
-                                    <button class="neko-stepper-btn" id="quickIntervalUp"><i class="ph ph-plus"></i></button>
+                                    <button class="neko-stepper-btn" id="quickIntervalUp" type="button" title="增加检查间隔" aria-label="增加检查间隔"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                 </div>
                                 <span class="quick-action-hint" id="quickIntervalHint">点击前往设置修改 →</span>
                                 </div>
@@ -278,9 +299,9 @@
 
                     <!-- 卡片8: 可替换的核心权限卡片 -->
                     <div class="glass-card summary-card" id="replaceableCard" data-w="6" data-h="6" style="grid-column: span 6; grid-row: span 6;" draggable="false">
-                        
+                        <div class="dashboard-view-stack" id="replaceableViewStack">
                         <!-- 视图1 (默认) -->
-                        <div class="card-view view-default summary-card-body" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 12px; height: 100%;">
+                        <div class="card-view view-default summary-card-body ui-view-panel is-active" data-ui-view data-view-display="flex" aria-hidden="false" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 12px; height: 100%;">
                             <div style="position: relative;">
                                 <i class="ph ph-check-square-offset text-theme" style="font-size: 48px;"></i>
                             </div>
@@ -298,7 +319,7 @@
                         </div>
 
                         <!-- 视图2 (替换图) -->
-                        <div class="card-view view-swapped" style="display: none; flex-direction: column; height: 100%;">
+                        <div class="card-view view-swapped ui-view-panel" data-ui-view data-view-display="flex" aria-hidden="true" inert style="display: none; flex-direction: column; height: 100%;">
                             <div class="metric-header" style="font-weight:500;">
                                 <span>最近截图活动</span>
                                 <i class="ph ph-image metric-icon theme" style="font-size:16px; padding:6px;"></i>
@@ -318,6 +339,7 @@
                                 <span id="dashScreenshotSize"><i class="ph ph-arrows-out"></i> —</span>
                             </div>
                         </div>
+                        </div>
 
                     </div>
                 </div>
@@ -325,7 +347,7 @@
             </div> <!-- 闭合 content-safe-area -->
 
             <!-- 控制台区域 -->
-            <div class="content-safe-area" id="consoleArea" style="display: none; flex-direction: column; gap: 16px; height: 100%; animation: fadeIn 0.3s ease;">
+            <div class="content-safe-area" id="consoleArea" style="display: none; flex-direction: column; gap: 16px; height: 100%;">
                 <div class="glass-card" style="flex: 1; display: flex; flex-direction: column; padding: 0;">
                     <!-- 终端工具栏 -->
                     <div style="padding: 12px 20px; border-bottom: var(--glass-border); display: flex; justify-content: space-between; align-items: center; background: color-mix(in srgb, var(--text-main) 2%, transparent);">
@@ -343,8 +365,8 @@
                                 <input type="checkbox" class="neko-checkbox" id="consoleAutoScroll" checked> 自动滚动
                             </label>
                             <div style="width: 1px; height: 16px; background: color-mix(in srgb, var(--text-main) 10%, transparent);"></div>
-                            <button class="icon-btn" id="consoleExportBtn" title="导出日志" style="width: 32px; height: 32px; padding: 0; min-width: unset;"><i class="ph ph-download-simple"></i></button>
-                            <button class="icon-btn" id="consoleClearBtn" title="清空发终端" style="width: 32px; height: 32px; padding: 0; min-width: unset; color: var(--error-coral);"><i class="ph ph-trash"></i></button>
+                            <button class="icon-btn" id="consoleExportBtn" type="button" title="导出日志" aria-label="导出日志" style="width: 32px; height: 32px; padding: 0; min-width: unset;"><i class="tb tb-file-export" aria-hidden="true"></i></button>
+                            <button class="icon-btn" id="consoleClearBtn" type="button" title="清空终端" aria-label="清空终端" style="width: 32px; height: 32px; padding: 0; min-width: unset; color: var(--error-coral);"><i class="ph ph-trash" aria-hidden="true"></i></button>
                         </div>
                     </div>
                     <!-- 终端输出区 -->
@@ -394,7 +416,7 @@
             </div>
 
             <!-- 设备状态区域 -->
-            <div class="page" id="page-device-status" style="display: none; animation: fadeIn 0.3s ease;">
+            <div class="page" id="page-device-status" style="display: none;">
                 <div class="content-safe-area">
                     
                     <!-- 顶部双列 -->
@@ -553,7 +575,7 @@
             </div>
 
             <!-- 截图与活动页面 -->
-            <div class="page" id="page-screenshot" style="display: none; animation: fadeIn 0.3s ease;">
+            <div class="page" id="page-screenshot" style="display: none;">
                 <div class="content-safe-area">
 
                     <!-- 主区：左侧大图预览（含内嵌控制条）+ 右侧活动流 -->
@@ -588,7 +610,8 @@
                                     <div class="control-group">
                                         <div class="control-label">截图间隔</div>
                                         <!-- 预设间隔 + 自定义间隔同行（仅定时模式） -->
-                                        <div class="interval-row">
+                                        <div class="interval-row ui-view-stack" id="screenshotIntervalStage">
+                                            <div class="interval-mode-controls ui-view-panel" id="intervalModeControls" data-ui-view data-view-display="flex" aria-hidden="true" inert style="display:none;">
                                             <div class="interval-selector" id="intervalSelector">
                                                 <button class="interval-btn" data-value="10">10s</button>
                                                 <button class="interval-btn active" data-value="30">30s</button>
@@ -598,9 +621,9 @@
                                             <div class="interval-custom-group" id="intervalCustomGroup">
                                                 <div class="interval-row-sep"></div>
                                                 <div class="neko-stepper">
-                                                    <button class="neko-stepper-btn" data-target="customIntervalValue" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                                    <button class="neko-stepper-btn" type="button" data-target="customIntervalValue" data-dir="-1" title="减少自定义间隔" aria-label="减少自定义间隔"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                                     <input type="number" class="neko-stepper-input" id="customIntervalValue" min="10" value="30">
-                                                    <button class="neko-stepper-btn" data-target="customIntervalValue" data-dir="1"><i class="ph ph-plus"></i></button>
+                                                    <button class="neko-stepper-btn" type="button" data-target="customIntervalValue" data-dir="1" title="增加自定义间隔" aria-label="增加自定义间隔"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                                 </div>
                                                 <select class="glass-select" id="customIntervalUnit">
                                                     <option value="s" selected>秒</option>
@@ -608,16 +631,20 @@
                                                     <option value="h">时</option>
                                                 </select>
                                             </div>
+                                            </div>
                                             <!-- 自动模式提示（仅自动模式） -->
-                                            <div class="interval-auto-hint" id="intervalAutoHint">
+                                            <div class="interval-auto-hint ui-view-panel is-active" id="intervalAutoHint" data-ui-view data-view-display="flex" aria-hidden="false">
                                                 <i class="ph ph-info"></i> 随上报间隔自动触发（约每 <span id="intervalAutoHintValue">10</span>s）
+                                            </div>
+                                            <div class="interval-manual-hint ui-view-panel" id="intervalManualHint" data-ui-view data-view-display="flex" aria-hidden="true" inert style="display:none;">
+                                                <i class="ph ph-hand-tap"></i> 手动触发
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 <!-- 右侧：立即截图（仅手动模式） -->
                                 <div class="ctrl-right">
-                                    <button class="action-btn primary screenshot-capture-btn" id="captureNowBtn" style="display: none;">
+                                    <button class="action-btn primary screenshot-capture-btn is-control-hidden" id="captureNowBtn" aria-hidden="true" inert>
                                         <i class="ph ph-camera"></i> 立即截图
                                     </button>
                                 </div>
@@ -641,8 +668,8 @@
                                         <div class="screenshot-meta" id="screenshotMetaInline">—</div>
                                     </div>
                                     <div class="screenshot-overlay-actions">
-                                        <button class="icon-btn" title="在外部查看"><i class="ph ph-arrow-square-out"></i></button>
-                                        <button class="icon-btn" title="下载截图"><i class="ph ph-download-simple"></i></button>
+                                    <button class="icon-btn" type="button" title="在外部查看" aria-label="在外部查看"><i class="ph ph-arrow-square-out" aria-hidden="true"></i></button>
+                                    <button class="icon-btn" type="button" title="下载截图" aria-label="下载截图"><i class="ph ph-download-simple" aria-hidden="true"></i></button>
                                     </div>
                                 </div>
                             </div>
@@ -699,7 +726,7 @@
             </div>
 
             <!-- 服务与自启动页面 -->
-            <div class="page" id="page-services" style="display: none; animation: fadeIn 0.3s ease;">
+            <div class="page" id="page-services" style="display: none;">
                 <div class="content-safe-area svc-page-shell">
 
                     <div class="page-header svc-page-header">
@@ -739,11 +766,11 @@
                                     </div>
                                 </div>
                                 <div class="svc-pill-actions">
-                                    <button class="svc-action-btn warn" id="btnRestartReporter" title="重启上报服务">
-                                        <i class="ph ph-arrow-clockwise"></i>
+                                    <button class="svc-action-btn warn" id="btnRestartReporter" type="button" title="重试上报服务" aria-label="重试上报服务">
+                                        <i class="ph ph-arrows-clockwise" aria-hidden="true"></i>
                                     </button>
-                                    <button class="svc-action-btn danger" id="btnStopReporter" title="停止上报服务">
-                                        <i class="ph ph-stop-circle"></i>
+                                    <button class="svc-action-btn danger" id="btnStopReporter" type="button" title="停止上报服务" aria-label="停止上报服务">
+                                        <i class="ph ph-stop-circle" aria-hidden="true"></i>
                                     </button>
                                 </div>
                             </div>
@@ -760,8 +787,8 @@
                                     </div>
                                 </div>
                                 <div class="svc-pill-actions">
-                                    <button class="svc-action-btn primary" id="btnTestCapture" title="测试截图">
-                                        <i class="ph ph-aperture"></i>
+                                    <button class="svc-action-btn primary" id="btnTestCapture" type="button" title="测试截图" aria-label="测试截图">
+                                        <i class="ph ph-aperture" aria-hidden="true"></i>
                                     </button>
                                 </div>
                             </div>
@@ -808,9 +835,9 @@
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
-                                        <button class="neko-stepper-btn" data-target="reportAutoDelayInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="reportAutoDelayInput" data-dir="-1" title="减少自动上报延迟" aria-label="减少自动上报延迟"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                         <input type="number" class="neko-stepper-input" id="reportAutoDelayInput" min="0" max="300" value="10">
-                                        <button class="neko-stepper-btn" data-target="reportAutoDelayInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="reportAutoDelayInput" data-dir="1" title="增加自动上报延迟" aria-label="增加自动上报延迟"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                     </div>
                                     <span class="svc-number-unit">秒</span>
                                 </div>
@@ -831,9 +858,9 @@
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
-                                        <button class="neko-stepper-btn" data-target="startDelayInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="startDelayInput" data-dir="-1" title="减少启动延迟" aria-label="减少启动延迟"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                         <input type="number" class="neko-stepper-input" id="startDelayInput" min="0" max="60" value="5">
-                                        <button class="neko-stepper-btn" data-target="startDelayInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="startDelayInput" data-dir="1" title="增加启动延迟" aria-label="增加启动延迟"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                     </div>
                                     <span class="svc-number-unit">秒</span>
                                 </div>
@@ -930,9 +957,9 @@
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
-                                        <button class="neko-stepper-btn" data-target="maxRestartsInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="maxRestartsInput" data-dir="-1" title="减少最大重启次数" aria-label="减少最大重启次数"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                         <input type="number" class="neko-stepper-input" id="maxRestartsInput" min="1" max="10" value="3">
-                                        <button class="neko-stepper-btn" data-target="maxRestartsInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="maxRestartsInput" data-dir="1" title="增加最大重启次数" aria-label="增加最大重启次数"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                     </div>
                                     <span class="svc-number-unit">次</span>
                                 </div>
@@ -945,9 +972,9 @@
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
-                                        <button class="neko-stepper-btn" data-target="restartIntervalInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="restartIntervalInput" data-dir="-1" title="减少重启间隔" aria-label="减少重启间隔"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                         <input type="number" class="neko-stepper-input" id="restartIntervalInput" min="5" max="300" value="30">
-                                        <button class="neko-stepper-btn" data-target="restartIntervalInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="restartIntervalInput" data-dir="1" title="增加重启间隔" aria-label="增加重启间隔"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                     </div>
                                     <span class="svc-number-unit">秒</span>
                                 </div>
@@ -960,9 +987,9 @@
                                 </div>
                                 <div class="svc-number-input-row">
                                     <div class="neko-stepper">
-                                        <button class="neko-stepper-btn" data-target="watchdogTimeoutInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="watchdogTimeoutInput" data-dir="-1" title="减少看门狗超时" aria-label="减少看门狗超时"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                         <input type="number" class="neko-stepper-input" id="watchdogTimeoutInput" min="10" max="600" value="60">
-                                        <button class="neko-stepper-btn" data-target="watchdogTimeoutInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="watchdogTimeoutInput" data-dir="1" title="增加看门狗超时" aria-label="增加看门狗超时"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                     </div>
                                     <span class="svc-number-unit">秒</span>
                                 </div>
@@ -985,7 +1012,7 @@
                                     </div>
                                 </div>
                                 <button class="action-btn primary health-check-trigger" id="runHealthCheckBtn">
-                                    <i class="ph ph-heartbeat" id="healthCheckBtnIcon"></i> 开始检测
+                                    <i class="ph ph-stethoscope" id="healthCheckBtnIcon"></i> 开始检测
                                 </button>
                             </div>
                             <div class="health-results-shell" id="healthResultsShell" data-top-fade="0" data-bottom-fade="0">
@@ -1005,7 +1032,7 @@
             </div>
 
     <!-- ========== 用户关注与应用在线提醒页 ========== -->
-    <div class="page" id="page-activity" style="display:none; animation: fadeIn 0.3s ease;">
+    <div class="page" id="page-activity" style="display:none;">
         <div class="content-safe-area activity-page-shell">
             <div class="page-header activity-page-header">
                 <div>
@@ -1013,7 +1040,7 @@
                     <span class="page-subtitle">分别查看本机服务、提醒接收与应用分享状态；默认不上传截图，快照提醒需单独开启</span>
                 </div>
             </div>
-            <div class="activity-page-status" id="activityPageStatus" aria-live="off" hidden></div>
+            <div class="visually-hidden" id="activityPageStatus" role="status" aria-live="polite" aria-atomic="true"></div>
 
             <section class="glass-card activity-health-card" id="activityHealthCard" data-tone="disabled" aria-labelledby="activityHealthTitle">
                 <div class="activity-health-head">
@@ -1031,7 +1058,7 @@
                         <button class="action-btn primary" id="activityHealthActionBtn" type="button" data-health-action="enable">
                             <i class="ph ph-power"></i><span>开启上线提醒</span>
                         </button>
-                        <button class="action-btn" id="activityHealthRefreshBtn" type="button"><i class="ph ph-arrows-clockwise"></i> 立即检查</button>
+                        <button class="action-btn" id="activityHealthRefreshBtn" type="button"><i class="ph ph-stethoscope"></i> 立即检查</button>
                         <button class="action-btn" id="activityDiagnosticsToggle" type="button" aria-expanded="false" aria-controls="activityDiagnosticsPanel">
                             <i class="ph ph-info"></i><span>查看详情</span>
                         </button>
@@ -1054,12 +1081,16 @@
                         <span class="activity-health-pill" id="activityPublisherHealthLabel">未启用</span>
                     </div>
                 </div>
-                <div class="activity-diagnostics-panel" id="activityDiagnosticsPanel" hidden>
-                    <div class="activity-diagnostics-head">
-                        <div><strong>诊断详情</strong><small>仅包含状态、版本和时间，不会复制登录凭据。</small></div>
-                        <button class="action-btn x-small" id="activityCopyDiagnosticsBtn" type="button"><i class="ph ph-copy"></i> 复制诊断信息</button>
+                <div class="activity-diagnostics-panel ui-expandable" id="activityDiagnosticsPanel" aria-hidden="true" hidden>
+                    <div class="ui-expandable-track">
+                        <div class="activity-diagnostics-surface ui-expandable-content">
+                            <div class="activity-diagnostics-head">
+                                <div><strong>诊断详情</strong><small>仅包含状态、版本和时间，不会复制登录凭据。</small></div>
+                                <button class="action-btn x-small" id="activityCopyDiagnosticsBtn" type="button"><i class="ph ph-copy"></i> 复制诊断信息</button>
+                            </div>
+                            <pre id="activityDiagnosticsContent">尚无诊断数据</pre>
+                        </div>
                     </div>
-                    <pre id="activityDiagnosticsContent">尚无诊断数据</pre>
                 </div>
                 <p class="visually-hidden" id="activityHealthAnnouncer" role="status" aria-live="polite" aria-atomic="true">提醒服务尚未开启</p>
             </section>
@@ -1086,7 +1117,7 @@
                 <button type="button" role="tab" id="activityTabPeople" aria-controls="activityPanelPeople" aria-selected="false" tabindex="-1" data-activity-section="people"><i class="ph ph-users"></i> 关注者与黑名单</button>
             </div>
 
-            <section class="activity-section-panel" id="activityPanelReceive" role="tabpanel" aria-labelledby="activityTabReceive" data-activity-panel="receive">
+            <section class="activity-section-panel" id="activityPanelReceive" role="tabpanel" aria-labelledby="activityTabReceive" aria-hidden="false" data-activity-panel="receive">
                 <div class="activity-section-heading">
                     <div><span>接收提醒</span><h3>关注谁、提醒哪些应用</h3><p>搜索用户后，只能为对方已公开的应用创建上线提醒。</p></div>
                     <span class="activity-section-data-state" id="activityReceiveDataStatus" hidden></span>
@@ -1110,12 +1141,12 @@
                     </div>
                 </section>
                 <section class="glass-card activity-card">
-                    <div class="activity-card-title"><i class="ph ph-bell-ringing"></i> 我关注的用户</div>
-                    <div class="activity-list" id="activityFollowsList"><div class="activity-empty">暂无关注用户</div></div>
+                    <div class="activity-card-title"><i class="ph ph-bell-ringing"></i> 我关注的用户 <span class="activity-list-count" id="activityFollowsCount" aria-label="0 项">0</span></div>
+                    <div class="activity-list" id="activityFollowsList" data-count-target="activityFollowsCount"><div class="activity-empty">暂无关注用户</div></div>
                 </section>
             </section>
 
-            <section class="activity-section-panel" id="activityPanelShare" role="tabpanel" aria-labelledby="activityTabShare" data-activity-panel="share" hidden>
+            <section class="activity-section-panel" id="activityPanelShare" role="tabpanel" aria-labelledby="activityTabShare" aria-hidden="true" data-activity-panel="share" inert hidden>
                 <div class="activity-section-heading">
                     <div><span>分享我的应用</span><h3>我的应用可见性</h3><p>新应用默认不公开；窗口标题不会保存或上传。</p></div>
                     <span class="activity-section-data-state" id="activityShareDataStatus" hidden></span>
@@ -1133,22 +1164,30 @@
                 </section>
                 <div class="activity-grid">
                     <section class="glass-card activity-card">
-                        <div class="activity-card-title"><i class="ph ph-app-window"></i> 我的应用可见性</div>
+                        <div class="activity-card-title"><i class="ph ph-app-window"></i> 我的应用可见性 <span class="activity-list-count" id="activityAppsCount" aria-label="0 项">0</span></div>
                         <p class="activity-card-copy">优先从已打开的窗口选择。只有点击公开后，对方才可能看到此应用在线。</p>
                         <div class="activity-app-composer">
                             <button class="action-btn primary activity-remote-control" id="activityActiveAppBtn" type="button"><i class="ph ph-crosshair"></i> 从窗口选择应用</button>
-                            <details class="activity-advanced-composer" id="activityAdvancedComposer">
-                                <summary>高级添加：手动输入 .exe</summary>
-                                <div class="activity-advanced-fields">
-                                    <label for="activityAppKeyInput">进程名</label>
-                                    <input id="activityAppKeyInput" class="activity-input activity-remote-control" maxlength="128" autocomplete="off" placeholder="例如 Code.exe">
-                                    <label for="activityAppNameInput">显示名称（可选）</label>
-                                    <input id="activityAppNameInput" class="activity-input activity-remote-control" maxlength="64" autocomplete="off" placeholder="例如 Visual Studio Code">
-                                    <button class="action-btn primary activity-remote-control" id="activityAddAppBtn" type="button"><i class="ph ph-eye"></i> 公开此应用</button>
+                            <div class="activity-advanced-composer">
+                                <button class="activity-advanced-toggle" id="activityAdvancedComposerToggle" type="button" aria-expanded="false" aria-controls="activityAdvancedComposer">
+                                    <span>高级添加：手动输入 .exe</span><i class="ph ph-caret-down" aria-hidden="true"></i>
+                                </button>
+                                <div class="activity-advanced-panel ui-expandable" id="activityAdvancedComposer" aria-hidden="true" hidden>
+                                    <div class="ui-expandable-track">
+                                        <div class="ui-expandable-content">
+                                            <div class="activity-advanced-fields">
+                                                <label for="activityAppKeyInput">进程名</label>
+                                                <input id="activityAppKeyInput" class="activity-input activity-remote-control" maxlength="128" autocomplete="off" placeholder="例如 Code.exe">
+                                                <label for="activityAppNameInput">显示名称（可选）</label>
+                                                <input id="activityAppNameInput" class="activity-input activity-remote-control" maxlength="64" autocomplete="off" placeholder="例如 Visual Studio Code">
+                                                <button class="action-btn primary activity-remote-control" id="activityAddAppBtn" type="button"><i class="ph ph-eye"></i> 公开此应用</button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </details>
+                            </div>
                         </div>
-                        <div class="activity-list" id="activityAppsList"><div class="activity-empty">尚未检测到可配置的应用</div></div>
+                        <div class="activity-list" id="activityAppsList" data-count-target="activityAppsCount"><div class="activity-empty">尚未检测到可配置的应用</div></div>
                     </section>
 
                     <section class="glass-card activity-card">
@@ -1164,7 +1203,7 @@
                 </div>
             </section>
 
-            <section class="activity-section-panel" id="activityPanelBackground" role="tabpanel" aria-labelledby="activityTabBackground" data-activity-panel="background" hidden>
+            <section class="activity-section-panel" id="activityPanelBackground" role="tabpanel" aria-labelledby="activityTabBackground" aria-hidden="true" data-activity-panel="background" inert hidden>
                 <div class="activity-section-heading">
                     <div><span>后台与启动</span><h3>决定这台电脑何时运行提醒</h3><p>控制退出主窗口后的后台驻留，以及 Windows 登录后的自动准备。</p></div>
                 </div>
@@ -1185,19 +1224,19 @@
                 </section>
             </section>
 
-            <section class="activity-section-panel" id="activityPanelPeople" role="tabpanel" aria-labelledby="activityTabPeople" data-activity-panel="people" hidden>
+            <section class="activity-section-panel" id="activityPanelPeople" role="tabpanel" aria-labelledby="activityTabPeople" aria-hidden="true" data-activity-panel="people" inert hidden>
                 <div class="activity-section-heading">
                     <div><span>关注者与黑名单</span><h3>管理谁能与你互动</h3><p>拉黑会立即撤销双方相关的关注动态。</p></div>
                     <span class="activity-section-data-state" id="activityPeopleDataStatus" hidden></span>
                 </div>
                 <div class="activity-grid">
                     <section class="glass-card activity-card">
-                        <div class="activity-card-title"><i class="ph ph-users"></i> 关注我的用户</div>
-                        <div class="activity-list" id="activityFollowersList"><div class="activity-empty">暂无关注者</div></div>
+                        <div class="activity-card-title"><i class="ph ph-users"></i> 关注我的用户 <span class="activity-list-count" id="activityFollowersCount" aria-label="0 项">0</span></div>
+                        <div class="activity-list" id="activityFollowersList" data-count-target="activityFollowersCount"><div class="activity-empty">暂无关注者</div></div>
                     </section>
                     <section class="glass-card activity-card">
-                        <div class="activity-card-title"><i class="ph ph-user-minus"></i> 已拉黑用户</div>
-                        <div class="activity-list" id="activityBlocksList"><div class="activity-empty">暂无拉黑用户</div></div>
+                        <div class="activity-card-title"><i class="ph ph-user-minus"></i> 已拉黑用户 <span class="activity-list-count" id="activityBlocksCount" aria-label="0 项">0</span></div>
+                        <div class="activity-list" id="activityBlocksList" data-count-target="activityBlocksCount"><div class="activity-empty">暂无拉黑用户</div></div>
                     </section>
                 </div>
             </section>
@@ -1205,7 +1244,7 @@
     </div>
 
     <!-- ========== 直播推流页 ========== -->
-    <div class="page" id="page-stream" style="display:none; animation: fadeIn 0.3s ease;">
+    <div class="page" id="page-stream" style="display:none;">
         <div class="content-safe-area">
             <!-- 页头 -->
             <div class="page-header">
@@ -1304,12 +1343,12 @@
                     <div class="card-section-title"><i class="ph ph-link"></i> 推流地址</div>
                     <div class="stream-url-row">
                         <div class="stream-url-display" id="streamRtmpUrl">rtmp://your-srs-server/live/nk_dev_000_xxxxxxxx</div>
-                        <button class="icon-btn" id="copyRtmpUrlBtn" title="复制推流地址"><i class="ph ph-copy"></i></button>
+                        <button class="icon-btn" id="copyRtmpUrlBtn" type="button" title="复制推流地址" aria-label="复制推流地址"><i class="ph ph-copy" aria-hidden="true"></i></button>
                     </div>
                     <div class="stream-key-row">
                         <span class="label-muted">Stream Key：</span>
                         <span class="stream-key-value" id="streamKeyDisplay">nk_dev_000_xxxxxxxx</span>
-                        <button class="icon-btn icon-btn-sm" id="resetStreamKeyBtn" title="重置 Stream Key"><i class="ph ph-arrows-clockwise"></i></button>
+                        <button class="icon-btn icon-btn-sm" id="resetStreamKeyBtn" type="button" title="重置 Stream Key" aria-label="重置 Stream Key"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i></button>
                     </div>
                 </div>
 
@@ -1341,17 +1380,17 @@
                     <!-- 文件导出降级模式 -->
                     <div class="obs-mode-section" id="obsModeExport">
                         <p class="obs-hint">无法使用 WebSocket？导出配置文件后在 OBS 中手动导入（仅需操作一次）。</p>
-                        <button class="action-btn stream-btn" id="exportObsConfigBtn"><i class="ph ph-download-simple"></i> 导出 OBS 服务配置文件</button>
+                        <button class="action-btn stream-btn" id="exportObsConfigBtn"><i class="tb tb-file-export" aria-hidden="true"></i> 导出 OBS 服务配置文件</button>
                     </div>
                 </div>
 
                 <!-- 推流操作说明折叠区 -->
                 <div class="stream-card stream-help-card" id="streamHelpCard">
-                    <div class="stream-help-toggle" id="streamHelpToggle">
+                    <button class="stream-help-toggle" id="streamHelpToggle" type="button" aria-expanded="false" aria-controls="streamHelpContent">
                         <i class="ph ph-question"></i> 如何使用 OBS 推流？
                         <i class="ph ph-caret-down" id="streamHelpCaret"></i>
-                    </div>
-                    <div class="stream-help-content" id="streamHelpContent" style="display:none;">
+                    </button>
+                    <div class="stream-help-content ui-expandable" id="streamHelpContent" aria-hidden="true" inert style="display:none;">
                         <ol class="help-steps">
                             <li>确保 SRS 服务器已启动（可在设置页「测试 SRS 连通性」中验证）</li>
                             <li>点击「一键配置 OBS 推流」，等待提示「OBS 已就绪」</li>
@@ -1381,7 +1420,7 @@
     <!-- /page-stream -->
 
     <!-- ========== 更新中心 ========== -->
-    <div class="page" id="page-update" style="display: none; animation: fadeIn 0.3s ease;">
+    <div class="page" id="page-update" style="display: none;">
         <div class="content-safe-area">
             <div class="update-grid">
 
@@ -1398,25 +1437,29 @@
                             <div class="update-ver-tag">Stable</div>
                         </div>
                         <div class="update-ver-desc" id="updateVerDesc">Loading...</div>
-                        <div class="update-checking-loader" id="updateCheckingLoaderHost"></div>
-                        <!-- 进度条（仅在检查/下载时显示） -->
-                        <div class="update-progress-row" id="updateProgressRow" style="display:none">
-                            <span class="update-progress-label" id="updateProgressLabel">检查中...</span>
-                            <span class="update-progress-pct" id="updateProgressPct">—</span>
-                        </div>
-                        <div class="update-progress-bar-wrap" id="updateProgressBar" style="display:none">
-                            <div class="update-progress-fill" id="updateProgressFill" style="width:0%"></div>
+                        <div class="update-feedback-slot">
+                            <div class="update-checking-loader" id="updateCheckingLoaderHost"></div>
+                            <!-- 进度条（仅在检查/下载时显示） -->
+                            <div class="update-progress-panel" id="updateProgressPanel" aria-hidden="true" inert style="display:none;">
+                                <div class="update-progress-row" id="updateProgressRow">
+                                    <span class="update-progress-label" id="updateProgressLabel">检查中...</span>
+                                    <span class="update-progress-pct" id="updateProgressPct">—</span>
+                                </div>
+                                <div class="update-progress-bar-wrap" id="updateProgressBar">
+                                    <div class="update-progress-fill" id="updateProgressFill" style="width:0%"></div>
+                                </div>
+                            </div>
                         </div>
                         <div class="update-action-row">
                             <button class="action-btn primary update-action-btn" id="checkUpdateBtn">
-                                <i class="ph ph-arrows-clockwise" id="checkUpdateIcon"></i>
+                                <i class="ph ph-arrow-clockwise" id="checkUpdateIcon"></i>
                                 <span id="checkUpdateLabel">检查更新</span>
                             </button>
                             <!--<button class="update-side-btn" id="forceUpdateBtn" title="强制重新下载并安装当前最新版本">
                                 <i class="ph ph-cloud-arrow-down"></i><span>强制更新</span>
                             </button>-->
                             <button class="update-side-btn update-action-btn" id="updateIntegrityBtn" title="检查系统文件完整性">
-                                <i class="ph ph-heartbeat"></i><span>完整性检查</span>
+                                <i class="ph ph-stethoscope"></i><span>完整性检查</span>
                             </button>
                             <button class="update-side-btn danger update-action-btn" id="rollbackBtn" title="回滚到上一稳定版本">
                                 <i class="ph ph-arrow-counter-clockwise"></i><span>版本回滚</span>
@@ -1514,13 +1557,13 @@
                                 <div class="svc-setting-name">本地安装包</div>
                                 <div class="svc-setting-desc">选择 .exe / .zip 手动安装</div>
                             </div>
-                            <button class="settings-link-btn" id="localInstallBtn"><i class="ph ph-caret-right" style="font-size:14px;"></i></button>
+                            <button class="settings-link-btn" id="localInstallBtn" type="button" title="选择本地安装包" aria-label="选择本地安装包"><i class="ph ph-cloud-arrow-down" aria-hidden="true" style="font-size:14px;"></i></button>
                         </div>
                     </div>
 
                     <!-- 更新通道 -->
                     <div class="glass-card update-channel-card">
-                        <div class="svc-cfg-title"><i class="ph ph-broadcast"></i> 更新通道</div>
+                        <div class="svc-cfg-title"><i class="ph ph-git-branch"></i> 更新通道</div>
                         <div class="update-channel-list">
                             <label class="update-channel-opt">
                                 <input type="radio" name="updateChannel" value="stable" checked>
@@ -1581,13 +1624,13 @@
                     <div class="update-source-middle">
                         <div class="update-source-carousel-stack">
                             <div class="update-source-carousel">
-                                <button type="button" class="update-source-nav-btn" id="updateSourcePrevBtn" aria-label="上一个更新源">
+                                <button type="button" class="update-source-nav-btn" id="updateSourcePrevBtn" title="上一个更新源" aria-label="上一个更新源">
                                     <i class="ph ph-caret-left"></i>
                                 </button>
                                 <div class="update-source-viewport">
                                     <div class="update-source-rail" id="updateSourceRail" aria-label="已保存的更新源"></div>
                                 </div>
-                                <button type="button" class="update-source-nav-btn" id="updateSourceNextBtn" aria-label="下一个更新源">
+                                <button type="button" class="update-source-nav-btn" id="updateSourceNextBtn" title="下一个更新源" aria-label="下一个更新源">
                                     <i class="ph ph-caret-right"></i>
                                 </button>
                             </div>
@@ -1615,14 +1658,14 @@
     </div>
 
     <!-- ========== 公告管理 ========== -->
-    <div class="page" id="page-announcement" style="display: none; animation: fadeIn 0.3s ease;">
+    <div class="page" id="page-announcement" style="display: none;">
         <div class="content-safe-area">
             <div class="announcement-header">
                 <div class="announcement-header-left">
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <span class="announcement-page-subtitle">管理公告内容、弹窗策略与过期状态</span>
                         <span class="announcement-mock-badge" id="announcementMockBadge" style="display: none;">
-                            <i class="ph ph-sparkles"></i> 模拟数据模式
+                            <i class="ph ph-sparkle"></i> 模拟数据模式
                         </span>
                     </div>
                 </div>
@@ -1630,8 +1673,8 @@
                 </div>
             </div>
 
-            <div class="announcement-form-wrapper" id="announcementFormWrapper">
-                <div class="glass-card announcement-form-card" id="announcementForm">
+            <div class="announcement-form-wrapper" id="announcementFormWrapper" aria-hidden="true" inert>
+                <div class="glass-card announcement-form-card" id="announcementForm" role="dialog" aria-modal="true" aria-labelledby="announcementFormTitle">
                     <div class="announcement-form-head">
                         <div class="announcement-form-title-text" id="announcementFormTitleWrap">
                             <i class="ph ph-megaphone-simple" id="announcementFormTitleIcon" style="color: var(--theme-color); font-size: 18px;"></i>
@@ -1681,9 +1724,9 @@
                             <div class="form-group">
                                 <label>优先级</label>
                                 <div class="neko-stepper" id="announcementPriorityStepper">
-                                    <button type="button" class="neko-stepper-btn" id="announcementPriorityDown"><i class="ph ph-minus"></i></button>
+                                    <button type="button" class="neko-stepper-btn" id="announcementPriorityDown" title="降低优先级" aria-label="降低优先级"><i class="ph ph-minus"></i></button>
                                     <input type="number" id="announcementPriority" class="neko-stepper-input" value="1" min="1" max="10" readonly>
-                                    <button type="button" class="neko-stepper-btn" id="announcementPriorityUp"><i class="ph ph-plus"></i></button>
+                                    <button type="button" class="neko-stepper-btn" id="announcementPriorityUp" title="提高优先级" aria-label="提高优先级"><i class="ph ph-plus"></i></button>
                                 </div>
                             </div>
                             <div class="form-group">
@@ -1696,7 +1739,7 @@
                                 </div>
                                 <div class="announcement-expiry-field">
                                     <input type="text" class="glass-input" id="announcementExpiresAt" placeholder="永久生效" readonly>
-                                    <button type="button" class="announcement-input-icon-btn" id="announcementExpiresAtClear" title="清除过期时间">
+                                    <button type="button" class="announcement-input-icon-btn" id="announcementExpiresAtClear" title="清除过期时间" aria-label="清除过期时间">
                                         <i class="ph ph-x"></i>
                                     </button>
                                 </div>
@@ -1715,17 +1758,17 @@
                                 <div class="announcement-form-toggles">
                                     <div class="announcement-toggle-group">
                                         <span class="announcement-toggle-label">弹窗显示</span>
-                                        <div class="toggle-switch on" id="announcementShowPopupToggle"></div>
+                                        <button type="button" class="toggle-switch on" id="announcementShowPopupToggle" role="switch" aria-label="公告弹窗显示" aria-checked="true"></button>
                                         <input type="checkbox" id="announcementShowPopup" style="display: none;" checked>
                                     </div>
                                     <div class="announcement-toggle-group">
                                         <span class="announcement-toggle-label">推送通知</span>
-                                        <div class="toggle-switch" id="announcementPushNotificationToggle"></div>
+                                        <button type="button" class="toggle-switch" id="announcementPushNotificationToggle" role="switch" aria-label="公告推送通知" aria-checked="false"></button>
                                         <input type="checkbox" id="announcementPushNotification" style="display: none;">
                                     </div>
                                     <div class="announcement-toggle-group">
                                         <span class="announcement-toggle-label">置顶公告</span>
-                                        <div class="toggle-switch" id="announcementPinnedToggle"></div>
+                                        <button type="button" class="toggle-switch" id="announcementPinnedToggle" role="switch" aria-label="公告置顶" aria-checked="false"></button>
                                         <input type="checkbox" id="announcementPinned" style="display: none;">
                                     </div>
                                 </div>
@@ -1734,26 +1777,27 @@
                         <div class="announcement-form-error" id="announcementFormError" style="display: none;"></div>
                     </div>
                     <div class="announcement-form-footer">
-                        <button class="action-btn" id="announcementCancelBtn">取消</button>
-                        <button class="action-btn primary" id="announcementSaveBtn">保存</button>
+                        <button type="button" class="action-btn" id="announcementCancelBtn">取消</button>
+                        <button type="button" class="action-btn primary" id="announcementSaveBtn">保存</button>
                     </div>
                 </div>
             </div>
 
-            <div class="glass-card announcement-board">
+            <div class="glass-card announcement-board" aria-busy="false">
+                <span class="announcement-load-status" id="announcementLoadStatus" role="status" aria-live="polite"></span>
                 <div class="announcement-toolbar">
                     <div class="announcement-toolbar-row">
                         <div class="announcement-status-tabs" role="group" aria-label="公告状态筛选">
-                            <button class="announcement-tab active" data-announcement-filter="published">
+                            <button type="button" class="announcement-tab active" data-announcement-filter="published">
                                 <i class="ph ph-check-circle"></i> 已发布
                             </button>
-                            <button class="announcement-tab" data-announcement-filter="draft">
-                                <i class="ph ph-inbox"></i> 草稿
+                            <button type="button" class="announcement-tab" data-announcement-filter="draft">
+                                <i class="tb tb-file-pencil" aria-hidden="true"></i> 草稿
                             </button>
-                            <button class="announcement-tab" data-announcement-filter="archived">
+                            <button type="button" class="announcement-tab" data-announcement-filter="archived">
                                 <i class="ph ph-archive-box"></i> 归档
                             </button>
-                            <button class="announcement-tab" data-announcement-filter="all">
+                            <button type="button" class="announcement-tab" data-announcement-filter="all">
                                 <i class="ph ph-stack"></i> 全部
                             </button>
                         </div>
@@ -1762,13 +1806,13 @@
                             <input type="search" id="announcementSearchInput" placeholder="搜索标题、正文、发布人或触达范围">
                         </div>
                         <div class="announcement-toolbar-actions">
-                            <button class="action-btn" id="announcementMockToggleBtn">
-                                <i class="ph ph-sparkles"></i> 本地模拟
+                            <button type="button" class="action-btn" id="announcementMockToggleBtn">
+                                <i class="ph ph-sparkle"></i> 本地模拟
                             </button>
-                            <button class="action-btn announcement-refresh-btn" id="announcementRefreshBtn">
+                            <button type="button" class="action-btn announcement-refresh-btn" id="announcementRefreshBtn">
                                 <i class="ph ph-arrow-clockwise"></i> 刷新
                             </button>
-                            <button class="action-btn primary" id="announcementCreateBtn">
+                            <button type="button" class="action-btn primary" id="announcementCreateBtn">
                                 <i class="ph ph-plus"></i> 新建公告
                             </button>
                         </div>
@@ -1776,10 +1820,10 @@
 
                     <div class="announcement-filter-strip">
                         <div class="announcement-type-tabs" role="group" aria-label="公告类型筛选">
-                            <button class="announcement-type-dot active" data-announcement-type-filter="all">全部类型</button>
-                            <button class="announcement-type-dot" data-announcement-type-filter="info">信息</button>
-                            <button class="announcement-type-dot" data-announcement-type-filter="warning">提醒</button>
-                            <button class="announcement-type-dot" data-announcement-type-filter="urgent">紧急</button>
+                            <button type="button" class="announcement-type-dot active" data-announcement-type-filter="all">全部类型</button>
+                            <button type="button" class="announcement-type-dot" data-announcement-type-filter="info">信息</button>
+                            <button type="button" class="announcement-type-dot" data-announcement-type-filter="warning">提醒</button>
+                            <button type="button" class="announcement-type-dot" data-announcement-type-filter="urgent">紧急</button>
                         </div>
                         <span class="announcement-filter-stats">
                             <span><i class="ph ph-warning"></i><strong id="announcementStatUrgent">0</strong> 紧急</span>
@@ -1796,7 +1840,7 @@
                             <span><i class="ph ph-push-pin"></i> 公告列表</span>
                             <small id="announcementResultHint">--</small>
                         </div>
-                        <div class="announcement-list-panel" id="announcementList">
+                        <div class="announcement-list-panel" id="announcementList" aria-label="公告列表" aria-busy="false">
                             <div class="announcement-loading">加载中...</div>
                         </div>
                     </main>
@@ -1816,6 +1860,39 @@
     <div class="page" id="page-ui-lab" style="display: none;">
         <div class="content-safe-area">
             <div class="ui-lab-layout">
+                <div class="ui-lab-tabs" role="tablist" aria-label="UI 实验模块">
+                    <button class="ui-lab-tab active" id="uiLabAppearanceTab" type="button" role="tab" data-ui-lab-tab="appearance" aria-selected="true" aria-controls="uiLabAppearancePanel"><i class="ph ph-layout"></i> 界面预览</button>
+                    <button class="ui-lab-tab" id="uiLabLoadingTab" type="button" role="tab" data-ui-lab-tab="loading" aria-selected="false" aria-controls="uiLabLoadingPanel"><i class="ph ph-bezier-curve"></i> 加载反馈</button>
+                </div>
+
+                <section class="ui-lab-tab-panel" id="uiLabAppearancePanel" role="tabpanel" aria-labelledby="uiLabAppearanceTab">
+                    <div class="glass-card ui-lab-appearance-card">
+                        <div class="ui-lab-appearance-head">
+                            <div>
+                                <span class="ui-lab-kicker"><i class="ph ph-layout"></i> UI Lab · Appearance</span>
+                                <h2>沉静界面</h2>
+                                <p>中性实色表面、紧凑层级与克制的强调色，适合持续查看设备状态。</p>
+                            </div>
+                            <div class="ui-profile-control" role="group" aria-label="界面外观">
+                                <button type="button" data-ui-profile-option="classic" aria-pressed="true">经典</button>
+                                <button type="button" data-ui-profile-option="quiet" aria-pressed="false">沉静</button>
+                            </div>
+                        </div>
+                        <div class="quiet-preview-frame" aria-label="沉静界面预览">
+                            <div class="quiet-preview-sidebar">
+                                <span class="quiet-preview-brand">N</span>
+                                <i class="ph ph-squares-four active"></i><i class="ph ph-hard-drives"></i><i class="ph ph-image"></i><i class="ph ph-gear"></i>
+                            </div>
+                            <div class="quiet-preview-main">
+                                <div class="quiet-preview-topbar"><strong>仪表盘</strong><span id="uiLabAppearanceState">当前为经典界面</span></div>
+                                <div class="quiet-preview-kpis"><span><small>CPU</small><strong>24%</strong></span><span><small>内存</small><strong>58%</strong></span><span><small>服务</small><strong class="success">正常</strong></span></div>
+                                <div class="quiet-preview-chart"><span></span><i></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="ui-lab-tab-panel" id="uiLabLoadingPanel" role="tabpanel" aria-labelledby="uiLabLoadingTab" aria-hidden="true" inert hidden>
                 <section class="glass-card ui-lab-intro-card">
                     <div class="ui-lab-intro-copy">
                         <span class="ui-lab-kicker"><i class="ph ph-flask"></i> UI Lab · Loading Feedback</span>
@@ -1854,10 +1931,14 @@
                             </div>
                         </div>
 
-                        <details class="ui-lab-formula-panel">
-                            <summary>开发备注 / 公式</summary>
-                            <code class="ui-lab-formula" id="uiLabPreviewFormula"></code>
-                        </details>
+                        <div class="ui-lab-formula-panel">
+                            <button class="ui-lab-formula-toggle" id="uiLabFormulaToggle" type="button" aria-expanded="false" aria-controls="uiLabFormulaContent">
+                                <span>开发备注 / 公式</span><i class="ph ph-caret-down" aria-hidden="true"></i>
+                            </button>
+                            <div class="ui-lab-formula-content ui-expandable" id="uiLabFormulaContent" aria-hidden="true" inert style="display:none;">
+                                <code class="ui-lab-formula" id="uiLabPreviewFormula"></code>
+                            </div>
+                        </div>
 
                         <div class="ui-lab-context-row">
                             <span>切换真实加载场景</span>
@@ -1917,12 +1998,13 @@
                         <p>后续按钮、卡片、主题、排版和转场实验可以继续接入这里；加载曲线只是第一组可被验证、开关和回滚的 UIUX 资产。</p>
                     </div>
                 </section>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- ========== 设置 ========== -->
-    <div class="page" id="page-settings" style="display: none; animation: fadeIn 0.3s ease;">
+    <div class="page" id="page-settings" style="display: none;">
         <div class="content-safe-area">
             <div class="settings-layout">
 
@@ -1930,7 +2012,7 @@
                 <div class="glass-card settings-profile-card">
                     <div class="settings-profile-inner">
                         <div class="settings-avatar-wrap">
-                            <img id="settingsAvatar" src="https://ui-avatars.com/api/?name=Neko+User&background=0ea5e9&color=fff" alt="avatar" class="settings-avatar">
+                            <img id="settingsAvatar" src="../../assets/app_icon.png" alt="用户头像" class="settings-avatar" data-avatar-fallback="app">
                             <div class="settings-avatar-dot"></div>
                         </div>
                         <div class="settings-profile-info">
@@ -2027,28 +2109,28 @@
                                     </div>
                                 </div>
                                 <div class="settings-color-swatches" id="stgColorSwatches">
-                                    <span class="settings-swatch" data-color="#0ea5e9" style="background:#0ea5e9" title="晴空蓝"></span>
-                                    <span class="settings-swatch" data-color="#14b8a6" style="background:#14b8a6" title="湖水青"></span>
-                                    <span class="settings-swatch" data-color="#22c55e" style="background:#22c55e" title="生长绿"></span>
-                                    <span class="settings-swatch" data-color="#f59e0b" style="background:#f59e0b" title="琥珀黄"></span>
-                                    <span class="settings-swatch" data-color="#f97316" style="background:#f97316" title="活力橙"></span>
-                                    <span class="settings-swatch" data-color="#f43f5e" style="background:#f43f5e" title="珊瑚红"></span>
-                                    <span class="settings-swatch" data-color="#8b5cf6" style="background:#8b5cf6" title="紫罗兰"></span>
-                                    <span class="settings-swatch" data-color="#6366f1" style="background:#6366f1" title="靛蓝"></span>
-                                    <button class="settings-swatch-custom" id="stgCustomColorBtn" title="自定义颜色">
+                                    <button type="button" class="settings-swatch" data-color="#0ea5e9" style="background:#0ea5e9" title="晴空蓝" aria-label="选择晴空蓝"></button>
+                                    <button type="button" class="settings-swatch" data-color="#14b8a6" style="background:#14b8a6" title="湖水青" aria-label="选择湖水青"></button>
+                                    <button type="button" class="settings-swatch" data-color="#22c55e" style="background:#22c55e" title="生长绿" aria-label="选择生长绿"></button>
+                                    <button type="button" class="settings-swatch" data-color="#f59e0b" style="background:#f59e0b" title="琥珀黄" aria-label="选择琥珀黄"></button>
+                                    <button type="button" class="settings-swatch" data-color="#f97316" style="background:#f97316" title="活力橙" aria-label="选择活力橙"></button>
+                                    <button type="button" class="settings-swatch" data-color="#f43f5e" style="background:#f43f5e" title="珊瑚红" aria-label="选择珊瑚红"></button>
+                                    <button type="button" class="settings-swatch" data-color="#8b5cf6" style="background:#8b5cf6" title="紫罗兰" aria-label="选择紫罗兰"></button>
+                                    <button type="button" class="settings-swatch" data-color="#6366f1" style="background:#6366f1" title="靛蓝" aria-label="选择靛蓝"></button>
+                                    <button class="settings-swatch-custom" id="stgCustomColorBtn" type="button" title="自定义颜色" aria-label="自定义颜色">
                                         <i class="ph ph-plus"></i>
                                     </button>
                                     <input type="color" id="stgCustomColorInput" style="display:none" value="#0ea5e9">
                                 </div>
                             </div>
-                            <div class="settings-color-custom-row" id="stgCustomColorRow" style="display:none;">
+                            <div class="settings-color-custom-row ui-expandable" id="stgCustomColorRow" aria-hidden="true" inert style="display:none;">
                                 <div class="settings-color-picker" id="stgColorPicker">
-                                    <button class="settings-color-picker-plane" id="stgColorPickerPlane" type="button" aria-label="选择主题色明度和饱和度">
+                                    <button class="settings-color-picker-plane" id="stgColorPickerPlane" type="button" title="选择主题色明度和饱和度" aria-label="选择主题色明度和饱和度">
                                         <span id="stgColorPickerHandle"></span>
                                     </button>
                                     <input class="settings-color-hue" id="stgColorHue" type="range" min="0" max="360" value="199" aria-label="选择主题色色相">
                                 </div>
-                                <button class="stg-custom-color-preview" id="stgCustomColorPreview" type="button" title="打开取色器"></button>
+                                <button class="stg-custom-color-preview" id="stgCustomColorPreview" type="button" title="打开取色器" aria-label="打开取色器"></button>
                                 <div class="settings-custom-color-body">
                                     <span>自定义主题色</span>
                                     <div class="settings-custom-color-controls">
@@ -2066,6 +2148,19 @@
                                     </div>
                                 </div>
                                 <div class="toggle-switch on" id="stgGlassSwitch"></div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-left">
+                                    <i class="ph ph-layout settings-row-icon"></i>
+                                    <div class="settings-row-info">
+                                        <div class="settings-row-name">界面预览</div>
+                                        <div class="settings-row-desc" id="stgAppearanceProfileDesc">开启实验性内容后可体验沉静界面</div>
+                                    </div>
+                                </div>
+                                <div class="toggle-group ui-profile-control" id="stgAppearanceProfileGroup" role="group" aria-label="界面外观">
+                                    <button class="toggle-btn active" type="button" data-ui-profile-option="classic" aria-pressed="true">经典</button>
+                                    <button class="toggle-btn" type="button" data-ui-profile-option="quiet" aria-pressed="false" disabled>沉静</button>
+                                </div>
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-left">
@@ -2088,9 +2183,9 @@
                                     </div>
                                 </div>
                                 <div class="neko-stepper">
-                                    <button class="neko-stepper-btn" id="stgScaleDown" title="缩小"><i class="ph ph-minus"></i></button>
+                                    <button class="neko-stepper-btn" id="stgScaleDown" type="button" title="缩小界面" aria-label="缩小界面"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                     <span class="neko-stepper-label" id="stgScaleLabel">100%</span>
-                                    <button class="neko-stepper-btn" id="stgScaleUp" title="放大"><i class="ph ph-plus"></i></button>
+                                    <button class="neko-stepper-btn" id="stgScaleUp" type="button" title="放大界面" aria-label="放大界面"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -2125,9 +2220,9 @@
                                 </div>
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     <div class="neko-stepper">
-                                        <button class="neko-stepper-btn" data-target="stgReportIntervalInput" data-dir="-1"><i class="ph ph-minus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="stgReportIntervalInput" data-dir="-1" title="减少上报间隔" aria-label="减少上报间隔"><i class="ph ph-minus" aria-hidden="true"></i></button>
                                         <input type="number" class="neko-stepper-input" id="stgReportIntervalInput" min="5" max="3600" value="10">
-                                        <button class="neko-stepper-btn" data-target="stgReportIntervalInput" data-dir="1"><i class="ph ph-plus"></i></button>
+                                        <button class="neko-stepper-btn" type="button" data-target="stgReportIntervalInput" data-dir="1" title="增加上报间隔" aria-label="增加上报间隔"><i class="ph ph-plus" aria-hidden="true"></i></button>
                                     </div>
                                     <span style="font-size:12px;color:var(--text-secondary)">秒</span>
                                     <button class="action-btn primary" id="stgSaveIntervalBtn" style="padding:6px 14px;font-size:12px;white-space:nowrap;"><i class="ph ph-floppy-disk"></i> 保存</button>
@@ -2304,7 +2399,7 @@
     </div>
 
     <!-- ========== 关于 ========== -->
-    <div class="page" id="page-about" style="display: none; animation: fadeIn 0.3s ease;">
+    <div class="page" id="page-about" style="display: none;">
         <div class="content-safe-area">
             <div class="about-layout">
 
@@ -2367,28 +2462,30 @@
                         <div class="about-section-title"><i class="ph ph-stack"></i> 技术栈</div>
                         <div class="about-tech-list">
                             <div class="about-tech-item">
-                                <div class="about-tech-icon electron"></div>
+                                <div class="about-tech-icon electron"><i class="tb tb-atom" aria-hidden="true"></i></div>
                                 <div class="about-tech-info">
                                     <span class="about-tech-name">Electron</span>
                                     <span class="about-tech-desc">跨平台桌面应用框架</span>
                                 </div>
                             </div>
                             <div class="about-tech-item">
-                                <div class="about-tech-icon node"></div>
+                                <div class="about-tech-icon node"><i class="tb tb-brand-nodejs" aria-hidden="true"></i></div>
                                 <div class="about-tech-info">
                                     <span class="about-tech-name">Node.js</span>
                                     <span class="about-tech-desc">主进程系统调用</span>
                                 </div>
                             </div>
                             <div class="about-tech-item">
-                                <div class="about-tech-icon html"></div>
+                                <div class="about-tech-icon html" aria-hidden="true">
+                                    <i class="tb tb-brand-html5"></i><i class="tb tb-brand-css3"></i><i class="tb tb-brand-javascript"></i>
+                                </div>
                                 <div class="about-tech-info">
                                     <span class="about-tech-name">HTML / CSS / JS</span>
                                     <span class="about-tech-desc">渲染进程 · 纯原生技术栈</span>
                                 </div>
                             </div>
                             <div class="about-tech-item">
-                                <div class="about-tech-icon phosphor"></div>
+                                <div class="about-tech-icon phosphor"><i class="tb tb-icons" aria-hidden="true"></i></div>
                                 <div class="about-tech-info">
                                     <span class="about-tech-name">Phosphor Icons</span>
                                     <span class="about-tech-desc">清爽线性图标库</span>
@@ -2424,7 +2521,7 @@
         <div class="glass-card modal-container">
             <div class="modal-header">
                 <h3><i class="ph ph-plugs" style="color: var(--theme-color);"></i> 服务器连接配置</h3>
-                <button class="icon-btn close-modal" id="closeConfigBtn"><i class="ph ph-x"></i></button>
+                <button class="icon-btn close-modal" id="closeConfigBtn" type="button" title="关闭设备密钥配置" aria-label="关闭设备密钥配置"><i class="ph ph-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <div class="modal-mode-switcher" id="configModeSwitcher">
@@ -2458,13 +2555,13 @@
     <!-- 个人信息设置模态框 (模仿附件浅色UI设计) -->
     <div class="modal-overlay" id="profileModal">
         <div class="profile-modal-container">
-            <button class="close-profile-btn" id="closeProfileBtn"><i class="ph ph-x"></i></button>
+            <button class="close-profile-btn" id="closeProfileBtn" type="button" title="关闭个人信息设置" aria-label="关闭个人信息设置"><i class="ph ph-x" aria-hidden="true"></i></button>
             <div class="profile-header">
                 账户个人信息设置
             </div>
             
             <div class="profile-avatar-sec">
-                <img id="profileModalAvatar" src="https://ui-avatars.com/api/?name=User&background=0ea5e9&color=fff" alt="User Avatar">
+                <img id="profileModalAvatar" src="../../assets/app_icon.png" alt="用户头像" data-avatar-fallback="app">
                 <span>点击更换头像</span>
             </div>
 
@@ -2526,7 +2623,7 @@
         <div class="glass-card modal-container privacy-rules-modal-container">
             <div class="modal-header">
                 <h3><i class="ph ph-shield-check" style="color: var(--theme-color);"></i> 隐私模糊规则</h3>
-                <button class="icon-btn close-modal" id="closePrivacyRulesBtn"><i class="ph ph-x"></i></button>
+                <button class="icon-btn close-modal" id="closePrivacyRulesBtn" type="button" title="关闭隐私规则" aria-label="关闭隐私规则"><i class="ph ph-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body privacy-rules-modal-body">
                 <div class="privacy-rules-hint">
@@ -2560,8 +2657,8 @@
                 <div class="privacy-window-picker" id="privacyWindowPicker" hidden>
                     <div class="privacy-window-picker-head">
                         <span>选择要保护的窗口</span>
-                        <button class="privacy-window-picker-refresh" id="refreshPrivacyWindowsBtn" title="刷新窗口列表">
-                            <i class="ph ph-arrow-clockwise"></i>
+                        <button class="privacy-window-picker-refresh" id="refreshPrivacyWindowsBtn" type="button" title="刷新窗口列表" aria-label="刷新窗口列表">
+                            <i class="ph ph-arrow-clockwise" aria-hidden="true"></i>
                         </button>
                     </div>
                     <div class="privacy-window-picker-list" id="privacyWindowPickerList"></div>
@@ -2618,7 +2715,7 @@
     <!-- ========== 登录/注册弹窗 ========== -->
     <div class="modal-overlay" id="authModal" style="display: none;">
         <div class="auth-modal-container">
-            <button class="close-profile-btn" id="closeAuthModal"><i class="ph ph-x"></i></button>
+            <button class="close-profile-btn" id="closeAuthModal" type="button" title="关闭登录窗口" aria-label="关闭登录窗口"><i class="ph ph-x" aria-hidden="true"></i></button>
 
             <!-- 未配置服务器时的提示 -->
             <div class="auth-server-warning" id="authServerWarning" style="display: none;">
@@ -2632,8 +2729,9 @@
                 <i class="ph ph-laptop"></i> 本地测试模式 — 账户仅保存在本机
             </div>
             
+            <div class="auth-view-stage" id="authViewStage">
             <!-- 登录视图 -->
-            <div class="auth-view" id="authLoginView">
+            <div class="auth-view ui-view-panel is-active" id="authLoginView" data-ui-view data-view-display="block" aria-hidden="false">
                 <div class="auth-modal-header">
                     <i class="ph ph-cat auth-header-icon"></i>
                     <h2>欢迎回来</h2>
@@ -2659,7 +2757,7 @@
             </div>
 
             <!-- 注册视图 -->
-            <div class="auth-view" id="authRegisterView" style="display: none;">
+            <div class="auth-view ui-view-panel" id="authRegisterView" data-ui-view data-view-display="block" aria-hidden="true" inert style="display: none;">
                 <div class="auth-modal-header">
                     <i class="ph ph-user-plus auth-header-icon"></i>
                     <h2>创建账号</h2>
@@ -2687,14 +2785,16 @@
                     </div>
                 </div>
             </div>
+            </div>
         </div>
     </div>
 
     <!-- ========== 首次使用引导提示弹窗 ========== -->
     <div class="modal-overlay" id="firstTimeAuthPrompt" style="display: none;">
         <div class="glass-card modal-container first-time-container">
+            <div class="first-time-view-stage" id="firstTimeViewStage">
             <!-- Step 1: 配置服务器地址（内嵌输入） -->
-            <div id="firstTimeStep1">
+            <div class="ui-view-panel is-active" id="firstTimeStep1" data-ui-view data-view-display="block" aria-hidden="false">
                 <div class="first-time-icon-wrap">
                     <i class="ph ph-plugs-connected first-time-icon"></i>
                 </div>
@@ -2720,7 +2820,7 @@
                 </div>
             </div>
             <!-- Step 2: 登录/注册（服务器已配置后显示） -->
-            <div id="firstTimeStep2" style="display: none;">
+            <div class="ui-view-panel" id="firstTimeStep2" data-ui-view data-view-display="block" aria-hidden="true" inert style="display: none;">
                 <div class="first-time-icon-wrap">
                     <i class="ph ph-user-circle first-time-icon"></i>
                 </div>
@@ -2738,13 +2838,14 @@
                     </button>
                 </div>
             </div>
+            </div>
         </div>
     </div>
 
     <!-- ========== 密钥接管警告弹窗 ========== -->
     <div class="modal-overlay takeover-overlay" id="takeoverWarningModal">
         <div class="auth-modal-container takeover-container">
-            <button class="close-profile-btn" id="takeoverWarningCloseBtn"><i class="ph ph-x"></i></button>
+            <button class="close-profile-btn" id="takeoverWarningCloseBtn" type="button" title="关闭接管警告" aria-label="关闭接管警告"><i class="ph ph-x" aria-hidden="true"></i></button>
             <div class="takeover-header">
                 <i class="ph ph-warning-circle takeover-icon danger" id="takeoverWarningIcon"></i>
                 <h3 id="takeoverWarningTitle">密钥安全警告</h3>
@@ -2765,7 +2866,7 @@
     <!-- ========== 密钥接管确认弹窗 (保存密钥时前置确认) ========== -->
     <div class="modal-overlay takeover-overlay" id="takeoverConfirmModal">
         <div class="auth-modal-container takeover-container">
-            <button class="close-profile-btn" id="takeoverConfirmCloseBtn"><i class="ph ph-x"></i></button>
+            <button class="close-profile-btn" id="takeoverConfirmCloseBtn" type="button" title="关闭接管确认" aria-label="关闭接管确认"><i class="ph ph-x" aria-hidden="true"></i></button>
             <div class="takeover-header">
                 <i class="ph ph-swap takeover-icon warn"></i>
                 <h3>密钥变更确认</h3>
@@ -2792,8 +2893,8 @@
             <!-- 头部 -->
             <div class="modal-header">
                 <h3><i class="ph ph-rocket-launch update-dialog-icon"></i> 发现新版本</h3>
-                <button class="close-profile-btn" id="updateDialogClose" title="关闭">
-                    <i class="ph ph-x"></i>
+                <button class="close-profile-btn" id="updateDialogClose" type="button" title="关闭更新窗口" aria-label="关闭更新窗口">
+                    <i class="ph ph-x" aria-hidden="true"></i>
                 </button>
             </div>
 
@@ -2842,7 +2943,7 @@
                     <i class="ph ph-fast-forward"></i> 跳过此版本
                 </button>
                 <button class="action-btn primary" id="updateDialogInstallBtn">
-                    <i class="ph ph-download-simple"></i> 立即更新
+                    <i class="ph ph-cloud-arrow-down"></i> 立即更新
                 </button>
             </div>
         </div>
@@ -2972,11 +3073,13 @@
     <script src="./js/services/announcement-client.js"></script>
     <script src="./js/services/activity-client.js"></script>
     <script src="./js/components/ui-helpers.js"></script>
+    <script src="./js/components/avatar-fallback.js"></script>
     <script src="./js/components/loading-curves.js"></script>
     <script src="./js/components/loading-system.js"></script>
     <!-- 1.5 模块化基础设施（core → components → state，在 app.js 之前加载） -->
     <script src="./js/core/event-bus.js"></script>
     <script src="./js/core/theme.js"></script>
+    <script src="./js/core/appearance.js"></script>
     <script src="./js/core/router.js"></script>
     <script src="./js/core/app-init-runtime.js"></script>
     <script src="./js/core/app-event-runtime.js"></script>

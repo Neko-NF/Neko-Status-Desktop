@@ -41,6 +41,16 @@
     addLogLine(type === 'error' ? 'ERROR' : 'INFO', msg);
   }
 
+  function applyAvatar(image, { src = '', name = '', mode = 'initial' } = {}) {
+    if (!image) return;
+    const avatarFallback = window._nekoModules?.components?.avatarFallback;
+    if (avatarFallback?.apply) {
+      avatarFallback.apply(image, { src, name, mode });
+      return;
+    }
+    image.src = src || '../../assets/app_icon.png';
+  }
+
   // ── UI 状态更新 ────────────────────────────────────────────────
   function updateAuthUI(isLoggedIn, user) {
     const avatar = document.getElementById('userAvatar');
@@ -57,31 +67,30 @@
 
     if (isLoggedIn && user) {
       const displayName = user.username || 'User';
-      const avatarUrl = user.avatar
-        ? user.avatar
-        : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=0ea5e9&color=fff`;
+      const avatarUrl = user.avatar || '';
 
-      if (avatar) avatar.src = avatarUrl;
+      applyAvatar(avatar, { src: avatarUrl, name: displayName });
       if (nameEl) nameEl.textContent = displayName;
       if (roleEl) roleEl.textContent = user.role === 'admin' ? '管理员' : '已登录';
       if (loginBtn) loginBtn.style.display = 'none';
       if (profileBtn) profileBtn.style.display = '';
       if (logoutBtn) logoutBtn.style.display = '';
       if (logoutDiv) logoutDiv.style.display = '';
-      if (settingsAvatar) settingsAvatar.src = avatarUrl;
-      if (profileAvatar) profileAvatar.src = avatarUrl;
+      applyAvatar(settingsAvatar, { src: avatarUrl, name: displayName });
+      applyAvatar(profileAvatar, { src: avatarUrl, name: displayName });
       if (settingsName) settingsName.textContent = displayName;
       if (settingsSub) settingsSub.textContent = `已登录 · ${user.role === 'admin' ? '管理员' : '普通用户'}`;
       document.dispatchEvent(new CustomEvent('neko:authChange', { detail: { loggedIn: true, user } }));
     } else {
-      if (avatar) avatar.src = 'https://api.dicebear.com/7.x/notionists/svg?seed=Guest&backgroundColor=0f172a';
+      applyAvatar(avatar, { name: 'Neko Status', mode: 'app' });
       if (nameEl) nameEl.textContent = '未登录';
       if (roleEl) roleEl.textContent = '设备密钥模式';
       if (loginBtn) loginBtn.style.display = '';
       if (profileBtn) profileBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'none';
       if (logoutDiv) logoutDiv.style.display = 'none';
-      if (profileAvatar) profileAvatar.src = 'https://ui-avatars.com/api/?name=User&background=0ea5e9&color=fff';
+      applyAvatar(settingsAvatar, { name: 'Neko Status', mode: 'app' });
+      applyAvatar(profileAvatar, { name: 'Neko Status', mode: 'app' });
       if (settingsName) settingsName.textContent = 'Neko User';
       if (settingsSub) settingsSub.textContent = '设备监控本地账户';
       document.dispatchEvent(new CustomEvent('neko:authChange', { detail: { loggedIn: false, user: null } }));
@@ -92,6 +101,30 @@
   const authModal = document.getElementById('authModal');
   const authLoginView = document.getElementById('authLoginView');
   const authRegisterView = document.getElementById('authRegisterView');
+  const authViewStage = document.getElementById('authViewStage');
+
+  function setAuthView(mode = 'login', options = {}) {
+    const active = mode === 'register' ? authRegisterView : authLoginView;
+    const inactive = active === authRegisterView ? authLoginView : authRegisterView;
+    const setter = window._nekoUIHelpers?.setViewStackState;
+    if (authViewStage && active && typeof setter === 'function') {
+      setter(authViewStage, active, {
+        selector: '[data-ui-view]',
+        display: 'block',
+        duration: 220,
+        ...options,
+      });
+      return;
+    }
+    if (active) {
+      active.style.display = '';
+      active.setAttribute?.('aria-hidden', 'false');
+    }
+    if (inactive) {
+      inactive.style.display = 'none';
+      inactive.setAttribute?.('aria-hidden', 'true');
+    }
+  }
 
   function openAuthModal(mode = 'login') {
     if (!authModal) return;
@@ -126,13 +159,7 @@
     })();
 
     authModal.style.display = 'flex';
-    if (mode === 'register') {
-      authLoginView.style.display = 'none';
-      authRegisterView.style.display = '';
-    } else {
-      authLoginView.style.display = '';
-      authRegisterView.style.display = 'none';
-    }
+    setAuthView(mode);
     // 清空错误和输入
     const errLogin = document.getElementById('authLoginError');
     const errReg = document.getElementById('authRegError');
@@ -338,7 +365,7 @@
       <input type="file" id="avatarDropzoneInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
       <div class="modal-overlay" id="avatarEditorModal">
         <div class="avatar-editor-modal-container">
-          <button class="close-profile-btn" id="closeAvatarEditorBtn"><i class="ph ph-x"></i></button>
+          <button class="close-profile-btn" id="closeAvatarEditorBtn" type="button" title="关闭头像编辑器" aria-label="关闭头像编辑器"><i class="ph ph-x" aria-hidden="true"></i></button>
           <div class="profile-header">头像编辑器</div>
           <div class="avatar-editor-body">
             <div class="avatar-dropzone" id="avatarDropzone">
@@ -753,8 +780,7 @@
         if (pUsername) pUsername.value = u.username || '';
         if (pEmail) pEmail.value = u.email || '';
         avatarEditorState.pendingAvatar = u.avatar || '';
-        if (pAvatar && u.avatar) pAvatar.src = u.avatar;
-        else if (pAvatar) pAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=0ea5e9&color=fff`;
+        applyAvatar(pAvatar, { src: u.avatar || '', name: u.username || 'User' });
       };
 
       fillProfileForm(state.user || {});
@@ -855,16 +881,24 @@
       const prompt = document.getElementById('firstTimeAuthPrompt');
       const step1 = document.getElementById('firstTimeStep1');
       const step2 = document.getElementById('firstTimeStep2');
+      const stage = document.getElementById('firstTimeViewStage');
+      const setFirstTimeStep = (step, options = {}) => {
+        const setter = window._nekoUIHelpers?.setViewStackState;
+        if (stage && step && typeof setter === 'function') {
+          setter(stage, step, { selector: '[data-ui-view]', display: 'block', duration: 240, ...options });
+          return;
+        }
+        if (step1) step1.style.display = step === step1 ? '' : 'none';
+        if (step2) step2.style.display = step === step2 ? '' : 'none';
+      };
       if (prompt) {
         prompt.style.display = 'flex';
         if (state.serverConfigured) {
           // 服务器已配置，直接展示 Step 2（登录/注册）
-          if (step1) step1.style.display = 'none';
-          if (step2) step2.style.display = '';
+          setFirstTimeStep(step2, { initial: true });
         } else {
           // 服务器未配置，展示 Step 1（配置服务器）
-          if (step1) step1.style.display = '';
-          if (step2) step2.style.display = 'none';
+          setFirstTimeStep(step1, { initial: true });
           // 预填充默认服务器地址
           const urlInput = document.getElementById('firstTimeServerUrl');
           if (urlInput) {
@@ -936,8 +970,14 @@
           setTimeout(() => {
             const step1 = document.getElementById('firstTimeStep1');
             const step2 = document.getElementById('firstTimeStep2');
-            if (step1) step1.style.display = 'none';
-            if (step2) step2.style.display = '';
+            const stage = document.getElementById('firstTimeViewStage');
+            const setter = window._nekoUIHelpers?.setViewStackState;
+            if (stage && step2 && typeof setter === 'function') {
+              setter(stage, step2, { selector: '[data-ui-view]', display: 'block', duration: 240 });
+            } else {
+              if (step1) step1.style.display = 'none';
+              if (step2) step2.style.display = '';
+            }
           }, 800);
         } else {
           if (statusEl) {

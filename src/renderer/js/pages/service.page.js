@@ -298,12 +298,15 @@
       replaceHandler('runHealthCheckBtn', async () => this.runHealthCheck());
     },
 
-    renderHealthItem(result, index = 0) {
+    renderHealthItem(result, index = 0, item = null) {
       const meta = this.statusMeta(result.ok);
-      const item = document.createElement('div');
-      item.className = `health-result-item ${meta.tone}`;
-      item.style.animationDelay = `${index * 0.05}s`;
-      item.innerHTML = `
+      const node = item || document.createElement('div');
+      const signature = `${meta.tone}\u0000${result.name}\u0000${result.text}`;
+      node.className = `health-result-item ${meta.tone}${item ? '' : ' is-entering'}`;
+      if (!item) node.addEventListener?.('animationend', () => node.classList.remove('is-entering'), { once: true });
+      if (node.dataset.healthSignature === signature) return node;
+      node.dataset.healthSignature = signature;
+      node.innerHTML = `
         <div class="health-result-top">
           <div class="health-result-title-wrap">
             <i class="ph ${meta.icon} health-result-icon ${meta.tone}"></i>
@@ -312,16 +315,17 @@
           <span class="health-result-badge ${meta.tone}">${meta.label}</span>
         </div>
         <div class="health-result-desc">${this._deps.escapeHtml(result.text)}</div>`;
-      return item;
+      return node;
     },
 
-    renderHealthSummary(results, durationMs) {
+    renderHealthSummary(results, durationMs, summary = null) {
       const okCount = results.filter((item) => item.ok === true).length;
       const warnCount = results.filter((item) => item.ok === 'warn').length;
       const failCount = results.filter((item) => item.ok !== true && item.ok !== 'warn').length;
-      const summary = document.createElement('div');
-      summary.className = 'health-summary-bar';
-      summary.innerHTML = `
+      const node = summary || document.createElement('div');
+      node.className = 'health-summary-bar';
+      node.dataset.healthKey = '__summary__';
+      node.innerHTML = `
         <div class="health-summary-copy">
           <div class="health-summary-title">已完成 ${results.length} 项检查</div>
           <div class="health-summary-subtitle">用时 ${(durationMs / 1000).toFixed(1)} 秒</div>
@@ -331,7 +335,47 @@
           <span class="health-summary-pill warn"><i class="ph ph-warning"></i>${warnCount} 项关注</span>
           <span class="health-summary-pill fail"><i class="ph ph-x-circle"></i>${failCount} 项异常</span>
         </div>`;
-      return summary;
+      return node;
+    },
+
+    reconcileHealthResults(results, durationMs) {
+      const list = $('healthResultsList');
+      if (!list) return;
+
+      if (!list.ownerDocument) {
+        list.innerHTML = '';
+        if (Array.isArray(list.children)) list.children.length = 0;
+        list.appendChild(this.renderHealthSummary(results, durationMs));
+        results.forEach((result, index) => list.appendChild(this.renderHealthItem(result, index)));
+        return;
+      }
+
+      const scrollTop = Number(list.scrollTop) || 0;
+      list.querySelector?.('.health-result-placeholder')?.remove?.();
+      const existing = new Map(
+        Array.from(list.querySelectorAll('[data-health-key]'))
+          .map((node) => [node.dataset.healthKey, node]),
+      );
+      const retained = new Set(['__summary__']);
+      const summary = this.renderHealthSummary(results, durationMs, existing.get('__summary__'));
+      list.appendChild(summary);
+
+      const occurrences = new Map();
+      results.forEach((result, index) => {
+        const baseKey = String(result.id || result.key || result.name || `result-${index}`);
+        const occurrence = occurrences.get(baseKey) || 0;
+        occurrences.set(baseKey, occurrence + 1);
+        const key = occurrence ? `${baseKey}-${occurrence}` : baseKey;
+        const item = this.renderHealthItem(result, index, existing.get(key));
+        item.dataset.healthKey = key;
+        list.appendChild(item);
+        retained.add(key);
+      });
+
+      existing.forEach((node, key) => {
+        if (!retained.has(key)) node.remove();
+      });
+      list.scrollTop = scrollTop;
     },
 
     statusMeta(ok) {
@@ -346,22 +390,21 @@
       if (!btn || !list) return;
 
       window._nekoUIHelpers?.setButtonBusy?.(btn, true, { label: '体检中…' });
-      list.innerHTML = '';
+      list.setAttribute?.('aria-busy', 'true');
       this.refreshHealthResultsScrollFx();
       const startedAt = Date.now();
 
       try {
         const results = await this.service()?.runHealthCheck?.();
-        list.appendChild(this.renderHealthSummary(results, Date.now() - startedAt));
-        results.forEach((result, index) => list.appendChild(this.renderHealthItem(result, index)));
+        this.reconcileHealthResults(results, Date.now() - startedAt);
       } catch (error) {
         const failedResult = { name: '检测异常', text: error.message, ok: false };
-        list.appendChild(this.renderHealthSummary([failedResult], Date.now() - startedAt));
-        list.appendChild(this.renderHealthItem(failedResult));
+        this.reconcileHealthResults([failedResult], Date.now() - startedAt);
       }
 
+      list.setAttribute?.('aria-busy', 'false');
       window._nekoUIHelpers?.setButtonBusy?.(btn, false);
-      btn.innerHTML = '<i class="ph ph-heartbeat"></i> 重新检测';
+      btn.innerHTML = '<i class="ph ph-stethoscope"></i> 重新检测';
       this.refreshHealthResultsScrollFx();
     },
 

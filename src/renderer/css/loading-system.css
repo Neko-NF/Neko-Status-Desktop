@@ -115,7 +115,31 @@
 }
 
 .neko-button-busy {
+    position: relative;
+    isolation: isolate;
     cursor: wait;
+    -webkit-text-fill-color: transparent;
+    text-shadow: none;
+}
+
+.neko-button-busy > :not(.neko-button-busy-overlay) {
+    opacity: 0 !important;
+}
+
+.neko-button-busy-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    min-width: 0;
+    padding: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: inherit;
+    color: var(--neko-button-busy-color, var(--text-main, currentColor));
+    -webkit-text-fill-color: currentColor;
+    pointer-events: none;
 }
 
 .neko-busy-label {

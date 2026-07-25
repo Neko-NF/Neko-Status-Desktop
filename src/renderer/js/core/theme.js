@@ -199,11 +199,6 @@
     localStorage.setItem('neko-custom-theme-color', customColor);
     syncThemeColorUI(normalizedColor, customColor);
 
-    const profileAvatarImg = document.getElementById('profileModalAvatar');
-    if (profileAvatarImg) {
-      profileAvatarImg.src = `https://ui-avatars.com/api/?name=User&background=${normalizedColor.replace('#', '')}&color=fff`;
-    }
-
     const configClient = window._nekoModules?.services?.ConfigClient;
     if (configClient?.set && options.persistSeed !== false) {
       const seedPromise = configClient.set('seedColor', normalizedColor);
@@ -238,16 +233,33 @@
     applyThemeColor(savedColor, { customColor: savedCustomColor, persistCustom: false, persistSeed: false, emitEvent: false });
 
     const colorPalette = document.getElementById('colorPalette');
-    document.getElementById('themeColorBtn')?.addEventListener('click', (e) => {
+    const themeColorBtn = document.getElementById('themeColorBtn');
+    const setPaletteOpen = (open) => {
+      const expanded = !!open;
+      colorPalette?.classList.toggle('show', expanded);
+      themeColorBtn?.setAttribute?.('aria-expanded', String(expanded));
+      colorPalette?.setAttribute?.('aria-hidden', String(!expanded));
+    };
+    if (colorPalette) colorPalette._setOpen = setPaletteOpen;
+    setPaletteOpen(false);
+    themeColorBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
-      colorPalette?.classList.toggle('show');
+      setPaletteOpen(!colorPalette?.classList.contains('show'));
     });
+    const closePaletteOnEscape = (event) => {
+      if (event.key !== 'Escape' || !colorPalette?.classList.contains('show')) return;
+      event.preventDefault();
+      setPaletteOpen(false);
+      themeColorBtn?.focus?.();
+    };
+    themeColorBtn?.addEventListener('keydown', closePaletteOnEscape);
+    colorPalette?.addEventListener('keydown', closePaletteOnEscape);
 
     document.querySelectorAll('.color-swatch[data-color]').forEach((swatch) => {
       swatch.addEventListener('click', (e) => {
         e.stopPropagation();
         if (applyThemeColor(swatch.dataset.color)) {
-          colorPalette?.classList.remove('show');
+          setPaletteOpen(false);
         }
       });
     });
@@ -256,7 +268,9 @@
       swatch.addEventListener('click', () => {
         if (!applyThemeColor(swatch.dataset.color)) return;
         const customRow = document.getElementById('stgCustomColorRow');
-        if (customRow) customRow.style.display = 'none';
+        setThemeEditorExpanded(customRow, false, {
+          trigger: document.getElementById('stgCustomColorBtn'),
+        });
       });
     });
 
@@ -277,6 +291,24 @@
     const stgColorHue = document.getElementById('stgColorHue');
     const topPickerState = hexToHsv(getSavedCustomThemeColor());
     const stgPickerState = hexToHsv(getSavedCustomThemeColor());
+
+    function setThemeEditorExpanded(editor, expanded, { trigger, display = 'grid', initial = false } = {}) {
+      if (!editor) return;
+      const setter = window._nekoUIHelpers?.setExpandableSectionState;
+      editor.hidden = false;
+      editor.dataset.motionExpanded = expanded ? 'true' : 'false';
+      if (typeof setter === 'function') {
+        setter(editor, expanded, { trigger, display, initial, duration: 240 });
+        return;
+      }
+      editor.style.display = expanded ? '' : 'none';
+      editor.hidden = !expanded;
+      trigger?.setAttribute?.('aria-expanded', expanded ? 'true' : 'false');
+    }
+
+    const themeEditorExpanded = (editor) => editor?.dataset?.motionExpanded === 'true';
+    setThemeEditorExpanded(customColorRow, false, { trigger: customColorBtn, initial: true });
+    setThemeEditorExpanded(topCustomColorEditor, false, { trigger: topCustomColorBtn, initial: true });
 
     function renderPicker(picker, pickerState) {
       if (picker.plane) {
@@ -359,7 +391,7 @@
 
     if (customColorBtn && customColorInput) {
       customColorBtn.addEventListener('click', () => {
-        if (customColorRow) customColorRow.style.display = customColorRow.style.display === 'none' ? '' : 'none';
+        setThemeEditorExpanded(customColorRow, !themeEditorExpanded(customColorRow), { trigger: customColorBtn });
         setCustomDraft(getSavedCustomThemeColor());
       });
 
@@ -386,7 +418,7 @@
     topCustomColorBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (topCustomColorEditor) {
-        topCustomColorEditor.hidden = !topCustomColorEditor.hidden;
+        setThemeEditorExpanded(topCustomColorEditor, !themeEditorExpanded(topCustomColorEditor), { trigger: topCustomColorBtn });
         setCustomDraft(getSavedCustomThemeColor());
       }
     });
@@ -415,8 +447,8 @@
         return;
       }
       applyThemeColor(color, { customColor: color });
-      if (topCustomColorEditor) topCustomColorEditor.hidden = true;
-      colorPalette?.classList.remove('show');
+      setThemeEditorExpanded(topCustomColorEditor, false, { trigger: topCustomColorBtn });
+      setPaletteOpen(false);
     });
 
     document.getElementById('stgCustomColorApply')?.addEventListener('click', () => {
@@ -427,7 +459,7 @@
         return;
       }
       applyThemeColor(color, { customColor: color });
-      if (customColorRow) customColorRow.style.display = 'none';
+      setThemeEditorExpanded(customColorRow, false, { trigger: customColorBtn });
     });
   }
 

@@ -25,6 +25,7 @@ src/renderer/js/
     event-bus.js         轻量事件总线
     router.js            页面路由和导航状态
     theme.js             主题、色彩、字体 profile
+    appearance.js        classic/quiet 外观 profile、持久化镜像和内部事件
   services/
     ipc-client.js        IPC 基础 client
     *.js                 领域 client
@@ -154,6 +155,7 @@ legacy.css
 loading-system.css
 components.css
 pages.css
+appearance.css
 ```
 
 职责：
@@ -163,6 +165,7 @@ pages.css
 - `layout.css`：整体布局、侧边栏、主内容结构。
 - `components.css`：按钮、弹窗、开关、通知、可复用组件。
 - `pages.css`：页面专属区块，如 dashboard、settings、stream、update。
+- `appearance.css`：可选的全应用外观 profile 覆盖；必须复用现有 DOM 和业务逻辑，不复制页面。
 - `legacy.css`：迁移期保留样式，后续逐步归并。
 - `loading-system.css`：全局加载反馈和紧凑 busy 的唯一动画来源。
 - `main.css`：只作为入口，不再承接新样式。
@@ -202,7 +205,7 @@ pages.css
 | `update.page.js` | 更新弹窗、徽章、更新页面展示、更新通道、更新源控件、来源诊断、完整性检查、本地安装入口、下载/安装进度、手动检查、强制更新、待安装更新、版本回滚和更新日志渲染 |
 | `announcement.page.js` | 公告管理、公告弹窗轮询、系统通知和回执状态 |
 | `about.page.js` | 关于页版本、运行时、仓库链接和仓库元数据渲染 |
-| `ui-lab.page.js` | UI 实验室曲线预览、场景切换、静态画廊和本地诊断 |
+| `ui-lab.page.js` | UI 实验室外观预览、曲线预览、场景切换、静态画廊和本地诊断 |
 
 已迁移的跨页面组件还包括 `components/security-dialogs.js`，用于密钥接管、撤销和设备删除相关的安全弹窗。
 
@@ -228,6 +231,25 @@ pages.css
 - 表格行 hover 不得改变布局尺寸；禁止在数据表行上使用会造成表头/内容视觉错位的 scale/translate。
 - 长标题、长内容、URL、路径等必须省略并提供 `title`，不得把操作列或状态列挤变形。
 - 表单卡片和列表卡片之间保留稳定纵向间距，常规建议 20-24px；表单 footer 顶部间距不低于 16px。
+- 内容量独立的并列卡片使用 `align-items: start`，不得因一侧长列表而强制拉伸另一侧。仅 KPI 对比、截图工作区等明确需要等高的区域可以保留 stretch。
+- 管理列表必须有明确的块方向上限和内部滚动；使用 `scrollbar-gutter: stable`、`overscroll-behavior: contain`，更新时保留 `scrollTop` 和键盘焦点。
+- 列表标题显示条目数量；空态取消无意义的滚动条。避免在页面滚动区内继续叠加多个没有边界的滚动容器。
+
+## 外观 profile
+
+- `uiAppearanceProfile` 仅允许 `classic`、`quiet`，经典界面始终是默认和回退值。
+- `quiet` 受全局实验开关控制；关闭实验功能时主进程必须在同一次配置写入中恢复 `classic`。
+- renderer 在 CSS 加载前读取 `neko-ui-appearance-profile`，初始化后以主进程配置为准，并通过 `neko:appearanceChange` 通知跨页面组件原位换肤。
+- quiet 使用中性实色表面、8px 卡片、6px 控件、克制阴影；不使用玻璃模糊、装饰渐变、主题色阴影或 hover 位移。
+- quiet 只把主题色用于主操作、选中、焦点和图表；绿、黄、红只表达状态语义。`glassEffect` 的保存值不得被 quiet 覆盖。
+- 主窗口、弹窗、下拉层、启动更新窗口和开发者侧栏同步 profile；原生系统对话框保持系统外观。
+
+## 实时趋势图
+
+- 主题、主题色和外观 profile 变化只更新现有 Chart.js 实例的样式，并使用 `chart.update('none')`；禁止通过销毁重建来换肤。
+- 时间范围使用纪元对齐的固定数据桶。桶内刷新只更新当前桶，跨桶时追加/移出一个桶；首次历史加载和显式范围切换才完整投影。
+- CPU/内存趋势图不显示横向或纵向背景网格，保留稀疏坐标标签、图例、hover 指示和 tooltip。
+- quiet 中 CPU 为 2px 主题色实线，内存为 2px 中性色虚线；减少动态模式下跨桶更新不播放位移动画。
 
 ## 加载反馈规范
 

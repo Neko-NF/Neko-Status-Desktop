@@ -429,6 +429,9 @@
       if (theme.mode) document.documentElement.setAttribute('data-theme', theme.mode);
       else document.documentElement.removeAttribute('data-theme');
     }
+    if (Object.prototype.hasOwnProperty.call(theme, 'profile')) {
+      document.documentElement.dataset.uiProfile = theme.profile === 'quiet' ? 'quiet' : 'classic';
+    }
     Object.entries(theme.cssVars || {}).forEach(([name, value]) => {
       if (/^--[a-z0-9-]+$/i.test(name) && value) document.body.style.setProperty(name, value);
     });

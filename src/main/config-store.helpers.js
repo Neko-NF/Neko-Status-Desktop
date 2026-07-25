@@ -41,6 +41,7 @@ const DEFAULTS = {
   enableExperimentalUiLabEntry: false,
   enableExperimentalCurveLoaders: false,
   loadingCurveStyle: 'auto',
+  uiAppearanceProfile: 'classic',
   enableActivityFeature: false,
   enableActivityPublishing: false,
   enableActivitySnapshots: false,
@@ -143,9 +144,11 @@ function mergeDefaults(data = {}) {
   if (typeof merged.loadingCurveStyle !== 'string' || !merged.loadingCurveStyle.trim()) {
     merged.loadingCurveStyle = 'auto';
   }
+  merged.uiAppearanceProfile = normalizeUiAppearanceProfile(merged.uiAppearanceProfile);
   if (merged.enableExperimentalFeatures !== true) {
     merged.enableExperimentalUiLabEntry = false;
     merged.enableExperimentalCurveLoaders = false;
+    merged.uiAppearanceProfile = 'classic';
   }
   merged.enableIncognito = false;
 
@@ -162,10 +165,15 @@ function mergeDefaults(data = {}) {
   return merged;
 }
 
+function normalizeUiAppearanceProfile(value) {
+  return value === 'quiet' ? 'quiet' : 'classic';
+}
+
 module.exports = {
   DEFAULTS,
   DEFAULT_SRS_HOST,
   DEFAULT_SRS_RTMP_PORT,
   DEFAULT_SRS_API_PORT,
+  normalizeUiAppearanceProfile,
   mergeDefaults,
 };

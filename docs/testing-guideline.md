@@ -9,6 +9,8 @@ npm test
 npm run test:watch
 npm run test:coverage
 npm run test:smoke
+npm run test:visual
+npm run test:visual:update
 npm run test:agent
 npm run verify
 npm run build:zip
@@ -20,6 +22,8 @@ npm run build:zip
 - `npm run test:watch`：单元测试 watch 模式。
 - `npm run test:coverage`：实验性覆盖率输出。
 - `npm run test:smoke`：启动最小 Electron 隐藏窗口，验证 preload 与 IPC bridge。
+- `npm run test:visual`：在离屏 Electron 窗口中加载真实 renderer，执行布局、交互和 PNG 像素回归。
+- `npm run test:visual:update`：人工确认 UI 改动后更新 Windows 视觉基线。
 - `npm run test:agent`：运行 Rust Presence Agent 单元测试。
 - `npm run verify`：静态结构检查、语法检查、编码污染扫描，再运行单元测试。
 - `npm run build:zip`：Windows ZIP 打包检查。
@@ -30,6 +34,7 @@ npm run build:zip
 tests/
   unit/    纯 JS、主进程 helper、IPC 注册、renderer VM 测试
   smoke/   Electron 最小启动与 preload/IPC 验证
+  visual/  真实 renderer、确定性 preload、PNG 基线与失败 diff
 native/presence-agent/
   src/*    Rust Agent 状态机、WinHTTP、IPC 和平台能力测试
 ```
@@ -45,6 +50,7 @@ native/presence-agent/
 - 主进程 IPC 注册与 handler 行为。
 - payload schema。
 - 配置默认值、合并和旧配置修复。
+- 外观 profile 默认值、非法值修复、实验门禁、持久化和关闭实验后的原子回退。
 - 启动更新 gate。
 - 后台更新检查。
 - renderer services 方法委托。
@@ -70,6 +76,17 @@ Smoke 覆盖：
 - IPC 常量能暴露到 renderer。
 - 基础 invoke round-trip 正常。
 
+Visual 覆盖：
+
+- 1180x700、1280x840、1600x900 的明暗主题页面矩阵。
+- 80%、125%、150%、200% 缩放与 normal/reduced-motion。
+- quiet 仪表盘、活动分享、设置和 UI 实验室的深浅主题基线，以及趋势图无网格断言。
+- 长应用、长关注规则、长关注者和长黑名单场景的内部滚动、计数、顶部对齐和无横向溢出断言。
+- 横向溢出、顶栏遮挡、活动卡片对齐、纯图标按钮名称和触达尺寸。
+- 公告刷新 CLS、按钮几何、选中项、焦点和滚动位置保持。
+- 路由独立滚动位置、展开折叠中间帧、240ms 动效和 100ms 内快速反转。
+- 关注页健康/错误/长列表及公告冷加载/空态/错误/长内容/删除确认基线。
+
 ## Verify 检查内容
 
 `scripts/verify.js` 当前检查：
@@ -85,6 +102,7 @@ Smoke 覆盖：
 - 活动流结构。
 - IPC 通道一致性。
 - 数学曲线加载系统的注册表、调度器、配置、启动更新和 UI 实验室结构。
+- Phosphor/Tabler 图标有效性、未定义动画、`transition: all`、关键重复选择器与纯图标按钮可访问性。
 
 新增 renderer service / page / component 后，必须同步 `scripts/verify.js` 的文件结构和语法检查列表。
 
@@ -209,8 +227,11 @@ npm run dev:startup-update:up-to-date
 
 涉及 UI：
 
+- `npm run test:visual`
 - 至少一条手工验收说明或截图记录
 - 移动/缩放/主题切换不破坏布局
+- 趋势图 theme/profile 切换保持同一 Chart 实例；桶内更新不移动标签，跨桶只滚动一个固定桶。
+- 长列表更新保留滚动位置和键盘焦点，相邻独立卡片不被拉伸。
 
 涉及数学曲线加载系统：
 

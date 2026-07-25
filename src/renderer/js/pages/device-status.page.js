@@ -11,6 +11,7 @@
     sparkData: { cpu: [], mem: [], net: [], battery: [] },
     sparkCharts: {},
     diagEntries: [],
+    diagSequence: 0,
     lastMemWarn: 0,
     lastCpuWarn: 0,
     deps: {
@@ -309,19 +310,78 @@
   function renderDiagTable() {
     const tbody = $('historyTableBody');
     if (!tbody) return;
-    tbody.innerHTML = state.diagEntries.map((entry) => `
-      <tr data-status="${entry.status}">
+
+    const renderEntry = (entry) => `
         <td>${formatDiagTime(entry.time)}</td>
         <td>${state.deps.escapeHtml(entry.module)}</td>
         <td><span class="status-badge ${entry.status}">${entry.status === 'success' ? '正常' : entry.status === 'warn' ? '警告' : '错误'}</span></td>
         <td>${state.deps.escapeHtml(entry.detail)}</td>
-        <td class="col-action">${entry.actionHtml}</td>
-      </tr>`).join('');
+        <td class="col-action">${entry.actionHtml}</td>`;
+
+    // Minimal DOM stubs used by unit tests do not expose ownerDocument.
+    if (!tbody.ownerDocument) {
+      tbody.innerHTML = state.diagEntries.map((entry) => `
+        <tr data-diag-key="${entry.id}" data-status="${entry.status}">${renderEntry(entry)}</tr>`).join('');
+      applyHistoryFilter();
+      return;
+    }
+
+    const scrollHost = tbody.closest?.('.table-container') || tbody.parentElement || tbody;
+    const scrollTop = Number(scrollHost.scrollTop) || 0;
+    if (state.diagEntries.length) tbody.querySelector?.('.history-empty-row')?.remove?.();
+    const rowsByKey = new Map(
+      Array.from(tbody.querySelectorAll('tr[data-diag-key]'))
+        .map((row) => [row.dataset.diagKey, row]),
+    );
+    const retained = new Set();
+
+    state.diagEntries.forEach((entry) => {
+      const key = String(entry.id);
+      let row = rowsByKey.get(key);
+      const signature = `${entry.status}\u0000${entry.module}\u0000${entry.detail}\u0000${entry.actionHtml}`;
+      if (!row) {
+        row = document.createElement('tr');
+        row.dataset.diagKey = key;
+        row.classList.add('is-entering');
+        row.addEventListener('animationend', () => row.classList.remove('is-entering'), { once: true });
+      }
+      row.dataset.status = entry.status;
+      if (row.dataset.diagSignature !== signature) {
+        row.dataset.diagSignature = signature;
+        row.innerHTML = renderEntry(entry);
+      }
+      tbody.appendChild(row);
+      retained.add(key);
+    });
+
+    rowsByKey.forEach((row, key) => {
+      if (!retained.has(key)) row.remove();
+    });
     applyHistoryFilter();
+    scrollHost.scrollTop = scrollTop;
+  }
+
+  function syncHistoryFilterPill() {
+    const group = $('historyFilterGroup');
+    const pill = $('historyFilterPill');
+    const active = group?.querySelector?.('.filter-segmented-btn.active');
+    if (!group || !pill || !active) return;
+    const rect = active.getBoundingClientRect();
+    const parentRect = group.getBoundingClientRect();
+    pill.style.width = `${rect.width}px`;
+    pill.style.transform = `translateX(${rect.left - parentRect.left}px)`;
   }
 
   function addDiagnosticEntry(module, status, detail, actionHtml) {
-    const entry = { time: Date.now(), module, status, detail, actionHtml: actionHtml || '-' };
+    const time = Date.now();
+    const entry = {
+      id: `${time}-${++state.diagSequence}`,
+      time,
+      module,
+      status,
+      detail,
+      actionHtml: actionHtml || '-',
+    };
     state.diagEntries.unshift(entry);
     if (state.diagEntries.length > DIAG_MAX) state.diagEntries.pop();
     renderDiagTable();
@@ -353,16 +413,11 @@
         historyFilterGroup.querySelectorAll('.filter-segmented-btn').forEach((item) => item.classList.remove('active'));
         btn.classList.add('active');
         applyHistoryFilter();
-
-        const pill = $('historyFilterPill');
-        if (pill) {
-          const rect = btn.getBoundingClientRect();
-          const parentRect = historyFilterGroup.getBoundingClientRect();
-          pill.style.width = `${rect.width}px`;
-          pill.style.transform = `translateX(${rect.left - parentRect.left}px)`;
-        }
+        syncHistoryFilterPill();
       });
     });
+    requestAnimationFrame(() => syncHistoryFilterPill());
+    window.addEventListener?.('resize', syncHistoryFilterPill);
   }
 
   function bindNavSparklineWarmup() {

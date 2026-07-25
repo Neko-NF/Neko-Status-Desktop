@@ -6,6 +6,28 @@
     return document.getElementById(id);
   }
 
+  function setProgressPanelVisible(visible, options = {}) {
+    const panel = $('updateProgressPanel');
+    const setter = window._nekoUIHelpers?.setExpandableSectionState;
+    if (panel && typeof setter === 'function') {
+      setter(panel, visible, { display: 'grid', duration: 220, ...options });
+      return;
+    }
+    const row = $('updateProgressRow');
+    if (row) row.style.display = visible ? '' : 'none';
+  }
+
+  function setProgressBarVisible(visible) {
+    const bar = $('updateProgressBar');
+    if (!bar) return;
+    if ($('updateProgressPanel')) {
+      bar.classList?.toggle?.('is-progress-bar-hidden', !visible);
+      bar.setAttribute?.('aria-hidden', visible ? 'false' : 'true');
+      return;
+    }
+    bar.style.display = visible ? '' : 'none';
+  }
+
   function formatFileSize(bytes) {
     const value = Number(bytes || 0);
     if (!Number.isFinite(value) || value <= 0) return '--';
@@ -586,7 +608,7 @@
         dots.innerHTML = displaySources.map((source, index) => {
           const isActive = index === this._sourceCarouselIndex;
           const label = `查看第 ${index + 1} 个${source.isPlaceholder ? '占位槽' : '更新源'}`;
-          return `<button type="button" class="update-source-dot${isActive ? ' active' : ''}" data-source-index="${index}" aria-label="${escapeHtml(label)}"${isActive ? ' aria-current="true"' : ''}><span aria-hidden="true"></span></button>`;
+          return `<button type="button" class="update-source-dot${isActive ? ' active' : ''}" data-source-index="${index}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"${isActive ? ' aria-current="true"' : ''}><span aria-hidden="true"></span></button>`;
         }).join('');
         if (isSwitching) {
           const clearSwitching = typeof setTimeout === 'function'
@@ -972,7 +994,7 @@
         icon.className = 'ph ph-circle-notch ph-spin';
         icon.style.animation = '';
       }
-      setBadge('info', '<i class="ph ph-arrows-clockwise"></i> Checking');
+      setBadge('info', '<i class="ph ph-arrow-clockwise"></i> Checking');
       this.startSourceDiagnosticsCheck();
     },
 
@@ -1088,7 +1110,7 @@
           addLogLine('INFO', `当前已是最新版本 v${result?.currentVersion || ''}`);
           setTimeout(() => {
             if (btn._updateMode !== 'check') return;
-            if (icon) icon.className = 'ph ph-arrows-clockwise';
+            if (icon) icon.className = 'ph ph-arrow-clockwise';
             if (label) label.textContent = '检查更新';
           }, 5000);
         }
@@ -1100,7 +1122,7 @@
       } catch (e) {
         btn.disabled = false;
         if (icon) { icon.className = 'ph ph-arrows-clockwise'; icon.style.animation = ''; }
-        if (label) label.textContent = '检查更新';
+        if (label) label.textContent = '重试检查';
         this.hideProgress();
         this.failSourceDiagnosticsCheck(e);
         addLogLine('ERROR', `检查更新异常: ${e.message}`);
@@ -1244,7 +1266,7 @@
         btn._updateMode = 'check';
       }
       this.stopSourceDiagnosticsTimer();
-      setCheckButton('check', '检查更新', 'ph ph-arrows-clockwise');
+      setCheckButton('check', '检查更新', 'ph ph-arrow-clockwise');
       setBadge('success', '<i class="ph ph-check-circle"></i> 已是最新');
     },
 
@@ -1256,7 +1278,11 @@
         btn._updateMode = 'check';
       }
       this.stopSourceDiagnosticsTimer();
-      setCheckButton('check', options.label || '检查更新', 'ph ph-arrows-clockwise');
+      setCheckButton(
+        'check',
+        options.label || (options.isConfigError ? '检查更新' : '重试检查'),
+        options.isConfigError ? 'ph ph-arrow-clockwise' : 'ph ph-arrows-clockwise',
+      );
       if (icon) icon.style.animation = '';
       setBadge(options.isConfigError ? 'error' : 'error', options.badgeHtml || '<i class="ph ph-warning"></i> 检查失败');
       return message;
@@ -1284,7 +1310,7 @@
       const btn = $('checkUpdateBtn');
       if (btn) btn._updateMode = 'check';
       this.stopSourceDiagnosticsTimer();
-      setCheckButton('check', '检查更新', 'ph ph-arrows-clockwise');
+      setCheckButton('check', '检查更新', 'ph ph-arrow-clockwise');
       setBadge('success', `<i class="ph ph-check-circle"></i> 已跳过 v${escapeHtml(version || '')}`);
     },
 
@@ -1382,8 +1408,8 @@
       }
       this._pendingInstallVersion = String(version || '');
       this.stopSourceDiagnosticsTimer();
-      setCheckButton('install-pending', '立即安装', 'ph ph-package');
-      setBadge('warn', `<i class="ph ph-package"></i> 已下载 ${versionText(version)}`);
+      setCheckButton('install-pending', '立即安装', 'ph ph-cloud-arrow-down');
+      setBadge('warn', `<i class="ph ph-download-simple"></i> 已下载 ${versionText(version)}`);
       document.querySelector('.nav-item[data-target="page-update"]')?.classList.add('has-update');
     },
 
@@ -1613,14 +1639,13 @@
     },
 
     resetProgress(label = '下载中...') {
-      const progressRow = $('updateProgressRow');
       const progressBar = $('updateProgressBar');
       const progressLabel = $('updateProgressLabel');
       const progressPct = $('updateProgressPct');
       const progressFill = $('updateProgressFill');
-      if (progressRow) progressRow.style.display = '';
+      setProgressPanelVisible(true);
       if (progressBar) {
-        progressBar.style.display = '';
+        setProgressBarVisible(true);
         progressBar.classList.remove('indeterminate');
       }
       if (progressLabel) progressLabel.textContent = label;
@@ -1629,34 +1654,32 @@
     },
 
     showCheckingProgress(label = '检查中...') {
-      const progressRow = $('updateProgressRow');
       const progressBar = $('updateProgressBar');
       const progressLabel = $('updateProgressLabel');
-      if (progressRow) progressRow.style.display = '';
+      setProgressPanelVisible(true);
       const loadingSystem = window._nekoModules?.components?.LoadingSystem;
       const useCurve = loadingSystem?.getDiagnostics?.().enabled === true;
       if (useCurve) {
         if (progressBar) {
-          progressBar.style.display = 'none';
+          setProgressBarVisible(false);
           progressBar.classList.remove('indeterminate');
         }
         this.ensureCheckingLoader()?.setLabel?.(label)?.show?.();
       } else if (progressBar) {
         this._checkingLoader?.hide?.();
-        progressBar.style.display = '';
+        setProgressBarVisible(true);
         progressBar.classList.add('indeterminate');
       }
       if (progressLabel) progressLabel.textContent = label;
     },
 
     hideProgress() {
-      const progressRow = $('updateProgressRow');
       const progressBar = $('updateProgressBar');
       if (progressBar) {
-        progressBar.style.display = 'none';
+        setProgressBarVisible(false);
         progressBar.classList.remove('indeterminate');
       }
-      if (progressRow) progressRow.style.display = 'none';
+      setProgressPanelVisible(false);
       this._checkingLoader?.hide?.();
     },
 
@@ -1666,15 +1689,14 @@
     },
 
     updateProgress(data = {}) {
-      const progressRow = $('updateProgressRow');
       const progressBar = $('updateProgressBar');
       const progressPct = $('updateProgressPct');
       const progressFill = $('updateProgressFill');
       const progressLabel = $('updateProgressLabel');
-      if (progressRow) progressRow.style.display = '';
+      setProgressPanelVisible(true);
       this._checkingLoader?.hide?.();
       if (progressBar) {
-        progressBar.style.display = '';
+        setProgressBarVisible(true);
         progressBar.classList.remove('indeterminate');
       }
       if (data.pct < 0) return;

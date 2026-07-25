@@ -107,22 +107,21 @@
     const el = byId('activityPageStatus');
     if (!el) return;
     if (!message) {
-      el.hidden = true;
       el.textContent = '';
-      el.className = 'activity-page-status';
-      el.removeAttribute?.('role');
-      el.setAttribute?.('aria-live', 'off');
+      delete el.dataset.tone;
+      delete el.dataset.partialLoad;
+      el.setAttribute?.('role', 'status');
+      el.setAttribute?.('aria-live', 'polite');
       return;
     }
-    el.hidden = false;
     el.textContent = message;
-    el.className = `activity-page-status ${type}`.trim();
+    el.dataset.tone = type;
     if (type === 'error') {
       el.setAttribute?.('role', 'alert');
       el.setAttribute?.('aria-live', 'assertive');
     } else {
-      el.removeAttribute?.('role');
-      el.setAttribute?.('aria-live', 'off');
+      el.setAttribute?.('role', 'status');
+      el.setAttribute?.('aria-live', 'polite');
     }
   }
 
@@ -599,7 +598,7 @@
     if (health.overall === 'needs_login') return { action: 'login', label: '去登录', icon: 'ph-sign-in' };
     if (health.overall === 'needs_enroll') return { action: 'provision', label: '重新配置提醒', icon: 'ph-key' };
     if (health.overall === 'paused') return { action: 'resume', label: '恢复活动功能', icon: 'ph-play' };
-    if (health.overall === 'unavailable' || health.overall === 'degraded') return { action: 'check', label: '立即检查', icon: 'ph-arrows-clockwise' };
+    if (health.overall === 'unavailable' || health.overall === 'degraded') return { action: 'check', label: '立即检查', icon: 'ph-stethoscope' };
     if (health.overall === 'needs_action') {
       const credential = health.provision?.state === 'credential_error'
         || health.receiver?.state === 'credential_error'
@@ -787,20 +786,206 @@
 
   function userRow(user, actions = '') {
     const username = user?.username || '未知用户';
+    const initial = escapeHtml(String(username || '?').slice(0, 1).toUpperCase());
     const avatar = user?.avatar
-      ? `<img src="${escapeHtml(user.avatar)}" alt="${escapeHtml(username)}头像">`
-      : `<span aria-hidden="true">${escapeHtml(String(username || '?').slice(0, 1).toUpperCase())}</span>`;
+      ? `<img src="${escapeHtml(user.avatar)}" alt="${escapeHtml(username)}头像" data-avatar-fallback="initial" data-avatar-name="${escapeHtml(username)}">`
+      : `<span class="activity-avatar-fallback" aria-hidden="true">${initial}</span>`;
     return `<div class="activity-user-avatar">${avatar}</div>
       <div class="activity-user-copy" title="${escapeHtml(username)}"><strong>${escapeHtml(username)}</strong><small>UID ${escapeHtml(user?.id)}</small></div>
       <div class="activity-row-actions">${actions}</div>`;
   }
 
+  function prefersReducedMotion() {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  }
+
+  function interactiveToken(element, index) {
+    if (!element) return `control:${index}`;
+    if (element.id) return `id:${element.id}`;
+    if (element.dataset?.field) return `field:${element.dataset.field}`;
+    const action = element.dataset?.action;
+    if (action) {
+      const identity = element.dataset.ruleId || element.dataset.appKey
+        || element.dataset.followId || element.dataset.userId || index;
+      return `action:${action}:${identity}`;
+    }
+    return `${String(element.tagName || 'control').toLowerCase()}:${index}`;
+  }
+
+  function captureInteractiveState(node) {
+    const controls = Array.from(node.querySelectorAll?.('input, textarea, select, button, [tabindex]') || []);
+    return controls.map((control, index) => ({
+      token: interactiveToken(control, index),
+      value: 'value' in control ? control.value : undefined,
+      checked: 'checked' in control ? control.checked : undefined,
+      selectionStart: Number.isInteger(control.selectionStart) ? control.selectionStart : null,
+      selectionEnd: Number.isInteger(control.selectionEnd) ? control.selectionEnd : null,
+      active: document.activeElement === control,
+    }));
+  }
+
+  function restoreInteractiveState(node, saved = []) {
+    const controls = Array.from(node.querySelectorAll?.('input, textarea, select, button, [tabindex]') || []);
+    const byToken = new Map(controls.map((control, index) => [interactiveToken(control, index), control]));
+    saved.forEach((entry) => {
+      const control = byToken.get(entry.token);
+      if (!control) return;
+      if (entry.value !== undefined && 'value' in control) control.value = entry.value;
+      if (entry.checked !== undefined && 'checked' in control) control.checked = entry.checked;
+      if (entry.active) {
+        control.focus?.({ preventScroll: true });
+        if (entry.selectionStart !== null && control.setSelectionRange) {
+          control.setSelectionRange(entry.selectionStart, entry.selectionEnd ?? entry.selectionStart);
+        }
+      }
+    });
+  }
+
+  function elementFromHtml(html) {
+    if (typeof document.createElement !== 'function') return null;
+    const template = document.createElement('template');
+    template.innerHTML = String(html || '').trim();
+    return template.content?.firstElementChild || template.firstElementChild || null;
+  }
+
+  function reconcileKeyedList(root, items, { key, render, emptyHtml, emptyKey }) {
+    if (!root) return;
+    const entries = items.map((item, index) => {
+      const itemKey = String(key(item, index));
+      return { itemKey, html: render(item, itemKey, index) };
+    });
+    root.classList?.toggle?.('is-empty', entries.length === 0);
+    const countTarget = root.dataset?.countTarget;
+    const countElement = countTarget ? byId(countTarget) : null;
+    if (countElement) {
+      countElement.textContent = String(entries.length);
+      countElement.setAttribute?.('aria-label', `${entries.length} 项`);
+    }
+    const canReconcile = typeof root.insertBefore === 'function'
+      && root.children
+      && typeof document.createElement === 'function';
+
+    if (!canReconcile) {
+      root.innerHTML = entries.length ? entries.map((entry) => entry.html).join('') : emptyHtml;
+      return;
+    }
+    if (!entries.length) {
+      const nextEmptyKey = String(emptyKey || emptyHtml);
+      if (root.dataset.activityEmptyKey !== nextEmptyKey) root.innerHTML = emptyHtml;
+      root.dataset.activityEmptyKey = nextEmptyKey;
+      return;
+    }
+
+    delete root.dataset.activityEmptyKey;
+    const scrollTop = root.scrollTop;
+    const oldNodes = new Map(Array.from(root.children)
+      .filter((node) => node.dataset?.activityKey)
+      .map((node) => [node.dataset.activityKey, node]));
+    const oldRects = new Map(Array.from(oldNodes, ([itemKey, node]) => (
+      [itemKey, node.getBoundingClientRect?.()]
+    )));
+    const nextKeySet = new Set(entries.map((entry) => entry.itemKey));
+    const nextNodes = entries.map(({ itemKey, html }) => {
+      const existing = oldNodes.get(itemKey);
+      if (!existing) {
+        const added = elementFromHtml(html);
+        if (!added) return null;
+        added.dataset.activityKey = itemKey;
+        added._activityRenderHtml = html;
+        added.classList.add('activity-keyed-enter');
+        added.addEventListener?.('animationend', () => added.classList.remove('activity-keyed-enter'), { once: true });
+        return added;
+      }
+      if (existing.dataset.activityLeaving === 'true') {
+        delete existing.dataset.activityLeaving;
+        existing.removeAttribute?.('aria-hidden');
+        if ('inert' in existing) existing.inert = false;
+        existing.removeAttribute?.('inert');
+        existing.getAnimations?.().forEach((animation) => animation.cancel());
+      }
+      if (existing._activityRenderHtml !== html) {
+        const replacement = elementFromHtml(html);
+        if (replacement) {
+          const saved = captureInteractiveState(existing);
+          existing.className = replacement.className;
+          existing.innerHTML = replacement.innerHTML;
+          Array.from(existing.attributes || []).forEach((attribute) => {
+            if (attribute.name !== 'class' && attribute.name !== 'data-activity-key') {
+              existing.removeAttribute(attribute.name);
+            }
+          });
+          Array.from(replacement.attributes || []).forEach((attribute) => {
+            if (attribute.name !== 'class') existing.setAttribute(attribute.name, attribute.value);
+          });
+          restoreInteractiveState(existing, saved);
+        }
+        existing._activityRenderHtml = html;
+      }
+      existing.dataset.activityKey = itemKey;
+      return existing;
+    }).filter(Boolean);
+
+    const shouldAnimate = !prefersReducedMotion();
+    const nextNodeSet = new Set(nextNodes);
+    oldNodes.forEach((node, itemKey) => {
+      if (nextKeySet.has(itemKey) || node.dataset.activityLeaving === 'true') return;
+      if (!shouldAnimate || typeof node.animate !== 'function') {
+        node.remove?.();
+        return;
+      }
+      node.dataset.activityLeaving = 'true';
+      node.setAttribute?.('aria-hidden', 'true');
+      if ('inert' in node) node.inert = true;
+      node.setAttribute?.('inert', '');
+      root.appendChild(node);
+      const removal = node.animate([
+        { opacity: 1, transform: 'translateY(0)' },
+        { opacity: 0, transform: 'translateY(-4px)' },
+      ], { duration: 180, easing: 'ease-out', fill: 'forwards' });
+      const removeWhenDone = () => {
+        if (node.dataset.activityLeaving === 'true') node.remove?.();
+      };
+      removal?.finished?.then(removeWhenDone, removeWhenDone);
+      if (!removal?.finished) window.setTimeout(removeWhenDone, 200);
+    });
+
+    // Remove placeholders and any stale non-animated nodes before placing the
+    // retained keyed nodes. Leaving nodes remain at the end until their fade
+    // completes, so the list does not replay or lose focus on every update.
+    Array.from(root.children).forEach((node) => {
+      if (!nextNodeSet.has(node) && node.dataset.activityLeaving !== 'true') node.remove?.();
+    });
+    nextNodes.forEach((node, index) => {
+      const current = root.children[index] || null;
+      if (current !== node) root.insertBefore(node, current);
+    });
+    root.scrollTop = scrollTop;
+    if (!shouldAnimate) return;
+    nextNodes.forEach((node) => {
+      const first = oldRects.get(node.dataset.activityKey);
+      const last = node.getBoundingClientRect?.();
+      if (!first || !last || typeof node.animate !== 'function') return;
+      const x = first.left - last.left;
+      const y = first.top - last.top;
+      if (Math.abs(x) < 1 && Math.abs(y) < 1) return;
+      node.animate([
+        { transform: `translate(${x}px, ${y}px)` },
+        { transform: 'translate(0, 0)' },
+      ], { duration: 220, easing: 'cubic-bezier(.2, 0, 0, 1)' });
+    });
+  }
+
   function renderSearchResults(users = []) {
     const root = byId('activitySearchResults');
     if (!root) return;
-    root.innerHTML = users.length ? users.map((user) => `<div class="activity-list-row">
-      ${userRow(user, `<button class="action-btn x-small primary-border activity-remote-control" type="button" data-action="follow" data-user-id="${escapeHtml(user.id)}" aria-label="关注 ${escapeHtml(user.username || `UID ${user.id}`)}"${remoteDisabledAttribute()}><i class="ph ph-user-plus"></i> 关注</button>`)}
-    </div>`).join('') : '<div class="activity-empty">没有找到匹配的用户</div>';
+    reconcileKeyedList(root, users, {
+      key: (user) => user.id,
+      render: (user, itemKey) => `<div class="activity-list-row" data-activity-key="${escapeHtml(itemKey)}">
+        ${userRow(user, `<button class="action-btn x-small primary-border activity-remote-control" type="button" data-action="follow" data-user-id="${escapeHtml(user.id)}" aria-label="关注 ${escapeHtml(user.username || `UID ${user.id}`)}"${remoteDisabledAttribute()}><i class="ph ph-user-plus"></i> 关注</button>`)}
+      </div>`,
+      emptyHtml: '<div class="activity-empty">没有找到匹配的用户</div>',
+      emptyKey: 'search-empty',
+    });
   }
 
   function renderSearchMessage(message, tone = '') {
@@ -879,73 +1064,89 @@
   function renderFollows() {
     const root = byId('activityFollowsList');
     if (!root) return;
-    if (!state.follows.length) {
-      root.innerHTML = '<div class="activity-empty">暂无关注用户，先在上方搜索吧。</div>';
-      return;
-    }
-    root.innerHTML = state.follows.map((follow) => {
-      const online = follow.activeSessions || [];
-      const onlineHtml = online.length ? online.map((session) => {
-        const devices = (session.devices || []).map((device) => device.name).join('、') || '未知设备';
-        return `<div class="activity-online-pill" title="${escapeHtml(session.displayName)} · ${escapeHtml(devices)}"><i class="ph ph-circle"></i><strong>${escapeHtml(session.displayName)}</strong>
-          <span>已在线 ${formatDuration(session.startedAt)} · ${escapeHtml(devices)}</span></div>`;
-      }).join('') : `<div class="activity-offline-copy">${follow.allowed ? '当前没有匹配规则的应用在线' : '对方未向你开放活动状态'}</div>`;
-      const rules = (follow.rules || []).map((rule) => `<div class="activity-rule-chip">
-        <span title="${escapeHtml(rule.displayName)} · ${escapeHtml(rule.appKey)}">${escapeHtml(rule.displayName)} <small>${escapeHtml(rule.appKey)}</small></span>
-        <button class="activity-remote-control" type="button" data-action="delete-rule" data-rule-id="${escapeHtml(rule.id)}" title="删除规则" aria-label="删除 ${escapeHtml(rule.displayName)} 的提醒规则"${remoteDisabledAttribute()}><i class="ph ph-x"></i></button>
-      </div>`).join('');
-      const catalog = (follow.catalog || []).map((app) => `<button class="activity-catalog-option activity-remote-control" type="button" data-action="catalog-rule" title="为 ${escapeHtml(app.displayName)} 开启上线提醒"
-        data-follow-id="${escapeHtml(follow.id)}" data-app-key="${escapeHtml(app.appKey)}" data-display-name="${escapeHtml(app.displayName)}">
-        <i class="ph ph-bell-ringing"></i> ${escapeHtml(app.displayName)} <small>${escapeHtml(app.appKey)}</small></button>`).join('');
-      const catalogHtml = catalog || (follow.catalogLoaded ? '<div class="activity-empty compact">对方还没有公开可提醒的应用</div>' : '');
-      return `<article class="activity-follow-card" data-follow-id="${escapeHtml(follow.id)}">
-        <div class="activity-list-row activity-follow-head">
-          ${userRow(follow.user, `<button class="action-btn x-small activity-remote-control" type="button" data-action="unfollow" data-follow-id="${escapeHtml(follow.id)}"${remoteDisabledAttribute()}>取消关注</button>`)}
-        </div>
-        <div class="activity-online-state">${onlineHtml}</div>
-        <div class="activity-rules">${rules || '<span class="activity-empty compact">尚未设置应用规则，不会发送提醒</span>'}</div>
-        <div class="activity-rule-editor">
-          <button class="action-btn x-small primary activity-remote-control" type="button" data-action="load-catalog" data-follow-id="${escapeHtml(follow.id)}"${remoteDisabledAttribute()}>选择对方公开的应用</button>
-          <input class="activity-input activity-remote-control" data-field="app-key" aria-label="对方公开的应用进程名" placeholder="高级：手动输入对方已公开的 .exe"${remoteDisabledAttribute()}>
-          <input class="activity-input activity-remote-control" data-field="display-name" aria-label="提醒显示名称" placeholder="提醒名称（可选）"${remoteDisabledAttribute()}>
-          <button class="action-btn x-small activity-remote-control" type="button" data-action="create-rule" data-follow-id="${escapeHtml(follow.id)}"${remoteDisabledAttribute()}>手动添加</button>
-        </div>
-        <div class="activity-catalog-list">${catalogHtml}</div>
-      </article>`;
-    }).join('');
+    reconcileKeyedList(root, state.follows, {
+      key: (follow) => follow.id ?? follow.user?.id,
+      render: (follow, itemKey) => {
+        const online = follow.activeSessions || [];
+        const onlineHtml = online.length ? online.map((session) => {
+          const devices = (session.devices || []).map((device) => device.name).join('、') || '未知设备';
+          return `<div class="activity-online-pill" title="${escapeHtml(session.displayName)} · ${escapeHtml(devices)}"><i class="ph ph-circle"></i><strong>${escapeHtml(session.displayName)}</strong>
+            <span>已在线 ${formatDuration(session.startedAt)} · ${escapeHtml(devices)}</span></div>`;
+        }).join('') : `<div class="activity-offline-copy">${follow.allowed ? '当前没有匹配规则的应用在线' : '对方未向你开放活动状态'}</div>`;
+        const rules = (follow.rules || []).map((rule) => `<div class="activity-rule-chip">
+          <span title="${escapeHtml(rule.displayName)} · ${escapeHtml(rule.appKey)}">${escapeHtml(rule.displayName)} <small>${escapeHtml(rule.appKey)}</small></span>
+          <button class="activity-remote-control" type="button" data-action="delete-rule" data-rule-id="${escapeHtml(rule.id)}" title="删除规则" aria-label="删除 ${escapeHtml(rule.displayName)} 的提醒规则"${remoteDisabledAttribute()}><i class="ph ph-x"></i></button>
+        </div>`).join('');
+        const catalog = (follow.catalog || []).map((app) => `<button class="activity-catalog-option activity-remote-control" type="button" data-action="catalog-rule" title="为 ${escapeHtml(app.displayName)} 开启上线提醒"
+          data-follow-id="${escapeHtml(follow.id)}" data-app-key="${escapeHtml(app.appKey)}" data-display-name="${escapeHtml(app.displayName)}">
+          <i class="ph ph-bell-ringing"></i> ${escapeHtml(app.displayName)} <small>${escapeHtml(app.appKey)}</small></button>`).join('');
+        const catalogHtml = catalog || (follow.catalogLoaded ? '<div class="activity-empty compact">对方还没有公开可提醒的应用</div>' : '');
+        return `<article class="activity-follow-card" data-activity-key="${escapeHtml(itemKey)}" data-follow-id="${escapeHtml(follow.id)}">
+          <div class="activity-list-row activity-follow-head">
+            ${userRow(follow.user, `<button class="action-btn x-small activity-remote-control" type="button" data-action="unfollow" data-follow-id="${escapeHtml(follow.id)}"${remoteDisabledAttribute()}>取消关注</button>`)}
+          </div>
+          <div class="activity-online-state">${onlineHtml}</div>
+          <div class="activity-rules">${rules || '<span class="activity-empty compact">尚未设置应用规则，不会发送提醒</span>'}</div>
+          <div class="activity-rule-editor">
+            <button class="action-btn x-small primary activity-remote-control" type="button" data-action="load-catalog" data-follow-id="${escapeHtml(follow.id)}"${remoteDisabledAttribute()}>选择对方公开的应用</button>
+            <input class="activity-input activity-remote-control" data-field="app-key" aria-label="对方公开的应用进程名" placeholder="高级：手动输入对方已公开的 .exe"${remoteDisabledAttribute()}>
+            <input class="activity-input activity-remote-control" data-field="display-name" aria-label="提醒显示名称" placeholder="提醒名称（可选）"${remoteDisabledAttribute()}>
+            <button class="action-btn x-small activity-remote-control" type="button" data-action="create-rule" data-follow-id="${escapeHtml(follow.id)}"${remoteDisabledAttribute()}>手动添加</button>
+          </div>
+          <div class="activity-catalog-list">${catalogHtml}</div>
+        </article>`;
+      },
+      emptyHtml: '<div class="activity-empty">暂无关注用户，先在上方搜索吧。</div>',
+      emptyKey: 'follows-empty',
+    });
   }
 
   function renderFollowers() {
     const root = byId('activityFollowersList');
     if (!root) return;
-    root.innerHTML = state.followers.length ? state.followers.map((item) => `<div class="activity-list-row">
-      ${userRow(item.user, `<button class="action-btn x-small danger activity-remote-control" type="button" data-action="block" data-user-id="${escapeHtml(item.user.id)}"${remoteDisabledAttribute()}><i class="ph ph-prohibit"></i> 拉黑</button>`)}
-    </div>`).join('') : '<div class="activity-empty">暂无关注者</div>';
+    reconcileKeyedList(root, state.followers, {
+      key: (item) => item.user?.id ?? item.id,
+      render: (item, itemKey) => `<div class="activity-list-row" data-activity-key="${escapeHtml(itemKey)}">
+        ${userRow(item.user, `<button class="action-btn x-small danger activity-remote-control" type="button" data-action="block" data-user-id="${escapeHtml(item.user.id)}"${remoteDisabledAttribute()}><i class="ph ph-prohibit"></i> 拉黑</button>`)}
+      </div>`,
+      emptyHtml: '<div class="activity-empty">暂无关注者</div>',
+      emptyKey: 'followers-empty',
+    });
   }
 
   function renderApps() {
     const root = byId('activityAppsList');
     if (!root) return;
-    root.innerHTML = state.apps.length ? state.apps.map((app) => {
-      const isPublic = app.isHidden === false;
-      const locallyDetected = app.detected === true && app.source === 'local-detected';
-      return `<div class="activity-list-row">
-      <div class="activity-app-icon"><i class="ph ph-app-window"></i></div>
-      <div class="activity-user-copy" title="${escapeHtml(app.displayName)}"><strong>${escapeHtml(app.displayName)}</strong><small>${escapeHtml(app.appKey)}${locallyDetected ? ' · 本机检测' : ''}</small></div>
-      <span class="activity-app-visibility ${isPublic ? 'public' : 'private'}">${isPublic ? '已公开' : '未公开'}</span>
-      <button class="action-btn x-small activity-remote-control ${isPublic ? '' : 'primary-border'}" type="button" data-action="toggle-app" data-app-key="${escapeHtml(app.appKey)}" data-display-name="${escapeHtml(app.displayName)}" data-hidden="${app.isHidden ? '1' : '0'}" data-local-detected="${locallyDetected ? '1' : '0'}" aria-label="${isPublic ? '停止公开' : '公开'} ${escapeHtml(app.displayName)}"${remoteDisabledAttribute()}>
-        ${isPublic ? '停止公开' : '公开'}
-      </button>
-    </div>`;
-    }).join('') : '<div class="activity-empty">还没有公开应用。你可以从已打开的窗口中选择应用，也可以手动输入规范化 .exe 进程名。</div>';
+    reconcileKeyedList(root, state.apps, {
+      key: (app) => app.appKey,
+      render: (app, itemKey) => {
+        const isPublic = app.isHidden === false;
+        const locallyDetected = app.detected === true && app.source === 'local-detected';
+        return `<div class="activity-list-row" data-activity-key="${escapeHtml(itemKey)}">
+          <div class="activity-app-icon"><i class="ph ph-app-window"></i></div>
+          <div class="activity-user-copy" title="${escapeHtml(app.displayName)}"><strong>${escapeHtml(app.displayName)}</strong><small>${escapeHtml(app.appKey)}${locallyDetected ? ' · 本机检测' : ''}</small></div>
+          <span class="activity-app-visibility ${isPublic ? 'public' : 'private'}">${isPublic ? '已公开' : '未公开'}</span>
+          <button class="action-btn x-small activity-remote-control ${isPublic ? '' : 'primary-border'}" type="button" data-action="toggle-app" data-app-key="${escapeHtml(app.appKey)}" data-display-name="${escapeHtml(app.displayName)}" data-hidden="${app.isHidden ? '1' : '0'}" data-local-detected="${locallyDetected ? '1' : '0'}" aria-label="${isPublic ? '停止公开' : '公开'} ${escapeHtml(app.displayName)}"${remoteDisabledAttribute()}>
+            ${isPublic ? '停止公开' : '公开'}
+          </button>
+        </div>`;
+      },
+      emptyHtml: '<div class="activity-empty">还没有公开应用。你可以从已打开的窗口中选择应用，也可以手动输入规范化 .exe 进程名。</div>',
+      emptyKey: 'apps-empty',
+    });
   }
 
   function renderBlocks() {
     const root = byId('activityBlocksList');
     if (!root) return;
-    root.innerHTML = state.blocks.length ? state.blocks.map((item) => `<div class="activity-list-row">
-      ${userRow(item.user, `<button class="action-btn x-small activity-remote-control" type="button" data-action="unblock" data-user-id="${escapeHtml(item.user.id)}"${remoteDisabledAttribute()}>解除拉黑</button>`)}
-    </div>`).join('') : '<div class="activity-empty">暂无拉黑用户</div>';
+    reconcileKeyedList(root, state.blocks, {
+      key: (item) => item.user?.id ?? item.id,
+      render: (item, itemKey) => `<div class="activity-list-row" data-activity-key="${escapeHtml(itemKey)}">
+        ${userRow(item.user, `<button class="action-btn x-small activity-remote-control" type="button" data-action="unblock" data-user-id="${escapeHtml(item.user.id)}"${remoteDisabledAttribute()}>解除拉黑</button>`)}
+      </div>`,
+      emptyHtml: '<div class="activity-empty">暂无拉黑用户</div>',
+      emptyKey: 'blocks-empty',
+    });
   }
 
   function renderSectionDataStatus() {
@@ -1019,6 +1220,9 @@
   async function refreshData(silent = false, { forceBusiness = false } = {}) {
     const requestEpoch = businessEpoch;
     const requestRevision = ++businessRequestRevision;
+    // Invalidate an in-flight follows-only poll. Its response must not land
+    // after this full bootstrap or a mutation-triggered refresh.
+    followsRequestRevision += 1;
     const requestIsCurrent = () => requestEpoch === businessEpoch
       && requestRevision === businessRequestRevision;
     const agentResult = await refreshAgent(silent);
@@ -1086,10 +1290,11 @@
     }
     if (success) {
       setPageStatus('设置已保存。', 'success');
+      notify('设置已保存', 'success');
       if (enabledTransition && state.settings.enabled) await refreshData(true);
       window.setTimeout(() => {
         const status = byId('activityPageStatus');
-        if (status?.classList?.contains?.('success')) setPageStatus('');
+        if (status?.dataset?.tone === 'success') setPageStatus('');
       }, 2200);
     }
     renderAll();
@@ -1219,7 +1424,8 @@
       if (appKeyInput) appKeyInput.value = processName;
       if (appNameInput && !appNameInput.value.trim()) appNameInput.value = displayNameFromProcess(processName);
       const advanced = byId('activityAdvancedComposer');
-      if (advanced) advanced.open = true;
+      const advancedTrigger = byId('activityAdvancedComposerToggle');
+      setActivityExpandable(advanced, true, { trigger: advancedTrigger });
       appNameInput?.focus?.();
       notify('已选择应用。确认名称后点击“公开此应用”。', 'success');
     } catch (error) {
@@ -1245,7 +1451,9 @@
       await refreshData(true);
       if (byId('activityAppKeyInput')) byId('activityAppKeyInput').value = '';
       if (byId('activityAppNameInput')) byId('activityAppNameInput').value = '';
-      if (byId('activityAdvancedComposer')) byId('activityAdvancedComposer').open = false;
+      setActivityExpandable(byId('activityAdvancedComposer'), false, {
+        trigger: byId('activityAdvancedComposerToggle'),
+      });
       notify('已公开此应用。关注你的人现在可以为它设置提醒。', 'success');
     } catch (error) {
       notify(error.message || '公开应用失败', 'error');
@@ -1261,12 +1469,15 @@
       const result = await refreshData(false, { forceBusiness: true });
       if (!result || failed(result)) {
         setPageStatus('刷新失败，请稍后再试。', 'error');
+        notify(errorText(result, '刷新失败，请稍后再试'), 'error');
         return;
       }
       if (state.partialFailures.length) {
         renderPartialLoadStatus();
+        notify('部分数据暂时无法刷新，已保留上次内容', 'warn');
       } else {
         setPageStatus('提醒服务和关注数据已刷新。', 'success');
+        notify('提醒服务和关注数据已刷新', 'success');
       }
       window.setTimeout(() => setPageStatus(''), 1800);
     } catch (error) {
@@ -1362,14 +1573,36 @@
     const panel = byId('activityDiagnosticsPanel');
     const button = byId('activityDiagnosticsToggle');
     if (!panel || !button) return;
-    const expanded = panel.hidden;
-    panel.hidden = !expanded;
-    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    setActivityExpandable(panel, expanded, { trigger: button });
     const label = button.querySelector?.('span');
     if (label) label.textContent = expanded ? '收起详情' : '查看详情';
   }
 
-  function activateActivitySection(section, { focus = false } = {}) {
+  function setActivityExpandable(panel, expanded, { trigger, initial = false } = {}) {
+    if (!panel) return;
+    const setter = window._nekoModules?.expandableSection?.setExpandableSectionState
+      || window._nekoUIHelpers?.setExpandableSectionState;
+    if (typeof setter === 'function') {
+      setter(panel, expanded, { trigger, initial });
+      return;
+    }
+    panel.hidden = !expanded;
+    panel.inert = !expanded;
+    panel.setAttribute?.('aria-hidden', expanded ? 'false' : 'true');
+    if (expanded) panel.removeAttribute?.('inert');
+    else panel.setAttribute?.('inert', '');
+    trigger?.setAttribute?.('aria-expanded', expanded ? 'true' : 'false');
+  }
+
+  function toggleAdvancedComposer() {
+    const panel = byId('activityAdvancedComposer');
+    const trigger = byId('activityAdvancedComposerToggle');
+    if (!panel || !trigger) return;
+    setActivityExpandable(panel, trigger.getAttribute('aria-expanded') !== 'true', { trigger });
+  }
+
+  function activateActivitySection(section, { focus = false, initial = false } = {}) {
     const valid = ['receive', 'share', 'background', 'people'];
     const selected = valid.includes(section) ? section : 'receive';
     document.querySelectorAll?.('#activitySectionTabs [data-activity-section]').forEach((button) => {
@@ -1378,8 +1611,20 @@
       button.setAttribute('tabindex', active ? '0' : '-1');
       if (active && focus) button.focus?.();
     });
-    document.querySelectorAll?.('[data-activity-panel]').forEach((panel) => {
-      panel.hidden = panel.dataset.activityPanel !== selected;
+    document.querySelectorAll?.('#page-activity [data-activity-panel]').forEach((panel) => {
+      const active = panel.dataset.activityPanel === selected;
+      const wasActive = panel.hidden === false && panel.getAttribute?.('aria-hidden') !== 'true';
+      panel.classList.remove('is-entering');
+      panel.hidden = !active;
+      panel.inert = !active;
+      panel.setAttribute?.('aria-hidden', active ? 'false' : 'true');
+      if (active) panel.removeAttribute?.('inert');
+      else panel.setAttribute?.('inert', '');
+      if (active && !wasActive && !initial && !prefersReducedMotion()) {
+        void panel.offsetWidth;
+        panel.classList.add('is-entering');
+        panel.addEventListener?.('animationend', () => panel.classList.remove('is-entering'), { once: true });
+      }
     });
   }
 
@@ -1436,9 +1681,11 @@
     const overall = (displayHealth || state.health)?.overall;
     if (!['healthy', 'degraded'].includes(overall)) return;
     const requestEpoch = businessEpoch;
+    const fullRequestRevision = businessRequestRevision;
     const requestRevision = ++followsRequestRevision;
     const requestIsCurrent = () => requestEpoch === businessEpoch
-      && requestRevision === followsRequestRevision;
+      && requestRevision === followsRequestRevision
+      && fullRequestRevision === businessRequestRevision;
     const hadCredibleSnapshot = ['fresh', 'stale'].includes(state.sectionStatus.follows);
     try {
       const result = await client()?.manage?.('getFollows');
@@ -1475,6 +1722,7 @@
     pageActive = !!active;
     if (!pageActive) {
       stopPagePolling();
+      followsRequestRevision += 1;
       return;
     }
     scheduleHealthPoll(HEALTH_RECOVERY_POLL_MS);
@@ -1541,6 +1789,7 @@
     byId('activityHealthActionBtn')?.addEventListener('click', (event) => handleHealthAction(event.currentTarget));
     byId('activityHealthRefreshBtn')?.addEventListener('click', (event) => handleRefreshButton(event.currentTarget));
     byId('activityDiagnosticsToggle')?.addEventListener('click', toggleDiagnostics);
+    byId('activityAdvancedComposerToggle')?.addEventListener('click', toggleAdvancedComposer);
     byId('activityCopyDiagnosticsBtn')?.addEventListener('click', (event) => copyDiagnostics(event.currentTarget));
     byId('activityActiveAppBtn')?.addEventListener('click', pickActivityAppForComposer);
     byId('activityAddAppBtn')?.addEventListener('click', addPublicAppFromComposer);
@@ -1595,7 +1844,15 @@
     }) || (() => {}));
     document.addEventListener?.('neko:authChange', handleAuthChange);
     unsubscriptions.push(() => document.removeEventListener?.('neko:authChange', handleAuthChange));
-    activateActivitySection('receive');
+    setActivityExpandable(byId('activityDiagnosticsPanel'), false, {
+      trigger: byId('activityDiagnosticsToggle'),
+      initial: true,
+    });
+    setActivityExpandable(byId('activityAdvancedComposer'), false, {
+      trigger: byId('activityAdvancedComposerToggle'),
+      initial: true,
+    });
+    activateActivitySection('receive', { initial: true });
     pageActive = window._nekoModules?.router?.getCurrentPage?.() === 'page-activity';
     const initialLoad = loadCurrentUser().then(() => (pageActive ? refreshData(true) : refreshAgent(true)));
     initialLoad.finally(() => {

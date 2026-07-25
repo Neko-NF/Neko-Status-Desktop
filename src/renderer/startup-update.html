@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neko Status - 启动更新</title>
+    <script>document.documentElement.dataset.uiProfile = localStorage.getItem('neko-ui-appearance-profile') === 'quiet' ? 'quiet' : 'classic';</script>
     <link rel="stylesheet" href="./css/tokens.css">
     <link rel="stylesheet" href="./css/loading-system.css">
     <link rel="stylesheet" href="./css/startup-update.css">
+    <link rel="stylesheet" href="./css/appearance.css">
 </head>
 <body>
     <main class="startup-shell">

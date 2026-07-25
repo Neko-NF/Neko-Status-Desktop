@@ -89,6 +89,7 @@ describe('registerConfigIpc', () => {
       enableExperimentalUiLabEntry: true,
       enableExperimentalCurveLoaders: true,
       loadingCurveStyle: 'neko-paw',
+      uiAppearanceProfile: 'quiet',
     });
 
     const result = await handlers['config:setMany'](null, { enableExperimentalFeatures: false });
@@ -97,5 +98,21 @@ describe('registerConfigIpc', () => {
     assert.equal(mocks.configStore.get('enableExperimentalUiLabEntry'), false);
     assert.equal(mocks.configStore.get('enableExperimentalCurveLoaders'), false);
     assert.equal(mocks.configStore.get('loadingCurveStyle'), 'neko-paw');
+    assert.equal(mocks.configStore.get('uiAppearanceProfile'), 'classic');
+  });
+
+  it('validates and gates the quiet appearance profile', async () => {
+    const gated = await handlers['config:set'](null, 'uiAppearanceProfile', 'quiet');
+    assert.equal(gated.ok, false);
+    assert.equal(gated.error.code, 'EXPERIMENTAL_FEATURE_REQUIRED');
+
+    mocks.configStore.set('enableExperimentalFeatures', true);
+    const saved = await handlers['config:set'](null, 'uiAppearanceProfile', 'quiet');
+    assert.equal(saved.ok, true);
+    assert.equal(mocks.configStore.get('uiAppearanceProfile'), 'quiet');
+
+    const invalid = await handlers['config:setMany'](null, { uiAppearanceProfile: 'glass-2' });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.error.code, 'INVALID_APPEARANCE_PROFILE');
   });
 });

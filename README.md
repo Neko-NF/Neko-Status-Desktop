@@ -94,6 +94,7 @@ npm run dev
 ```powershell
 npm run verify
 npm run test:smoke
+npm run test:visual
 npm run build:zip
 ```
 

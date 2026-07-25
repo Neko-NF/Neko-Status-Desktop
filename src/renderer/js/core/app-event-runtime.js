@@ -150,6 +150,10 @@
         rebuildTrendChartDeferred();
         applyDeviceStatusSparklineTheme();
       });
+      document.addEventListener('neko:appearanceChange', () => {
+        rebuildTrendChartDeferred();
+        applyDeviceStatusSparklineTheme();
+      });
     }
 
     function bind() {

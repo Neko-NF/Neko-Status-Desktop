@@ -101,7 +101,7 @@
         if (!navItem) return;
         navItem.classList.toggle('show', visible);
         navItem.setAttribute('aria-hidden', visible ? 'false' : 'true');
-        if (visible) navItem.removeAttribute('tabindex');
+        if (visible) navItem.setAttribute('tabindex', '0');
         else navItem.setAttribute('tabindex', '-1');
         navItem.classList.toggle('experimental-off', !visible);
       });

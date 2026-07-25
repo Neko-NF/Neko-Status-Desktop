@@ -510,6 +510,7 @@
       if (uiFont) cssVars['--ui-font'] = uiFont;
       return {
         mode: document.documentElement.getAttribute('data-theme') || '',
+        profile: document.documentElement.dataset.uiProfile || 'classic',
         cssVars,
       };
     }
@@ -1095,12 +1096,13 @@
       bindToggle('stgDeveloperUiInspectSwitch', () => setUiInspect(!state.uiInspect));
       api.onPanelCommand(handlePanelCommand);
       const themeObserver = new MutationObserver(schedulePanelThemeSync);
-      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style', 'class'] });
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-ui-profile', 'style', 'class'] });
       themeObserver.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] });
       document.addEventListener('neko:themeChange', () => {
         state.uiuxTuning = applyUiuxTuning(state.uiuxTuning);
         schedulePanelThemeSync();
       });
+      document.addEventListener('neko:appearanceChange', schedulePanelThemeSync);
       window.addEventListener('resize', requestScan);
       document.addEventListener('scroll', requestScan, true);
       document.addEventListener('keydown', (event) => {

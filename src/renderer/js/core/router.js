@@ -40,6 +40,8 @@
   let _navIndicator = null;
   let _currentPage = 'mainDashboardArea';
   let _navClickBound = false;
+  let _hasNavigated = false;
+  const _scrollPositions = new Map();
 
   function getNavItems() {
     return Array.from(_navMenu?.querySelectorAll?.('.nav-item') || []);
@@ -71,9 +73,35 @@
     navItems.forEach(nav => {
       const isActive = nav.getAttribute('data-target') === targetId;
       nav.classList.toggle('active', isActive);
+      if (isActive) nav.setAttribute?.('aria-current', 'page');
+      else nav.removeAttribute?.('aria-current');
       if (isActive) activeItem = nav;
     });
     if (activeItem) syncNavIndicator(activeItem);
+  }
+
+  function getScrollContainer() {
+    return document.querySelector?.('.content') || null;
+  }
+
+  function saveScrollPosition(pageId) {
+    const scrollContainer = getScrollContainer();
+    if (!pageId || !scrollContainer) return;
+    _scrollPositions.set(pageId, Math.max(0, Number(scrollContainer.scrollTop) || 0));
+  }
+
+  function restoreScrollPosition(pageId) {
+    const scrollContainer = getScrollContainer();
+    if (!scrollContainer) return;
+    scrollContainer.scrollTop = _scrollPositions.get(pageId) || 0;
+  }
+
+  function restartPageEnterAnimation(target) {
+    if (!target) return;
+    target.classList?.remove?.('route-page-enter');
+    // Force style resolution so navigating to the same page can restart the short transition.
+    void target.offsetWidth;
+    target.classList?.add?.('route-page-enter');
   }
 
   /**
@@ -92,6 +120,7 @@
       return;
     }
 
+    if (_hasNavigated) saveScrollPosition(_currentPage);
     _currentPage = targetId;
     setActiveNav(targetId);
 
@@ -111,7 +140,10 @@
     const target = document.getElementById(targetId);
     if (target) {
       target.style.display = def.flex ? 'flex' : 'block';
+      restoreScrollPosition(targetId);
+      restartPageEnterAnimation(target);
     }
+    _hasNavigated = true;
 
     // 更新标题
     const headerTitle = document.querySelector('.page-title');
@@ -127,7 +159,10 @@
       editBtn.classList.toggle('hidden-action', targetId !== 'mainDashboardArea');
     }
 
-    bus?.emit('router:page-changed', { page: targetId });
+    bus?.emit('router:page-changed', {
+      page: targetId,
+      scrollTop: _scrollPositions.get(targetId) || 0,
+    });
   }
 
   /** 获取当前页面 ID */
@@ -171,6 +206,13 @@
           return;
         }
         navigateTo(targetId);
+      });
+      _navMenu.addEventListener('keydown', function handleNavKeydown(event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const item = event.target?.closest?.('.nav-item');
+        if (!item || !_navMenu.contains(item)) return;
+        event.preventDefault();
+        item.click?.();
       });
     }
   }

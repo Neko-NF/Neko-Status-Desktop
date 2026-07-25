@@ -21,6 +21,22 @@
     if (window.showNekoIsland) window.showNekoIsland(message, type, 2600);
   }
 
+  function renderTestResult(element, state, message) {
+    if (!element) return;
+    const icons = {
+      pending: 'ph-circle-notch',
+      success: 'ph-check-circle',
+      error: 'ph-x-circle',
+    };
+    const icon = document.createElement('i');
+    icon.className = `ph ${icons[state] || icons.pending}`;
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = message;
+    element.replaceChildren(icon, label);
+    element.className = `test-result-label ${state}`;
+  }
+
   function streamKeyFrom(info) {
     return info?.streamKey || info?.stream_key || info?.key || '';
   }
@@ -145,6 +161,22 @@
         $('srsHost')?.focus?.();
       });
 
+      const helpContent = $('streamHelpContent');
+      const setHelpExpanded = (expanded, trigger, initial = false) => {
+        const setter = window._nekoUIHelpers?.setExpandableSectionState;
+        if (typeof setter === 'function') {
+          setter(helpContent, expanded, { trigger, initial, display: 'block', duration: 240 });
+          return;
+        }
+        if (helpContent) helpContent.style.display = expanded ? '' : 'none';
+        trigger?.setAttribute?.('aria-expanded', expanded ? 'true' : 'false');
+      };
+      const helpToggle = replaceHandler('streamHelpToggle', (event) => {
+        const trigger = event.currentTarget;
+        setHelpExpanded(trigger?.getAttribute?.('aria-expanded') !== 'true', trigger);
+      });
+      setHelpExpanded(false, helpToggle, true);
+
       const client = streamClient();
       if (!client?.isReady?.()) return;
 
@@ -190,28 +222,16 @@
 
       replaceHandler('testSrsConnectionBtn', async () => {
         const resultEl = $('srsTestResult');
-        if (resultEl) {
-          resultEl.textContent = '测试中...';
-          resultEl.className = 'test-result-label pending';
-        }
+        renderTestResult(resultEl, 'pending', '测试中...');
         try {
           const res = await client.testSrsConnection(collectSrsSettings());
           if (res?.ok) {
-            if (resultEl) {
-              resultEl.textContent = `✓ 连通成功 ${res.srsVersion ? `SRS ${res.srsVersion}` : ''}`;
-              resultEl.className = 'test-result-label success';
-            }
+            renderTestResult(resultEl, 'success', `连通成功 ${res.srsVersion ? `SRS ${res.srsVersion}` : ''}`);
           } else {
-            if (resultEl) {
-              resultEl.textContent = `✕ ${res?.reason || res?.error || '连接失败'}`;
-              resultEl.className = 'test-result-label error';
-            }
+            renderTestResult(resultEl, 'error', res?.reason || res?.error || '连接失败');
           }
         } catch (e) {
-          if (resultEl) {
-            resultEl.textContent = `✕ ${e.message}`;
-            resultEl.className = 'test-result-label error';
-          }
+          renderTestResult(resultEl, 'error', e.message);
         }
       });
 
@@ -227,15 +247,6 @@
         } catch (e) {
           notify(`导出失败: ${e.message}`, 'error');
         }
-      });
-
-      replaceHandler('streamHelpToggle', () => {
-        const content = $('streamHelpContent');
-        const caret = $('streamHelpCaret');
-        const expanded = content && content.style.display !== 'none';
-        if (content) content.style.display = expanded ? 'none' : '';
-        if (caret) caret.classList.toggle('ph-caret-up', !expanded);
-        if (caret) caret.classList.toggle('ph-caret-down', expanded);
       });
 
       if (!streamPollTimer) {

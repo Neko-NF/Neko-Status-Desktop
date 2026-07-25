@@ -59,6 +59,7 @@
   const uiLabPage = () => window._nekoModules?.pages?.UiLabPage || null;
   const loadingSystem = () => window._nekoModules?.components?.LoadingSystem || null;
   const loadingCurves = () => window._nekoModules?.components?.LoadingCurves || null;
+  const appearanceProfile = window._nekoModules?.core?.AppearanceProfile || null;
   const experimentalFeatures = window._nekoModules?.components?.ExperimentalFeatures?.create?.({
     setExpandableSectionState,
   });
@@ -73,6 +74,8 @@
       window.showNekoIsland(text, type, durationMs);
     }
   }
+
+  appearanceProfile?.init?.({ config: configClient(), showNotice: showNekoIsland });
 
   experimentalFeatures?.mountSettingsZone?.();
   normalizeServiceHealthCheckCopy();
@@ -187,7 +190,7 @@
 
   if (consoleNavEntry) {
     consoleNavEntry.setAttribute('aria-hidden', consoleNavEntry.classList.contains('show') ? 'false' : 'true');
-    if (!consoleNavEntry.classList.contains('show')) consoleNavEntry.setAttribute('tabindex', '-1');
+    consoleNavEntry.setAttribute('tabindex', consoleNavEntry.classList.contains('show') ? '0' : '-1');
     consoleNavEntry.style.removeProperty('display');
     consoleNavEntry.style.removeProperty('color');
   }
@@ -370,6 +373,7 @@
   }
   function applyExperimentalFeatureState(cfg = {}) {
     const result = experimentalFeatures?.applyState?.(cfg);
+    appearanceProfile?.applyConfig?.(cfg);
     loadingSystem()?.applyPreferences?.(cfg);
     uiLabPage()?.applyConfig?.(cfg);
     return result;

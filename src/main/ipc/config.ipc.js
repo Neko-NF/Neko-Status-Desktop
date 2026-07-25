@@ -3,6 +3,7 @@ const {
   validateConfigKeyPayload,
   validateConfigValuesPayload,
 } = require('../../shared/schemas');
+const { normalizeUiAppearanceProfile } = require('../config-store.helpers');
 
 const ACTIVITY_BINDING_KEYS = new Set(['serverMode', 'serverUrlProd', 'serverUrlLocal']);
 const ACTIVITY_RUNTIME_KEYS = new Set(['enableNotification', 'doNotDisturb']);
@@ -17,6 +18,16 @@ function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
     const validation = validateConfigKeyPayload(key);
     if (!validation.ok) return createIpcError('INVALID_CONFIG_KEY', validation.reason);
     try {
+      if (key === 'uiAppearanceProfile') {
+        if (!['classic', 'quiet'].includes(value)) {
+          return createIpcError('INVALID_APPEARANCE_PROFILE', 'uiAppearanceProfile must be classic or quiet');
+        }
+        if (value === 'quiet' && configStore.get('enableExperimentalFeatures') !== true) {
+          return createIpcError('EXPERIMENTAL_FEATURE_REQUIRED', 'quiet appearance requires experimental features');
+        }
+        configStore.set(key, normalizeUiAppearanceProfile(value));
+        return createIpcSuccess(true);
+      }
       if (key === 'enableExperimentalFeatures' && value === false) {
         if (activityAgent && configStore.get('enableActivityFeature') === true) {
           await activityAgent.revoke('disable');
@@ -27,6 +38,7 @@ function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
           enableExperimentalStreamEntry: false,
           enableExperimentalUiLabEntry: false,
           enableExperimentalCurveLoaders: false,
+          uiAppearanceProfile: 'classic',
           enableActivityFeature: false,
           enableActivityPublishing: false,
           enableActivityBackground: false,
@@ -62,6 +74,18 @@ function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
     const validation = validateConfigValuesPayload(values);
     if (!validation.ok) return createIpcError('INVALID_CONFIG_VALUES', validation.reason);
     try {
+      if (Object.prototype.hasOwnProperty.call(values, 'uiAppearanceProfile')) {
+        if (!['classic', 'quiet'].includes(values.uiAppearanceProfile)) {
+          return createIpcError('INVALID_APPEARANCE_PROFILE', 'uiAppearanceProfile must be classic or quiet');
+        }
+        const experimentsEnabled = Object.prototype.hasOwnProperty.call(values, 'enableExperimentalFeatures')
+          ? values.enableExperimentalFeatures === true
+          : configStore.get('enableExperimentalFeatures') === true;
+        if (values.uiAppearanceProfile === 'quiet' && !experimentsEnabled) {
+          return createIpcError('EXPERIMENTAL_FEATURE_REQUIRED', 'quiet appearance requires experimental features');
+        }
+        values = { ...values, uiAppearanceProfile: normalizeUiAppearanceProfile(values.uiAppearanceProfile) };
+      }
       const bindingChanged = activityAgent && Object.keys(values).some((key) => (
         ACTIVITY_BINDING_KEYS.has(key) && configStore.get(key) !== values[key]
       ));
@@ -82,6 +106,7 @@ function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
           enableExperimentalStreamEntry: false,
           enableExperimentalUiLabEntry: false,
           enableExperimentalCurveLoaders: false,
+          uiAppearanceProfile: 'classic',
           enableActivityFeature: false,
           enableActivityPublishing: false,
           enableActivityBackground: false,

@@ -2,5 +2,6 @@
 @import url('./loading-system.css');
 @import url('./components.css');
 @import url('./pages.css');
+@import url('./appearance.css');
 
 /* main.css is now just a router. Legacy provides the migration base; modules loaded after it own migrated UI. */

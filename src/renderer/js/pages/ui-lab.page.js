@@ -49,6 +49,9 @@
       loadingCurveStyle: 'auto',
     },
     _previewContext: 'startup',
+    _activeTab: 'appearance',
+    _pageActive: false,
+    _loadingFeedbackActive: false,
     _previewController: null,
     _diagnosticsTimer: 0,
 
@@ -59,6 +62,7 @@
       this.renderCurveGrid();
       this.bindEvents();
       this.createPreview();
+      this.setTab('appearance');
       this.syncUi();
       if (window._nekoModules?.router?.getCurrentPage?.() === 'page-ui-lab') this.activate();
     },
@@ -132,6 +136,30 @@
     },
 
     bindEvents() {
+      document.querySelectorAll?.('[data-ui-lab-tab]').forEach((button) => {
+        button.addEventListener?.('click', () => this.setTab(button.dataset.uiLabTab, { focus: true }));
+      });
+      const formulaToggle = byId('uiLabFormulaToggle');
+      const formulaContent = byId('uiLabFormulaContent');
+      const setFormulaExpanded = (expanded, initial = false) => {
+        const setter = window._nekoUIHelpers?.setExpandableSectionState;
+        if (typeof setter === 'function') {
+          setter(formulaContent, expanded, {
+            trigger: formulaToggle,
+            initial,
+            display: 'block',
+            duration: 240,
+          });
+          return;
+        }
+        if (formulaContent) formulaContent.style.display = expanded ? '' : 'none';
+        formulaToggle?.setAttribute?.('aria-expanded', expanded ? 'true' : 'false');
+      };
+      setFormulaExpanded(false, true);
+      formulaToggle?.addEventListener('click', () => {
+        setFormulaExpanded(formulaToggle.getAttribute('aria-expanded') !== 'true');
+      });
+
       byId('uiLabApplySwitch')?.addEventListener('click', (event) => {
         this.pulseControl(event.currentTarget);
         this.toggleApplication();
@@ -192,6 +220,7 @@
 
     applyConfig(cfg = {}) {
       this._config = { ...this._config, ...cfg };
+      window._nekoModules?.core?.AppearanceProfile?.applyConfig?.(this._config);
       this.loading()?.applyPreferences?.(this._config);
       this.syncUi();
     },
@@ -268,18 +297,56 @@
       window.setTimeout?.(() => element.classList.remove('is-feedback'), 180);
     },
 
-    activate() {
-      this._previewController?.show?.();
+    setTab(tab, { focus = false } = {}) {
+      const selected = tab === 'loading' ? 'loading' : 'appearance';
+      this._activeTab = selected;
+      document.querySelectorAll?.('[data-ui-lab-tab]').forEach((button) => {
+        const active = button.dataset.uiLabTab === selected;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+        button.setAttribute('tabindex', active ? '0' : '-1');
+        if (active && focus) button.focus?.();
+      });
+      const appearancePanel = byId('uiLabAppearancePanel');
+      const loadingPanel = byId('uiLabLoadingPanel');
+      [[appearancePanel, selected === 'appearance'], [loadingPanel, selected === 'loading']].forEach(([panel, active]) => {
+        if (!panel) return;
+        panel.hidden = !active;
+        panel.inert = !active;
+        panel.setAttribute?.('aria-hidden', active ? 'false' : 'true');
+        if (active) panel.removeAttribute?.('inert');
+        else panel.setAttribute?.('inert', '');
+      });
+      if (this._pageActive && selected === 'loading') this.startLoadingFeedback();
+      else this.stopLoadingFeedback();
+    },
+
+    startLoadingFeedback() {
+      if (!this._loadingFeedbackActive) {
+        this._previewController?.show?.();
+        this._loadingFeedbackActive = true;
+      }
       this.updateDiagnostics();
       if (!this._diagnosticsTimer) {
         this._diagnosticsTimer = window.setInterval(() => this.updateDiagnostics(), 750);
       }
     },
 
-    deactivate() {
-      this._previewController?.hide?.();
+    stopLoadingFeedback() {
+      if (this._loadingFeedbackActive) this._previewController?.hide?.();
+      this._loadingFeedbackActive = false;
       if (this._diagnosticsTimer) window.clearInterval(this._diagnosticsTimer);
       this._diagnosticsTimer = 0;
+    },
+
+    activate() {
+      this._pageActive = true;
+      this.setTab(this._activeTab);
+    },
+
+    deactivate() {
+      this._pageActive = false;
+      this.stopLoadingFeedback();
     },
 
     updateDiagnostics() {

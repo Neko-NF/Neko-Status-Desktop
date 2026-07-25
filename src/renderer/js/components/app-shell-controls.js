@@ -11,21 +11,6 @@
 
   const $ = (id) => document.getElementById(id);
 
-  function applyInitialTheme() {
-    const savedMode = localStorage.getItem('neko-theme-mode') || 'light';
-    if (savedMode === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-
-    const savedColor = localStorage.getItem('neko-theme-color');
-    if (savedColor) {
-      document.documentElement.style.setProperty('--theme-color-seed', savedColor);
-      document.documentElement.style.removeProperty('--theme-color');
-    }
-  }
-
   function getConfigClient() {
     return window._nekoModules?.services?.ConfigClient || null;
   }
@@ -109,17 +94,53 @@
     const colorPalette = $('colorPalette');
     if (!avatar || !dropdown) return;
 
+    const setDropdownOpen = (open, { focusAvatar = false } = {}) => {
+      const expanded = !!open;
+      dropdown.classList.toggle('show', expanded);
+      avatar.setAttribute('aria-expanded', String(expanded));
+      dropdown.setAttribute('aria-hidden', String(!expanded));
+      if (focusAvatar) avatar.focus?.();
+    };
+
     avatar.addEventListener('click', (event) => {
       event.stopPropagation();
-      dropdown.classList.toggle('show');
+      setDropdownOpen(!dropdown.classList.contains('show'));
+    });
+
+    avatar.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setDropdownOpen(!dropdown.classList.contains('show'));
+      } else if (event.key === 'Escape') {
+        setDropdownOpen(false, { focusAvatar: true });
+      }
+    });
+
+    dropdown.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setDropdownOpen(false, { focusAvatar: true });
+        return;
+      }
+      if ((event.key === 'Enter' || event.key === ' ') && event.target?.closest?.('[role="menuitem"]')) {
+        event.preventDefault();
+        event.target.closest('[role="menuitem"]').click?.();
+      }
+    });
+
+    dropdown.addEventListener('click', (event) => {
+      if (event.target?.closest?.('[role="menuitem"]')) setDropdownOpen(false);
     });
 
     document.addEventListener('click', (event) => {
       if (!dropdown.contains(event.target) && !avatar.contains(event.target)) {
-        dropdown.classList.remove('show');
+        setDropdownOpen(false);
       }
       if (colorPalette && themeColorBtn && !colorPalette.contains(event.target) && !themeColorBtn.contains(event.target)) {
+        colorPalette._setOpen?.(false);
         colorPalette.classList.remove('show');
+        themeColorBtn.setAttribute('aria-expanded', 'false');
+        colorPalette.setAttribute('aria-hidden', 'true');
       }
     });
   }
@@ -142,6 +163,8 @@
     const dropdown = $('userDropdown');
     const openProfile = () => {
       dropdown?.classList.remove('show');
+      dropdown?.setAttribute('aria-hidden', 'true');
+      $('userAvatar')?.setAttribute('aria-expanded', 'false');
       const profileModal = $('profileModal');
       profileModal?.classList.add('show');
       profileModal?.classList.add('active');
@@ -188,7 +211,7 @@
       if (isOn) {
         navConsole.classList.add('show');
         navConsole.setAttribute('aria-hidden', 'false');
-        navConsole.removeAttribute('tabindex');
+        navConsole.setAttribute('tabindex', '0');
         syncNavIndicatorAfterLayout();
         return;
       }
@@ -321,7 +344,6 @@
     initPages();
   }
 
-  applyInitialTheme();
   document.addEventListener('DOMContentLoaded', init);
 
   window._nekoModules.components.AppShellControls = { init };

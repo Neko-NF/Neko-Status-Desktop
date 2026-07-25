@@ -141,6 +141,8 @@ test('UI lab renders twelve static cards and keeps a single animated preview', a
   assert.match(elements.get('uiLabMotionSummary').textContent, /绕圈|摆动|速度|脉冲|搜寻|呼吸/);
 
   pageChanged({ page: 'page-ui-lab' });
+  assert.equal(previewCalls.includes('show'), false);
+  page.setTab('loading');
   assert.ok(previewCalls.includes('show'));
   assert.equal(elements.get('uiLabDiagActive').textContent, '1 / 4');
   assert.equal(elements.get('uiLabDiagPaused').textContent, '0 个');

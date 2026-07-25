@@ -23,6 +23,21 @@ jobs:
       - name: Verify
         run: npm run verify
 
+      - name: Electron smoke
+        run: npm run test:smoke
+
+      - name: Electron visual matrix
+        run: npm run test:visual
+
+      - name: Upload visual artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neko-status-visual-artifacts
+          if-no-files-found: ignore
+          path: |
+            tests/visual/artifacts/**
+
       - name: Build Windows packages
         run: npm run build
 

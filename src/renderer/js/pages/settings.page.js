@@ -187,14 +187,6 @@
         event.stopPropagation();
         this.handleExperimentalSwitchClick(switchEl, meta[0], meta[1]);
       }, true);
-      Object.entries(metaById).forEach(([id, meta]) => {
-        const switchEl = $(id);
-        switchEl?.addEventListener?.('click', (event) => {
-          event.preventDefault?.();
-          event.stopPropagation?.();
-          this.handleExperimentalSwitchClick(switchEl, meta[0], meta[1]);
-        });
-      });
     },
 
     bindBackendControls() {

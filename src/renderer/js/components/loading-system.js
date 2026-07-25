@@ -511,41 +511,60 @@
     if (busy) {
       let state = buttonStates.get(button);
       if (!state) {
+        const rect = button.getBoundingClientRect?.() || {};
+        const computedColor = root.getComputedStyle?.(button)?.color || 'currentColor';
+        const indicator = doc.createElement('span');
+        const label = doc.createElement('span');
+        const overlay = doc.createElement('span');
+        indicator.className = 'neko-busy-indicator';
+        indicator.setAttribute('aria-hidden', 'true');
+        label.className = 'neko-busy-label';
+        overlay.className = 'neko-button-busy-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.append?.(indicator, label);
         state = {
-          html: button.innerHTML,
           disabled: !!button.disabled,
           ariaBusy: button.getAttribute?.('aria-busy'),
+          ariaLabel: button.getAttribute?.('aria-label'),
           minWidth: button.style?.minWidth || '',
+          minHeight: button.style?.minHeight || '',
+          overlay,
+          label,
         };
         buttonStates.set(button, state);
         if (options.lockWidth !== false) {
-          const width = Number(button.getBoundingClientRect?.().width || 0);
+          const width = Number(rect.width || 0);
           if (width > 0 && button.style) button.style.minWidth = `${Math.ceil(width)}px`;
         }
+        if (options.lockHeight !== false) {
+          const height = Number(rect.height || 0);
+          if (height > 0 && button.style) button.style.minHeight = `${Math.ceil(height)}px`;
+        }
+        button.style?.setProperty?.('--neko-button-busy-color', computedColor);
+        button.appendChild?.(overlay);
       }
       button.disabled = true;
       button.classList?.add?.('loading', 'neko-button-busy');
       button.setAttribute?.('aria-busy', 'true');
-      const indicator = doc.createElement('span');
-      const label = doc.createElement('span');
-      indicator.className = 'neko-busy-indicator';
-      indicator.setAttribute('aria-hidden', 'true');
-      label.className = 'neko-busy-label';
-      label.textContent = labelText;
-      if (button.replaceChildren) button.replaceChildren(indicator, label);
-      else button.innerHTML = `<span class="neko-busy-indicator" aria-hidden="true"></span><span class="neko-busy-label"></span>`;
-      if (!button.replaceChildren) button.querySelector?.('.neko-busy-label') && (button.querySelector('.neko-busy-label').textContent = labelText);
+      button.setAttribute?.('aria-label', labelText);
+      state.label.textContent = labelText;
       return true;
     }
 
     const state = buttonStates.get(button);
     if (!state) return false;
-    button.innerHTML = state.html;
+    state.overlay?.remove?.();
     button.disabled = state.disabled;
     button.classList?.remove?.('loading', 'neko-button-busy');
     if (state.ariaBusy == null) button.removeAttribute?.('aria-busy');
     else button.setAttribute?.('aria-busy', state.ariaBusy);
-    if (button.style) button.style.minWidth = state.minWidth;
+    if (state.ariaLabel == null) button.removeAttribute?.('aria-label');
+    else button.setAttribute?.('aria-label', state.ariaLabel);
+    if (button.style) {
+      button.style.minWidth = state.minWidth;
+      button.style.minHeight = state.minHeight;
+      button.style.removeProperty?.('--neko-button-busy-color');
+    }
     buttonStates.delete(button);
     return true;
   }

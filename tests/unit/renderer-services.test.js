@@ -472,6 +472,7 @@ test('announcement page uses themed delete dialog instead of native confirm', as
       throw new Error('native confirm should not be called');
     },
     setTimeout(fn) { fn(); return 1; },
+    clearTimeout() {},
     console,
   };
   context.window.window = context.window;
@@ -945,6 +946,8 @@ test('config page loads modal values and saves through ConfigClient', async () =
   ]);
   const logs = [];
   const calls = [];
+  const busyStates = [];
+  let takeoverPrompts = 0;
   const context = {
     window: {
       _nekoModules: {
@@ -968,7 +971,18 @@ test('config page loads modal values and saves through ConfigClient', async () =
               calls.push(['testConnection', serverUrl]);
               return { ok: true, latencyMs: 12 };
             },
+            preValidateKey: async (deviceKey, serverUrl) => {
+              calls.push(['preValidateKey', deviceKey, serverUrl]);
+              return { warning: 'KEY_BOUND_TO_OTHER_DEVICE' };
+            },
           },
+        },
+      },
+      _nekoUIHelpers: {
+        setButtonBusy(button, busy) {
+          busyStates.push(!!busy);
+          button._busy = !!busy;
+          if (!busy) button.disabled = false;
         },
       },
       _authPendingAfterConfig: false,
@@ -991,6 +1005,10 @@ test('config page loads modal values and saves through ConfigClient', async () =
   page.init({
     addLogLine: (level, msg) => logs.push([level, msg]),
     showNotice: (msg, type) => logs.push(['NOTICE', type, msg]),
+    showTakeoverConfirmDialog: async () => {
+      takeoverPrompts += 1;
+      return false;
+    },
   });
 
   await page.loadConfigToModal();
@@ -1013,6 +1031,18 @@ test('config page loads modal values and saves through ConfigClient', async () =
     }],
   ]);
   assert.equal(logs.some(([level]) => level === 'SUCCESS'), true);
+
+  const saveButton = elements.get('saveConfigBtn');
+  saveButton.innerHTML = 'Save';
+  elements.get('configApiKeyInput').value = 'new-key';
+  await page.saveConfig();
+
+  assert.equal(takeoverPrompts, 1);
+  assert.equal(saveButton._busy, false);
+  assert.equal(saveButton.disabled, false);
+  assert.equal(saveButton.innerHTML, 'Save');
+  assert.equal(calls.filter(([name]) => name === 'setMany').length, 1);
+  assert.deepEqual(busyStates.slice(-2), [true, false]);
 });
 
 test('service page owns health check rendering and init state', async () => {
@@ -2445,6 +2475,7 @@ test('dashboard page owns trend chart metrics runtime', () => {
       };
     },
     setTimeout(fn) { fn(); return 1; },
+    clearTimeout() {},
     Chart: ChartStub,
     console,
   };
@@ -2458,13 +2489,37 @@ test('dashboard page owns trend chart metrics runtime', () => {
   const page = context.window._nekoModules.pages.DashboardPage;
   page.initRuntime();
   page.setMetricsHistory([{ timestamp: Date.now() - 1000, cpuPct: 12, memPct: 34 }]);
-  page.recordMetrics({ timestamp: Date.now(), cpuPct: 20, memPct: 40 });
+  const firstProjection = page._trendProjection;
+  const firstLabels = [...ChartStub.instances[0].data.labels];
+  const activeBucket = firstProjection.bucketStarts[firstProjection.bucketStarts.length - 1];
+  page.recordMetrics({ timestamp: activeBucket + 1000, cpuPct: 20, memPct: 40 });
 
   assert.equal(ChartStub.instances.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(page._themeColorRgb)), { r: 86, g: 122, b: 166 });
   assert.equal(page._metricsBuffer.length, 2);
   assert.equal(ChartStub.instances[0].data.datasets[0].data.some((value) => value != null), true);
   assert.equal(ChartStub.instances[0].data.datasets[1].data.some((value) => value != null), true);
+  assert.equal(JSON.stringify(ChartStub.instances[0].data.labels), JSON.stringify(firstLabels));
+  assert.equal(updates.at(-1), 'none');
+
+  const chartBeforeTheme = ChartStub.instances[0];
+  context.document.documentElement.dataset = { uiProfile: 'quiet' };
+  page.rebuildTrendChartDeferred();
+  assert.equal(ChartStub.instances.length, 1);
+  assert.equal(chartBeforeTheme.destroyed, false);
+  assert.equal(chartBeforeTheme.options.scales.x.grid.display, false);
+  assert.equal(chartBeforeTheme.options.scales.y.grid.display, false);
+  assert.equal(chartBeforeTheme.data.datasets[0].borderWidth, 2);
+  assert.equal(JSON.stringify(chartBeforeTheme.data.datasets[1].borderDash), '[6,4]');
+
+  const previousFirstBucket = page._trendProjection.bucketStarts[0];
+  page.recordMetrics({
+    timestamp: activeBucket + page._trendProjection.bucketMs + 1000,
+    cpuPct: 30,
+    memPct: 50,
+  });
+  assert.equal(page._trendProjection.bucketStarts[0], previousFirstBucket + page._trendProjection.bucketMs);
+  assert.equal(updates.at(-1), 'rollover');
 
   elements.get('trendRangeGroup').dispatch('click', { target: oneHourBtn });
   assert.equal(page._trendRange, '1h');
@@ -2917,6 +2972,7 @@ test('settings page owns core persistence controls', async () => {
   const expanded = [];
   const dispatched = [];
   const storage = new Map();
+  const documentListeners = {};
   const context = {
     window: {
       _nekoModules: { pages: {}, services: {} },
@@ -2944,6 +3000,19 @@ test('settings page owns core persistence controls', async () => {
       querySelectorAll(selector) {
         if (selector === '#stgReportModeGroup .toggle-btn') return [reportAuto, reportCustom];
         return [];
+      },
+      addEventListener(type, handler) {
+        documentListeners[type] = documentListeners[type] || [];
+        documentListeners[type].push(handler);
+      },
+      async dispatch(type, event = {}) {
+        for (const handler of documentListeners[type] || []) {
+          await handler({
+            preventDefault() {},
+            stopPropagation() {},
+            ...event,
+          });
+        }
       },
       dispatchEvent(event) {
         dispatched.push(event);
@@ -3014,7 +3083,9 @@ test('settings page owns core persistence controls', async () => {
 
   await elements.get('stgTraySwitch').dispatch('click');
   await elements.get('stgAutoDownloadSwitch').dispatch('click');
-  await elements.get('stgExperimentalSwitch').dispatch('click');
+  await context.document.dispatch('click', {
+    target: { closest: () => elements.get('stgExperimentalSwitch') },
+  });
   assert.deepEqual(calls.filter((call) => call[0] === 'set').slice(0, 3), [
     ['set', 'closeAction', 'minimize'],
     ['set', 'autoDownload', true],
@@ -3156,7 +3227,7 @@ test('theme module owns color normalization, persistence, and swatch binding', (
     })],
     ['topColorPickerHandle', makeElement('topColorPickerHandle')],
     ['topColorHue', makeElement('topColorHue', { value: '199' })],
-    ['profileModalAvatar', makeElement('profileModalAvatar')],
+    ['profileModalAvatar', makeElement('profileModalAvatar', { src: '../../assets/app_icon.png' })],
   ]);
 
   const context = {
@@ -3219,7 +3290,7 @@ test('theme module owns color normalization, persistence, and swatch binding', (
   assert.equal(storage.get('neko-theme-color'), '#ff0000');
   assert.equal(context.document.documentElement.style.values['--theme-color-seed'], '#ff0000');
   assert.equal(context.document.documentElement.style.values['--theme-color'], undefined);
-  assert.equal(elements.get('profileModalAvatar').src.includes('background=ff0000'), true);
+  assert.equal(elements.get('profileModalAvatar').src, '../../assets/app_icon.png');
   assert.equal(context.document.lastEvent.type, 'neko:themeChange');
 
   elements.get('stgCustomColorHex').value = '#abcdef';
@@ -3242,6 +3313,56 @@ test('theme module owns color normalization, persistence, and swatch binding', (
   elements.get('topCustomColorApply').dispatch('click', { stopPropagation() {} });
   assert.equal(storage.get('neko-theme-color'), '#123456');
   assert.equal(storage.get('neko-custom-theme-color'), '#123456');
+});
+
+test('renderer avatar fallbacks remain local and do not depend on avatar CDNs', () => {
+  const sources = [
+    'src/renderer/index.html',
+    'src/renderer/js/components/avatar-fallback.js',
+    'src/renderer/js/core/theme.js',
+    'src/renderer/js/pages/auth.page.js',
+  ].map((relPath) => fs.readFileSync(path.join(ROOT, relPath), 'utf8')).join('\n');
+
+  assert.doesNotMatch(sources, /ui-avatars\.com|dicebear\.com/i);
+  assert.match(sources, /assets\/app_icon\.png/);
+  assert.match(sources, /avatarFallback\.apply/);
+});
+
+test('avatar fallback replaces failed remote images with a local initial', () => {
+  let errorHandler = null;
+  class HTMLImageElement {
+    constructor() {
+      this.dataset = {};
+      this.alt = 'Alice';
+      this.src = '';
+    }
+  }
+  const context = {
+    window: { _nekoModules: {} },
+    document: {
+      addEventListener(type, handler) {
+        if (type === 'error') errorHandler = handler;
+      },
+    },
+    localStorage: { getItem() { return '#0ea5e9'; } },
+    HTMLImageElement,
+    console,
+  };
+  context.window.window = context.window;
+  context.window.document = context.document;
+  context.window.localStorage = context.localStorage;
+
+  loadBrowserScript(context, 'src/renderer/js/components/avatar-fallback.js');
+  const image = new HTMLImageElement();
+  context.window._nekoModules.components.avatarFallback.apply(image, {
+    src: 'https://example.invalid/avatar.png',
+    name: 'Alice',
+  });
+  assert.equal(image.src, 'https://example.invalid/avatar.png');
+
+  errorHandler({ target: image });
+  assert.match(image.src, /^data:image\/svg\+xml/);
+  assert.equal(image.dataset.avatarFallbackApplied, 'true');
 });
 
 test('developer console registry parses aliases and delegates commands', async () => {

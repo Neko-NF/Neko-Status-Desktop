@@ -562,6 +562,45 @@ test('stable health polling does not repeat the five-section bootstrap', async (
   harness.page.destroy();
 });
 
+test('a full Activity refresh invalidates an older follows-only poll', async () => {
+  let resolvePoll;
+  const oldPoll = new Promise((resolve) => { resolvePoll = resolve; });
+  const follow = (username, id) => ({
+    id,
+    allowed: true,
+    user: { id: id + 100, username },
+    rules: [],
+    activeSessions: [],
+  });
+  const harness = createActivityPageHarness(healthySnapshot(), {
+    bootstrap: {
+      ...emptyBootstrap(),
+      follows: { follows: [follow('Initial', 1)] },
+    },
+    activityClient: {
+      manage: async (action) => (action === 'getFollows' ? oldPoll : {}),
+    },
+  });
+  harness.page.init();
+  await harness.flush();
+
+  const pendingPoll = harness.runTimer(30000);
+  await harness.flush();
+  harness.setBootstrap({
+    ...emptyBootstrap(),
+    follows: { follows: [follow('Fresh', 2)] },
+  });
+  await harness.page.refresh(true, { forceBusiness: true });
+  assert.match(harness.elements.get('activityFollowsList').innerHTML, /Fresh/);
+
+  resolvePoll({ follows: [follow('Stale', 3)] });
+  await pendingPoll;
+  await harness.flush();
+  assert.match(harness.elements.get('activityFollowsList').innerHTML, /Fresh/);
+  assert.doesNotMatch(harness.elements.get('activityFollowsList').innerHTML, /Stale/);
+  harness.page.destroy();
+});
+
 test('a failed follows poll keeps a previously loaded empty list as stale data', async () => {
   const harness = createActivityPageHarness(healthySnapshot(), {
     activityClient: {

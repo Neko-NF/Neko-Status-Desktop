@@ -450,7 +450,7 @@
             gap: 12px;
             opacity: 0;
             pointer-events: none;
-            transition: all 0.2s ease;
+            transition: opacity 180ms ease, transform 180ms ease;
         }
 
         /* 自定义缩放拉手 */
@@ -475,7 +475,7 @@
             width: 10px; height: 10px;
             border-right: 2px solid var(--theme-color);
             border-bottom: 2px solid var(--theme-color);
-            transition: all 0.2s ease;
+            transition: border-color 180ms ease, opacity 180ms ease, transform 180ms ease;
         }
 
         .resize-handle-right {
@@ -496,7 +496,7 @@
             border-radius: 999px;
             background: var(--theme-color);
             transform: translateY(-50%);
-            transition: all 0.2s ease;
+            transition: background-color 180ms ease, opacity 180ms ease, transform 180ms ease;
         }
 
         .resize-handle-bottom {
@@ -517,7 +517,7 @@
             border-radius: 999px;
             background: var(--theme-color);
             transform: translateX(-50%);
-            transition: all 0.2s ease;
+            transition: background-color 180ms ease, opacity 180ms ease, transform 180ms ease;
         }
 
         /* 正在调整大小中的卡片视觉反馈 */
@@ -560,15 +560,17 @@
         }
 
         .widget-controls .ctrl-btn {
+            appearance: none;
             background: rgba(15, 23, 42, 0.9);
             border: 1px solid color-mix(in srgb, var(--theme-color) 50%, transparent);
             color: white;
             width: 40px; height: 40px;
+            padding: 0;
             border-radius: 50%;
             display: flex; justify-content: center; align-items: center;
             cursor: pointer;
             font-size: 18px;
-            transition: 0.2s;
+            transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
             box-shadow: var(--shadow-sm);
         }
         .widget-controls .ctrl-btn:hover {
@@ -742,22 +744,95 @@
         }
 
         .ui-expandable {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) !important;
+            grid-template-rows: 1fr;
+            min-width: 0;
+            padding: 0 !important;
             overflow: clip;
-            transform-origin: top;
             transition:
-                max-height var(--motion-mid) var(--motion-smooth),
-                opacity var(--motion-fast) ease,
-                transform var(--motion-mid) var(--motion-smooth),
-                margin var(--motion-mid) var(--motion-smooth);
-            will-change: max-height, opacity, transform;
+                grid-template-rows var(--ui-expandable-duration, 240ms) var(--motion-smooth),
+                opacity var(--motion-fast) ease;
         }
 
         .ui-expandable.is-collapsed {
+            grid-template-rows: 0fr;
             pointer-events: none;
         }
 
-        .ui-expandable.is-animating {
+        .ui-expandable-track {
+            min-width: 0;
+            min-height: 0;
             overflow: clip;
+            opacity: 1;
+            transform: translateY(0);
+            transition:
+                opacity var(--motion-fast) ease,
+                transform var(--ui-expandable-duration, 240ms) var(--motion-smooth);
+        }
+
+        .ui-expandable-content {
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        .ui-expandable.is-collapsed > .ui-expandable-track {
+            opacity: 0;
+            transform: translateY(-4px);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ui-expandable,
+            .ui-expandable-track {
+                transition: none !important;
+            }
+
+            .ui-expandable-track {
+                transform: none !important;
+            }
+        }
+
+        .ui-view-stack {
+            position: relative;
+            display: grid;
+            min-width: 0;
+            overflow: clip;
+            transition: height var(--ui-view-duration, 220ms) var(--motion-smooth);
+        }
+
+        .ui-view-panel {
+            grid-area: 1 / 1;
+            min-width: 0;
+            opacity: 1;
+            transform: translateY(0);
+            transition:
+                opacity var(--motion-fast) ease,
+                transform var(--ui-view-duration, 220ms) var(--motion-smooth);
+        }
+
+        .ui-view-panel.is-entering {
+            opacity: 0;
+            transform: translateY(6px);
+        }
+
+        .ui-view-panel.is-leaving {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            opacity: 0;
+            transform: translateY(-4px);
+            pointer-events: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .ui-view-stack,
+            .ui-view-panel {
+                transition: none !important;
+            }
+
+            .ui-view-panel {
+                transform: none !important;
+            }
         }
 
         .action-btn {
@@ -860,7 +935,7 @@
             justify-content: center;
             opacity: 0;
             pointer-events: none;
-            transition: all 0.3s ease;
+            transition: opacity 220ms ease, background-color 220ms ease, backdrop-filter 220ms ease;
         }
         .modal-overlay.show {
             opacity: 1;
@@ -869,7 +944,7 @@
         .modal-container {
             width: 480px;
             transform: translateY(20px);
-            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease;
             background: var(--dropdown-bg);
             backdrop-filter: var(--glass-blur);
             box-shadow: var(--shadow-lg);
@@ -954,7 +1029,7 @@
             z-index: 10; /* 拔高层级，防止被右侧相邻元素裁切掉阴影 */ /* 降低阴影重度 */
             padding: 24px;
             transform: translateY(20px);
-            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease;
             position: relative;
         }
         .modal-overlay.show .profile-modal-container {
@@ -1138,7 +1213,7 @@
             gap: 16px;
             z-index: 1999;
             box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-color) 40%, transparent), var(--shadow-lg);
-            transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transition: top 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease, transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
             pointer-events: none;
             opacity: 0;
             align-items: center;
@@ -1181,7 +1256,7 @@
             font-size: 12px;
             border-radius: 12px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
             font-weight: 500;
         }
         .console-filter:hover { background: color-mix(in srgb, var(--text-main) 10%, transparent); color: var(--text-main); }
@@ -1259,7 +1334,7 @@
 
         /* 上方工具栏操作按钮折叠动画 */
         #editLayoutBtn {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1), min-width 240ms cubic-bezier(0.4, 0, 0.2, 1), margin 240ms cubic-bezier(0.4, 0, 0.2, 1), padding 240ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease, transform 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 180ms ease;
             overflow: hidden;
             white-space: nowrap;
         }
@@ -1479,24 +1554,17 @@
         .neko-table th { color: var(--text-secondary); padding: 12px 16px; border-bottom: var(--glass-border); font-weight: 500; white-space: nowrap; }
         .neko-table th.col-action,
         .neko-table td.col-action { text-align: right; white-space: nowrap; }
-        .neko-table td { color: var(--text-main); padding: 12px 16px; border-bottom: 1px solid color-mix(in srgb, var(--text-main) 5%, transparent); transition: all 0.3s ease; }
+        .neko-table td { color: var(--text-main); padding: 12px 16px; border-bottom: 1px solid color-mix(in srgb, var(--text-main) 5%, transparent); transition: background-color var(--motion-fast) ease; }
         .neko-table tr:last-child td { border-bottom: none; }
-        .neko-table tr:hover td { background: color-mix(in srgb, var(--text-main) 3%, transparent); transform: scale(1.002); }
+        .neko-table tr:hover td { background: color-mix(in srgb, var(--text-main) 3%, transparent); }
 
         @keyframes tableRowFadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .neko-table tbody tr {
-            animation: tableRowFadeIn 0.4s ease forwards;
-            opacity: 0;
+        .neko-table tbody tr.is-entering {
+            animation: tableRowFadeIn 220ms var(--motion-smooth) both;
         }
-        .neko-table tbody tr:nth-child(1) { animation-delay: 0.1s; }
-        .neko-table tbody tr:nth-child(2) { animation-delay: 0.15s; }
-        .neko-table tbody tr:nth-child(3) { animation-delay: 0.2s; }
-        .neko-table tbody tr:nth-child(4) { animation-delay: 0.25s; }
-        .neko-table tbody tr:nth-child(5) { animation-delay: 0.3s; }
-        .neko-table tbody tr:nth-child(n+6) { animation-delay: 0.35s; }
 
         .status-badge {
             display: inline-flex;
@@ -1582,7 +1650,7 @@
 
 /* ------------------ 响应式与防挤压 (Responsive & Anti-Squish) ------------------ */
 .dashboard-section {
-    min-width: 900px;
+    min-width: 0;
 }
 .glass-card {
     min-width: 0;
@@ -1770,7 +1838,7 @@
     color: var(--text-secondary);
     font-size: 11px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
 }
 .privacy-preset-btn:hover {
     background: color-mix(in srgb, var(--theme-color) 12%, transparent);
@@ -1796,7 +1864,6 @@
     padding: 8px 12px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--text-main) 3%, transparent);
-    animation: tableRowFadeIn 0.3s ease forwards;
 }
 .privacy-rule-icon {
     width: 28px; height: 28px; border-radius: 6px;
@@ -1911,7 +1978,7 @@
     flex: 1; padding: 8px 14px; border-radius: 8px; border: none;
     background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 500;
     cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-    transition: all 0.2s;
+    transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
 .modal-mode-btn.active {
     background: color-mix(in srgb, var(--text-main) 10%, transparent);
@@ -2425,7 +2492,7 @@ html[data-theme="light"] .neko-select-menu {
     box-shadow: var(--shadow-xl);
     position: relative;
     transform: translateY(20px);
-    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease;
 }
 
 .modal-overlay.show .avatar-editor-modal-container {
@@ -3241,7 +3308,7 @@ html[data-theme="light"] .neko-select-menu {
             background-color: transparent;
             cursor: pointer;
             position: relative;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: border-color 180ms cubic-bezier(0.4, 0, 0.2, 1), background-color 180ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 180ms ease, transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
             margin: 0;
             display: flex;
             align-items: center;

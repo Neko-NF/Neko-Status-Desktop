@@ -98,4 +98,18 @@ test('disabled global experiments close UI lab and curve loader flags but retain
   assert.equal(merged.enableExperimentalUiLabEntry, false);
   assert.equal(merged.enableExperimentalCurveLoaders, false);
   assert.equal(merged.loadingCurveStyle, 'rose-seven');
+  assert.equal(merged.uiAppearanceProfile, 'classic');
+});
+
+test('appearance profile defaults and repairs respect the experimental gate', () => {
+  assert.equal(mergeDefaults({}).uiAppearanceProfile, 'classic');
+  assert.equal(mergeDefaults({ uiAppearanceProfile: 'future-ui' }).uiAppearanceProfile, 'classic');
+  assert.equal(mergeDefaults({
+    enableExperimentalFeatures: true,
+    uiAppearanceProfile: 'quiet',
+  }).uiAppearanceProfile, 'quiet');
+  assert.equal(mergeDefaults({
+    enableExperimentalFeatures: false,
+    uiAppearanceProfile: 'quiet',
+  }).uiAppearanceProfile, 'classic');
 });

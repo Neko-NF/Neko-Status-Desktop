@@ -48,6 +48,11 @@
     return `${Math.floor(diff / day)}天前`;
   }
 
+  function relativeTimeRevision(iso) {
+    const time = new Date(iso || '').getTime();
+    return Number.isFinite(time) ? Math.floor((Date.now() - time) / 60000) : 0;
+  }
+
   function toDateInputValue(iso) {
     if (!iso) return '';
     const d = new Date(iso);
@@ -146,7 +151,7 @@
     if (item.expired) return { label: '已过期', className: '', icon: 'ph-clock-countdown' };
     const map = {
       published: { label: '已发布', className: 'is-active', icon: 'ph-check-circle' },
-      draft: { label: '草稿', className: '', icon: 'ph-pencil-simple' },
+      draft: { label: '草稿', className: '', icon: 'tb-file-pencil' },
       archived: { label: '已归档', className: '', icon: 'ph-archive' },
     };
     return map[item.status] || map.published;
@@ -305,7 +310,12 @@
     _announcementPollTimer: null,
     _pendingDeleteId: null,
     _managementLoading: false,
+    _loadRevision: 0,
+    _hasLoadedManagement: false,
     _detailLoader: null,
+    _renderedDetailId: '',
+    _renderedDetailSignature: '',
+    _formReturnFocus: null,
     _state: {
       search: '',
       type: 'all',
@@ -330,9 +340,18 @@
       $('announcementDeleteOverlay')?.addEventListener('click', (event) => {
         if (event.target === $('announcementDeleteOverlay')) this.closeDeleteDialog();
       });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && $('announcementFormWrapper')?.classList.contains('show')) {
+          this.hideForm();
+        }
+      });
       $('announcementRefreshBtn')?.addEventListener('click', () => this.loadAnnouncements({ manual: true }));
       $('announcementMockToggleBtn')?.addEventListener('click', () => this.toggleMockMode());
+      $('announcementList')?.addEventListener('click', (event) => this.handleListClick(event));
       $('announcementSearchInput')?.addEventListener('input', (event) => {
+        // Invalidate a request for the previous query immediately, not after debounce.
+        // Its response may otherwise replace the item pool while the new filter is visible.
+        this._loadRevision += 1;
         this._state.search = event.target.value || '';
         this.renderWorkspace();
         clearTimeout(this._searchTimer);
@@ -366,6 +385,13 @@
       popupToggle?.addEventListener('click', () => this.toggleCheckbox('announcementShowPopup', popupToggle));
       pushToggle?.addEventListener('click', () => this.toggleCheckbox('announcementPushNotification', pushToggle));
       pinnedToggle?.addEventListener('click', () => this.toggleCheckbox('announcementPinned', pinnedToggle));
+      [popupToggle, pushToggle, pinnedToggle].filter(Boolean).forEach((toggle) => {
+        toggle.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          toggle.click();
+        });
+      });
 
       $('announcementTypeSegment')?.querySelectorAll('.segment-btn').forEach((btn) => {
         btn.addEventListener('click', () => this.setAnnouncementType(btn.dataset.value || 'info'));
@@ -414,7 +440,7 @@
         defaultIcon: 'ph-check-circle',
         icons: {
           published: 'ph-check-circle',
-          draft: 'ph-pencil-simple',
+          draft: 'tb-file-pencil',
           archived: 'ph-archive',
         },
       });
@@ -493,6 +519,7 @@
       if (!input) return;
       input.checked = !input.checked;
       toggleEl.classList.toggle('on', input.checked);
+      toggleEl.setAttribute?.('aria-checked', input.checked ? 'true' : 'false');
     },
 
     setAnnouncementType(type) {
@@ -522,7 +549,7 @@
       if (btn) {
         btn.innerHTML = isMock
           ? '<i class="ph ph-cloud-arrow-up"></i> 返回服务端'
-          : '<i class="ph ph-sparkles"></i> 本地模拟';
+          : '<i class="ph ph-sparkle"></i> 本地模拟';
       }
     },
 
@@ -564,6 +591,8 @@
         `).join('');
       }
       if (detailEl) {
+        this._renderedDetailId = '';
+        this._renderedDetailSignature = '';
         this._detailLoader?.destroy?.();
         detailEl.textContent = '';
         this._detailLoader = window._nekoModules?.components?.LoadingSystem?.create?.(detailEl, {
@@ -579,6 +608,10 @@
     setLoadingState(loading) {
       const board = document.querySelector('.announcement-board');
       board?.classList.toggle('is-loading', !!loading);
+      board?.setAttribute?.('aria-busy', String(!!loading));
+      $('announcementList')?.setAttribute?.('aria-busy', String(!!loading));
+      const status = $('announcementLoadStatus');
+      if (status) status.textContent = loading ? '正在刷新公告' : '';
       const btn = $('announcementRefreshBtn');
       if (!btn) return;
       window._nekoUIHelpers?.setButtonBusy?.(btn, !!loading, { label: '刷新中' });
@@ -596,6 +629,8 @@
     renderAccessDenied() {
       this._items = [];
       this._selectedId = '';
+      this._renderedDetailId = '';
+      this._renderedDetailSignature = 'access-denied';
       const listEl = $('announcementList');
       const detailEl = $('announcementDetail');
       if (listEl) {
@@ -615,18 +650,22 @@
 
     async loadAnnouncements(options = {}) {
       const manual = options.manual === true;
-      if (this._managementLoading && !manual) return;
+      const revision = ++this._loadRevision;
+      const requestState = { ...this._state };
+      const coldStart = !this._hasLoadedManagement;
       this._managementLoading = true;
       this.syncMockBadge();
       this.renderFilterState();
+      if (coldStart) this.renderLoading();
+      this.setLoadingState(true);
       try {
-        if (!(await this.canManageAnnouncements())) {
+        const canManage = await this.canManageAnnouncements();
+        if (revision !== this._loadRevision) return;
+        if (!canManage) {
+          this._hasLoadedManagement = true;
           this.renderAccessDenied();
           return;
         }
-
-        if (this._items.length === 0) this.renderLoading();
-        this.setLoadingState(true);
 
         let list;
         if (this.isMockMode()) {
@@ -634,27 +673,31 @@
         } else {
           const client = getAnnouncementClient();
           if (!client?.isReady?.()) throw new Error('公告服务未就绪');
-          const forceAll = this._state.status !== 'published'
-            || this._state.category !== 'all'
-            || this._state.search.trim() !== '';
+          const forceAll = requestState.status !== 'published'
+            || requestState.type !== 'all'
+            || requestState.category !== 'all'
+            || requestState.search.trim() !== '';
           const raw = await client.fetch({
             all: forceAll,
-            status: this._state.status === 'all' ? undefined : this._state.status,
-            category: this._state.category === 'all' ? undefined : this._state.category,
-            search: this._state.search || undefined,
+            status: requestState.status === 'all' ? undefined : requestState.status,
+            category: requestState.category === 'all' ? undefined : requestState.category,
+            search: requestState.search || undefined,
             limit: 100,
           });
           list = extractAnnouncementList(raw);
         }
 
+        if (revision !== this._loadRevision) return;
         this._items = list.map(normalizeAnnouncement).sort((a, b) => {
           if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
           if (b.priority !== a.priority) return b.priority - a.priority;
           return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
         });
+        this._hasLoadedManagement = true;
 
-        if (!this._items.some((item) => item._id === this._selectedId)) {
-          this._selectedId = this.getVisibleItems()[0]?._id || this._items[0]?._id || '';
+        const visibleItems = this.getVisibleItems();
+        if (!visibleItems.some((item) => item._id === this._selectedId)) {
+          this._selectedId = visibleItems[0]?._id || '';
         }
         this.renderWorkspace();
         if (manual) {
@@ -668,13 +711,19 @@
           }
         }
       } catch (err) {
-        this._items = [];
-        this._selectedId = '';
-        this.renderError(err);
+        if (revision !== this._loadRevision) return;
+        if (!this._hasLoadedManagement) {
+          this._items = [];
+          this._selectedId = '';
+          this._hasLoadedManagement = true;
+          this.renderError(err);
+        }
         this._deps?.showNotice?.(`公告刷新失败：${err?.message || '未知错误'}`, 'error', 4200);
       } finally {
-        this._managementLoading = false;
-        this.setLoadingState(false);
+        if (revision === this._loadRevision) {
+          this._managementLoading = false;
+          this.setLoadingState(false);
+        }
       }
     },
 
@@ -729,91 +778,227 @@
       });
     },
 
+    getCardSignature(item) {
+      return JSON.stringify([
+        item._id, item.title, item.content, item.type, item.status, item.pinned,
+        item.priority, item.author, item.targetAudienceLabel, item.createdAt,
+        item.showPopup, item.pushNotification, item.expired, relativeTimeRevision(item.createdAt),
+      ]);
+    },
+
+    renderCardMarkup(item) {
+      const severity = typeMeta(item.type);
+      const status = statusMeta(item);
+      const title = escapeHtml(item.title || '未命名公告');
+      const priorityClass = item.type === 'urgent' || item.priority >= 9
+        ? 'is-critical'
+        : item.priority >= 5 ? 'is-high' : 'is-low';
+      const popupClass = item.showPopup ? 'is-on' : 'is-off';
+      const pushClass = item.pushNotification ? 'is-on' : 'is-off';
+      const pinLabel = item.pinned ? '取消置顶' : '置顶';
+      const archiveLabel = item.status === 'archived' ? '恢复发布' : '快捷归档';
+
+      return `
+        <button type="button" class="announcement-card-select" data-announcement-select aria-label="查看公告：${title}"></button>
+        <div class="announcement-card-top">
+          <div class="announcement-card-source">
+            <span class="announcement-card-icon ${severity.className}"><i class="ph ${severity.icon}"></i></span>
+            <strong>${escapeHtml(severity.label)}</strong>
+            <span>·</span>
+            <em title="${escapeHtml(item.targetAudienceLabel)}">${escapeHtml(item.targetAudienceLabel)}</em>
+          </div>
+          <span class="announcement-card-time">${formatRelativeTime(item.createdAt)} ${item.pinned ? '<i class="ph ph-push-pin-simple"></i>' : ''}</span>
+        </div>
+        <h3 title="${title}">${title}</h3>
+        <p title="${escapeHtml(item.content || '暂无正文')}">${escapeHtml(item.content || '暂无正文')}</p>
+        <div class="announcement-card-foot">
+          <div class="announcement-card-tags">
+            <span class="announcement-priority-pill ${priorityClass}">${priorityLabel(item.priority)}</span>
+            ${item.status !== 'published' ? `<span class="announcement-state ${status.className}"><i class="${status.icon.startsWith('tb-') ? 'tb' : 'ph'} ${status.icon}"></i>${status.label}</span>` : ''}
+            <span class="announcement-delivery-pill ${popupClass}" title="${item.showPopup ? '客户端弹窗显示已开启' : '客户端弹窗显示已关闭'}">
+              <i class="ph ${item.showPopup ? 'ph-chat-circle-text' : 'ph-chat-circle-dots'}"></i>${item.showPopup ? '弹窗' : '无弹窗'}
+            </span>
+            <span class="announcement-delivery-pill ${pushClass}" title="${item.pushNotification ? '系统通知已开启' : '系统通知已关闭'}">
+              <i class="ph ${item.pushNotification ? 'ph-bell-ringing' : 'ph-bell-slash'}"></i>${item.pushNotification ? '通知' : '静默'}
+            </span>
+          </div>
+          <div class="announcement-card-actions">
+            <button type="button" class="announcement-icon-action" data-announcement-action="pin" title="${pinLabel}" aria-label="${pinLabel}"><i class="ph ${item.pinned ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'}"></i></button>
+            <button type="button" class="announcement-icon-action" data-announcement-action="edit" title="修改正文" aria-label="修改正文"><i class="ph ph-sliders-horizontal"></i></button>
+            <button type="button" class="announcement-icon-action" data-announcement-action="archive" title="${archiveLabel}" aria-label="${archiveLabel}"><i class="ph ${item.status === 'archived' ? 'ph-arrow-counter-clockwise' : 'ph-archive'}"></i></button>
+            <button type="button" class="announcement-icon-action danger" data-announcement-action="delete" title="删除公告" aria-label="删除公告"><i class="ph ph-trash"></i></button>
+          </div>
+        </div>
+      `;
+    },
+
+    handleListClick(event) {
+      const actionButton = event.target?.closest?.('[data-announcement-action]');
+      if (actionButton) {
+        const card = actionButton.closest?.('[data-announcement-id]');
+        const item = this._items.find((candidate) => candidate._id === card?.dataset?.announcementId);
+        if (!item) return;
+        const action = actionButton.dataset.announcementAction;
+        if (action === 'pin') this.handleTogglePin(item);
+        if (action === 'edit') this.showEditForm(item);
+        if (action === 'archive') this.handleArchive(item);
+        if (action === 'delete') this.handleDelete(item.id);
+        return;
+      }
+
+      const selectButton = event.target?.closest?.('[data-announcement-select]');
+      const card = selectButton?.closest?.('[data-announcement-id]');
+      if (!card) return;
+      this._selectedId = card.dataset.announcementId || '';
+      this.renderWorkspace();
+    },
+
+    shouldAnimateList() {
+      return !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    },
+
     renderList(list) {
       const listEl = $('announcementList');
       if (!listEl) return;
 
+      const scrollTop = listEl.scrollTop || 0;
+      const activeElement = document.activeElement;
+      const activeCard = activeElement?.closest?.('[data-announcement-id]');
+      const focusState = activeCard && listEl.contains?.(activeElement) ? {
+        id: activeCard.dataset.announcementId,
+        action: activeElement.dataset?.announcementAction || (activeElement.hasAttribute?.('data-announcement-select') ? 'select' : ''),
+      } : null;
+      const currentChildren = Array.from(listEl.children || []);
+      const currentCards = currentChildren.filter((node) => node.dataset?.announcementId);
+      const cardsById = new Map(currentCards.map((node) => [node.dataset.announcementId, node]));
+      const firstRects = new Map(currentCards.map((node) => [node, node.getBoundingClientRect?.()]));
+      const animate = this.shouldAnimateList();
+
       if (!list.length) {
-        listEl.innerHTML = `
-          <div class="announcement-empty">
-            <i class="ph ph-megaphone-slash announcement-empty-icon"></i>
+        let empty = currentChildren.find((node) => node.dataset?.announcementEmpty === 'true');
+        if (!empty) {
+          empty = document.createElement('div');
+          empty.dataset.announcementEmpty = 'true';
+          empty.className = 'announcement-empty';
+          empty.innerHTML = `
+            <i class="ph ph-speaker-slash announcement-empty-icon"></i>
             <strong>暂无匹配公告</strong>
             <span>调整筛选条件或创建一条新公告。</span>
-          </div>
-        `;
+          `;
+        }
+        currentChildren.forEach((node) => {
+          if (node !== empty) node.remove?.();
+        });
+        listEl.appendChild(empty);
+        listEl.scrollTop = scrollTop;
         return;
       }
 
-      listEl.innerHTML = list.map((item) => {
-        const severity = typeMeta(item.type);
-        const status = statusMeta(item);
-        const selected = item._id === this._selectedId ? ' selected' : '';
-        const priorityClass = item.type === 'urgent' || item.priority >= 9
-          ? 'is-critical'
-          : item.priority >= 5 ? 'is-high' : 'is-low';
-        const popupClass = item.showPopup ? 'is-on' : 'is-off';
-        const pushClass = item.pushNotification ? 'is-on' : 'is-off';
-        return `
-          <article class="announcement-card${selected}" data-id="${escapeHtml(item._id)}">
-            <div class="announcement-card-top">
-              <div class="announcement-card-source">
-                <span class="announcement-card-icon ${severity.className}"><i class="ph ${severity.icon}"></i></span>
-                <strong>${escapeHtml(severity.label)}</strong>
-                <span>·</span>
-                <em title="${escapeHtml(item.targetAudienceLabel)}">${escapeHtml(item.targetAudienceLabel)}</em>
-              </div>
-              <span class="announcement-card-time">${formatRelativeTime(item.createdAt)} ${item.pinned ? '<i class="ph ph-push-pin-simple"></i>' : ''}</span>
-            </div>
-            <h3 title="${escapeHtml(item.title || '未命名公告')}">${escapeHtml(item.title || '未命名公告')}</h3>
-            <p title="${escapeHtml(item.content || '暂无正文')}">${escapeHtml(item.content || '暂无正文')}</p>
-            <div class="announcement-card-foot">
-              <div class="announcement-card-tags">
-                <span class="announcement-priority-pill ${priorityClass}">${priorityLabel(item.priority)}</span>
-                ${item.status !== 'published' ? `<span class="announcement-state ${status.className}"><i class="ph ${status.icon}"></i>${status.label}</span>` : ''}
-                <span class="announcement-delivery-pill ${popupClass}" title="${item.showPopup ? '客户端弹窗显示已开启' : '客户端弹窗显示已关闭'}">
-                  <i class="ph ${item.showPopup ? 'ph-chat-circle-text' : 'ph-chat-circle-dots'}"></i>${item.showPopup ? '弹窗' : '无弹窗'}
-                </span>
-                <span class="announcement-delivery-pill ${pushClass}" title="${item.pushNotification ? '系统通知已开启' : '系统通知已关闭'}">
-                  <i class="ph ${item.pushNotification ? 'ph-bell-ringing' : 'ph-bell-slash'}"></i>${item.pushNotification ? '通知' : '静默'}
-                </span>
-              </div>
-              <div class="announcement-card-actions">
-                <button class="announcement-icon-action" data-action="pin" title="${item.pinned ? '取消置顶' : '置顶'}" aria-label="${item.pinned ? '取消置顶' : '置顶'}"><i class="ph ${item.pinned ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'}"></i></button>
-                <button class="announcement-icon-action" data-action="edit" title="修改正文"><i class="ph ph-sliders-horizontal"></i></button>
-                <button class="announcement-icon-action" data-action="archive" title="${item.status === 'archived' ? '恢复发布' : '快捷归档'}"><i class="ph ${item.status === 'archived' ? 'ph-arrow-counter-clockwise' : 'ph-archive'}"></i></button>
-                <button class="announcement-icon-action danger" data-action="delete" title="删除"><i class="ph ph-trash"></i></button>
-              </div>
-            </div>
-          </article>
-        `;
-      }).join('');
+      const desiredCards = list.map((item) => {
+        let card = cardsById.get(item._id);
+        const isNew = !card;
+        if (!card) {
+          card = document.createElement('article');
+          card.className = 'announcement-card';
+          card.dataset.announcementId = item._id;
+          if (animate) card.classList.add('is-entering');
+        } else if (card.dataset.announcementLeaving === 'true') {
+          delete card.dataset.announcementLeaving;
+          card.removeAttribute?.('aria-hidden');
+          if ('inert' in card) card.inert = false;
+          card.removeAttribute?.('inert');
+          card.getAnimations?.().forEach((animation) => animation.cancel());
+        }
 
-      listEl.querySelectorAll('.announcement-card').forEach((card) => {
-        card.addEventListener('click', () => {
-          this._selectedId = card.dataset.id || '';
-          this.renderWorkspace();
-        });
+        const signature = this.getCardSignature(item);
+        if (isNew || card.dataset.renderSignature !== signature) {
+          card.innerHTML = this.renderCardMarkup(item);
+          card.dataset.renderSignature = signature;
+        }
 
-        card.querySelectorAll('[data-action]').forEach((btn) => {
-          btn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            const item = this._items.find((candidate) => candidate._id === card.dataset.id);
-            if (!item) return;
-            const action = btn.dataset.action;
-            if (action === 'pin') this.handleTogglePin(item);
-            if (action === 'edit') this.showEditForm(item);
-            if (action === 'archive') this.handleArchive(item);
-            if (action === 'delete') this.handleDelete(item.id);
-          });
-        });
+        const selected = item._id === this._selectedId;
+        card.classList.toggle('selected', selected);
+        card.querySelector?.('[data-announcement-select]')?.setAttribute('aria-pressed', String(selected));
+        return card;
       });
+
+      const desiredSet = new Set(desiredCards);
+      currentChildren.forEach((node) => {
+        if (!node.dataset?.announcementId) node.remove?.();
+      });
+      desiredCards.forEach((card) => listEl.appendChild(card));
+
+      currentCards.filter((card) => !desiredSet.has(card)).forEach((card) => {
+        listEl.appendChild(card);
+        if (!animate || typeof card.animate !== 'function') {
+          card.remove();
+          return;
+        }
+        card.dataset.announcementLeaving = 'true';
+        card.setAttribute('aria-hidden', 'true');
+        if ('inert' in card) card.inert = true;
+        card.setAttribute?.('inert', '');
+        const removal = card.animate([
+          { opacity: 1, transform: 'translateY(0)' },
+          { opacity: 0, transform: 'translateY(-4px)' },
+        ], { duration: 180, easing: 'ease-out', fill: 'forwards' });
+        removal.finished.then(() => {
+          if (card.dataset.announcementLeaving === 'true') card.remove();
+        }).catch(() => {});
+      });
+
+      if (animate) {
+        const runFlip = () => desiredCards.forEach((card) => {
+          const first = firstRects.get(card);
+          const last = card.getBoundingClientRect?.();
+          if (!first || !last || typeof card.animate !== 'function') return;
+          const deltaX = first.left - last.left;
+          const deltaY = first.top - last.top;
+          if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+          card.animate([
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: 'translate(0, 0)' },
+          ], { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+        });
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(runFlip);
+        else runFlip();
+      }
+
+      listEl.scrollTop = scrollTop;
+      if (focusState) {
+        const focusCard = desiredCards.find((card) => card.dataset.announcementId === focusState.id);
+        const focusTarget = focusState.action === 'select'
+          ? focusCard?.querySelector?.('[data-announcement-select]')
+          : focusCard?.querySelector?.(`[data-announcement-action="${focusState.action}"]`);
+        focusTarget?.focus?.({ preventScroll: true });
+        listEl.scrollTop = scrollTop;
+      }
+    },
+
+    getDetailSignature(item) {
+      if (!item) return 'empty';
+      return JSON.stringify([
+        item._id, item.title, item.content, item.author, item.targetAudienceLabel,
+        item.createdAt, item.views, item.acknowledges, item.totalAudience,
+        item.status, item.pinned, item.priority, item.showPopup, item.pushNotification,
+        relativeTimeRevision(item.createdAt),
+      ]);
     },
 
     renderDetail(item) {
       const detailEl = $('announcementDetail');
       if (!detailEl) return;
+      const signature = this.getDetailSignature(item);
+      if (signature === this._renderedDetailSignature) return;
+      const nextId = item?._id || '';
+      const sameItem = nextId !== '' && nextId === this._renderedDetailId;
+      const scrollTop = sameItem ? (detailEl.scrollTop || 0) : 0;
+      const hadPreviewFocus = sameItem && detailEl.contains?.(document.activeElement)
+        && document.activeElement?.id === 'announcementContentPreviewBtn';
       this._detailLoader?.destroy?.();
       this._detailLoader = null;
+      this._renderedDetailId = nextId;
+      this._renderedDetailSignature = signature;
 
       if (!item) {
         detailEl.innerHTML = `
@@ -822,6 +1007,7 @@
             <span>选择左侧公告查看详情。</span>
           </div>
         `;
+        detailEl.scrollTop = 0;
         return;
       }
 
@@ -862,19 +1048,23 @@
       `;
 
       $('announcementContentPreviewBtn')?.addEventListener('click', () => this.showPreviewPopup(item));
+      detailEl.scrollTop = scrollTop;
+      if (hadPreviewFocus) $('announcementContentPreviewBtn')?.focus?.({ preventScroll: true });
     },
 
     renderError(err) {
       const listEl = $('announcementList');
       const detailEl = $('announcementDetail');
       const message = escapeHtml(err?.message || '获取公告失败');
+      this._renderedDetailId = '';
+      this._renderedDetailSignature = `error:${message}`;
       if (listEl) {
         listEl.innerHTML = `
           <div class="announcement-error">
             <i class="ph ph-warning-circle"></i>
             <strong>公告服务连接失败</strong>
             <small>${message}</small>
-            <button class="announcement-empty-btn" id="announcementErrorMockBtn"><i class="ph ph-sparkles"></i> 使用本地模拟数据</button>
+            <button class="announcement-empty-btn" id="announcementErrorMockBtn"><i class="ph ph-sparkle"></i> 使用本地模拟数据</button>
           </div>
         `;
         $('announcementErrorMockBtn')?.addEventListener('click', () => {
@@ -890,6 +1080,7 @@
     },
 
     showCreateForm() {
+      this._formReturnFocus = document.activeElement;
       this._editingId = null;
       this.setFormValues({
         title: '',
@@ -908,23 +1099,32 @@
       if (title) title.textContent = '创建公告';
       const icon = $('announcementFormTitleIcon');
       if (icon) icon.className = 'ph ph-megaphone-simple';
-      $('announcementFormWrapper')?.classList.add('show');
+      const formWrapper = $('announcementFormWrapper');
+      formWrapper?.classList.add('show');
+      formWrapper?.setAttribute('aria-hidden', 'false');
+      formWrapper?.removeAttribute('inert');
+      if (formWrapper) formWrapper.inert = false;
       const createBtn = $('announcementCreateBtn');
-      if (createBtn) createBtn.style.display = 'none';
+      createBtn?.classList.add('is-concealed');
       setTimeout(() => $('announcementTitle')?.focus?.(), 0);
     },
 
     showEditForm(item) {
       if (!item) return;
+      this._formReturnFocus = document.activeElement;
       this._editingId = item.id;
       this.setFormValues(item);
       const title = $('announcementFormTitle');
       if (title) title.textContent = '编辑公告';
       const icon = $('announcementFormTitleIcon');
       if (icon) icon.className = 'ph ph-pencil-simple';
-      $('announcementFormWrapper')?.classList.add('show');
+      const formWrapper = $('announcementFormWrapper');
+      formWrapper?.classList.add('show');
+      formWrapper?.setAttribute('aria-hidden', 'false');
+      formWrapper?.removeAttribute('inert');
+      if (formWrapper) formWrapper.inert = false;
       const createBtn = $('announcementCreateBtn');
-      if (createBtn) createBtn.style.display = 'none';
+      createBtn?.classList.add('is-concealed');
       setTimeout(() => $('announcementTitle')?.focus?.(), 0);
     },
 
@@ -953,7 +1153,9 @@
       checkboxState.forEach(([inputId, toggleId, enabled]) => {
         const input = $(inputId);
         if (input) input.checked = enabled;
-        $(toggleId)?.classList.toggle('on', enabled);
+        const toggle = $(toggleId);
+        toggle?.classList.toggle('on', enabled);
+        toggle?.setAttribute?.('aria-checked', enabled ? 'true' : 'false');
       });
       this.renderExpiryPicker();
     },
@@ -977,11 +1179,18 @@
     },
 
     hideForm() {
-      $('announcementFormWrapper')?.classList.remove('show');
+      const formWrapper = $('announcementFormWrapper');
+      formWrapper?.classList.remove('show');
+      formWrapper?.setAttribute('aria-hidden', 'true');
+      formWrapper?.setAttribute('inert', '');
+      if (formWrapper) formWrapper.inert = true;
       const createBtn = $('announcementCreateBtn');
-      if (createBtn) createBtn.style.display = '';
+      createBtn?.classList.remove('is-concealed');
       this._editingId = null;
       this.showFormError('');
+      const returnFocus = this._formReturnFocus;
+      this._formReturnFocus = null;
+      setTimeout(() => returnFocus?.isConnected !== false && returnFocus?.focus?.({ preventScroll: true }), 0);
     },
 
     async handleSave() {
@@ -1101,7 +1310,11 @@
           if (!client?.isReady?.()) throw new Error('公告服务未就绪');
           await client.delete(id);
         }
-        this._selectedId = '';
+        if (this._selectedId === normalizeId(id)) {
+          const visible = this.getVisibleItems();
+          const deletedIndex = visible.findIndex((item) => item._id === normalizeId(id));
+          this._selectedId = visible[deletedIndex + 1]?._id || visible[deletedIndex - 1]?._id || '';
+        }
         this.closeDeleteDialog();
         await this.loadAnnouncements();
         this._deps?.showNotice?.('公告已删除', 'success');

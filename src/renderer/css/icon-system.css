@@ -1,0 +1,111 @@
+/* Curated Tabler Icons v3.45.0. Phosphor remains the primary UI icon set. */
+.tb {
+    display: inline-block;
+    inline-size: 1em;
+    block-size: 1em;
+    flex: 0 0 auto;
+    background-color: currentColor;
+    -webkit-mask-image: var(--tb-icon);
+    mask-image: var(--tb-icon);
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+.tb-atom { --tb-icon: url('../assets/icons/tabler/atom.svg'); }
+.tb-brand-nodejs { --tb-icon: url('../assets/icons/tabler/brand-nodejs.svg'); }
+.tb-brand-html5 { --tb-icon: url('../assets/icons/tabler/brand-html5.svg'); }
+.tb-brand-css3 { --tb-icon: url('../assets/icons/tabler/brand-css3.svg'); }
+.tb-brand-javascript { --tb-icon: url('../assets/icons/tabler/brand-javascript.svg'); }
+.tb-icons { --tb-icon: url('../assets/icons/tabler/icons.svg'); }
+.tb-file-export { --tb-icon: url('../assets/icons/tabler/file-export.svg'); }
+.tb-file-pencil { --tb-icon: url('../assets/icons/tabler/file-pencil.svg'); }
+
+button.icon-btn,
+button.icon-btn-sm,
+button.neko-stepper-btn,
+button.close-modal,
+button.close-profile-btn,
+button.announcement-icon-action,
+button.announcement-input-icon-btn,
+button.privacy-window-picker-refresh,
+button.svc-action-btn,
+button.settings-link-btn,
+button.update-source-nav-btn,
+button.update-source-dot,
+button.activity-remote-control[data-action="delete-rule"],
+button.color-swatch,
+button.settings-swatch,
+button.settings-swatch-custom {
+    min-inline-size: 36px !important;
+    min-block-size: 36px !important;
+}
+
+.color-palette-swatches {
+    grid-template-columns: repeat(5, 36px);
+    gap: 8px;
+}
+
+button.settings-swatch,
+button.settings-swatch-custom {
+    appearance: none;
+    padding: 0;
+}
+
+.settings-color-swatches {
+    gap: 4px;
+    max-width: 356px;
+}
+
+.test-result-label {
+    gap: 6px;
+}
+
+.nav-item:focus-visible,
+.user-avatar:focus-visible,
+button.color-swatch:focus-visible,
+button.settings-swatch:focus-visible,
+button.settings-swatch-custom:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--theme-color) 78%, white);
+    outline-offset: 3px;
+}
+
+/* Keep the shell usable when browser zoom makes the CSS viewport narrow. */
+@media (max-width: 900px) {
+    :root { --sidebar-width: 76px; }
+
+    .sidebar { padding-inline: 10px; }
+
+    .brand {
+        justify-content: center;
+        gap: 0;
+        padding-inline: 0;
+        font-size: 0;
+    }
+
+    .brand i { font-size: 26px; }
+
+    .nav-item {
+        justify-content: center;
+        gap: 0;
+        padding-inline: 8px;
+        font-size: 0;
+    }
+
+    .nav-item > i { font-size: 21px; }
+    .device-badge { display: none; }
+    .topbar { padding-inline: 18px; }
+    .topbar-left { min-width: 0; }
+    .page-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar-actions { gap: 6px; }
+}
+
+@media (max-width: 560px) {
+    .topbar { padding-inline: 12px; }
+    .topbar-left { flex: 1 1 auto; }
+    .page-title { max-width: 150px; font-size: 12px; }
+    .topbar-actions .icon-btn#editLayoutBtn { display: none; }
+}

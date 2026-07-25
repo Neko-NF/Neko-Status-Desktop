@@ -13,6 +13,7 @@
  *   5. 版本号一致性（package.json 与代码中引用）
  *   6. 更新弹窗 DOM 完整性检查
  *   7. 文本文件编码污染扫描
+ *   8. UI 图标、动效、选择器与纯图标按钮质量门禁
  */
 
 const fs = require('fs');
@@ -120,6 +121,7 @@ function checkFileStructure() {
     'src/renderer/js/components/loading-system.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
+    'src/renderer/js/core/appearance.js',
     'src/renderer/js/core/router.js',
     'src/renderer/js/core/app-init-runtime.js',
     'src/renderer/js/core/app-event-runtime.js',
@@ -156,6 +158,12 @@ function checkFileStructure() {
     'src/renderer/css/pages.css',
     'src/renderer/css/legacy.css',
     'src/renderer/css/loading-system.css',
+    'src/renderer/css/icon-system.css',
+    'src/renderer/css/announcement.css',
+    'src/renderer/css/appearance.css',
+    'tests/visual/visual-preload.js',
+    'tests/visual/electron-visual-app.js',
+    'tests/visual/run-visual-tests.js',
     'scripts/build-presence-agent.js',
     'scripts/validate-presence-agent.js',
     'native/presence-agent/Cargo.toml',
@@ -197,6 +205,7 @@ function checkRendererSplitSyntax() {
     'src/renderer/js/components/loading-system.js',
     'src/renderer/js/core/event-bus.js',
     'src/renderer/js/core/theme.js',
+    'src/renderer/js/core/appearance.js',
     'src/renderer/js/core/router.js',
     'src/renderer/js/core/app-init-runtime.js',
     'src/renderer/js/core/app-event-runtime.js',
@@ -309,6 +318,7 @@ function checkCssConsistency() {
     'src/renderer/css/pages.css',
     'src/renderer/css/legacy.css',
     'src/renderer/css/loading-system.css',
+    'src/renderer/css/appearance.css',
     'src/renderer/css/main.css'
   ];
   let css = '';
@@ -415,6 +425,7 @@ function checkConfigDefaults() {
     'activityDeviceId', 'activityDeviceName',
     'enableExperimentalUiLabEntry', 'enableExperimentalCurveLoaders',
     'loadingCurveStyle',
+    'uiAppearanceProfile',
   ];
 
   for (const key of requiredKeys) {
@@ -603,12 +614,18 @@ function checkActivityPresenceFeature() {
   else fail('关注动态缺少主动公开应用或弱网保存反馈链路');
 
   const activityCssStart = css.indexOf('/* 用户关注与前台应用在线提醒 */');
-  const activityCssEnd = css.indexOf('/* 禁用表格行缩放', activityCssStart);
+  const activityCssEndCandidates = [
+    css.indexOf('/* 禁用表格行缩放', activityCssStart),
+    css.indexOf('/* 自定义 Glassmorphic DatePicker', activityCssStart),
+  ].filter((index) => index > activityCssStart);
+  const activityCssEnd = activityCssEndCandidates.length ? Math.min(...activityCssEndCandidates) : -1;
   const activityCss = activityCssStart >= 0 && activityCssEnd > activityCssStart
     ? css.slice(activityCssStart, activityCssEnd)
     : '';
   const hardcodedColors = activityCss.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
-  if (activityCss.includes('.activity-page-shell .action-btn.x-small') && activityCss.includes('min-height: 40px') && activityCss.includes('focus-visible')) pass('关注动态样式满足触达尺寸和键盘焦点要求');
+  const compactActionRule = activityCss.match(/\.activity-page-shell\s+\.action-btn\.x-small\s*\{([^}]+)\}/)?.[1] || '';
+  const compactActionHeight = Number(compactActionRule.match(/min-height:\s*(\d+)px/)?.[1] || 0);
+  if (compactActionHeight >= 36 && activityCss.includes('focus-visible')) pass('关注动态样式满足触达尺寸和键盘焦点要求');
   else fail('关注动态样式缺少触达尺寸或焦点态');
 
   if (activityCss && hardcodedColors.length === 0) pass('关注动态样式使用主题变量，未新增硬编码颜色');
@@ -679,6 +696,158 @@ function checkCurveLoadingSystem() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  7d. UI quality gates
+// ═══════════════════════════════════════════════════════════════
+function checkUiQualityGates() {
+  section('UI 稳定性、动效与图标门禁');
+
+  const rendererFiles = walkTextFiles(SRC_RENDERER);
+  const rendererSource = rendererFiles
+    .map((abs) => fs.readFileSync(abs, 'utf8'))
+    .join('\n');
+  const cssFiles = rendererFiles.filter((abs) => abs.endsWith('.css'));
+  const cssSource = cssFiles.map((abs) => fs.readFileSync(abs, 'utf8')).join('\n');
+
+  const phosphorCss = readFile('node_modules/@phosphor-icons/web/src/regular/style.css') || '';
+  const definedPhosphor = new Set(
+    [...phosphorCss.matchAll(/\.ph\.(ph-(?:[a-z0-9]+-?)+):before\s*\{/g)].map((match) => match[1]),
+  );
+  const phosphorModifiers = new Set(['ph-fill', 'ph-duotone', 'ph-bold', 'ph-light', 'ph-thin', 'ph-regular', 'ph-spin']);
+  const usedPhosphor = new Set(rendererSource.match(/\bph-[a-z0-9-]+\b/g) || []);
+  const invalidPhosphor = [...usedPhosphor]
+    .filter((token) => !definedPhosphor.has(token) && !phosphorModifiers.has(token))
+    .sort();
+  if (!phosphorCss) fail('Phosphor regular 图标样式不可读');
+  else if (invalidPhosphor.length === 0) pass(`全部 ${usedPhosphor.size} 个 Phosphor token 有本地图标定义`);
+  else fail(`发现无效 Phosphor token: ${invalidPhosphor.slice(0, 20).join(', ')}${invalidPhosphor.length > 20 ? ' ...' : ''}`);
+
+  const iconCss = readFile('src/renderer/css/icon-system.css') || '';
+  const tablerDir = path.join(SRC_RENDERER, 'assets', 'icons', 'tabler');
+  const definedTabler = new Map(
+    [...iconCss.matchAll(/\.tb-([a-z0-9-]+)\s*\{[^}]*url\(['"]?([^'")]+\.svg)/g)]
+      .map((match) => [`tb-${match[1]}`, match[2]]),
+  );
+  const markupSource = rendererFiles
+    .filter((abs) => abs.endsWith('.html') || abs.endsWith('.js'))
+    .map((abs) => fs.readFileSync(abs, 'utf8'))
+    .join('\n');
+  const usedTabler = new Set(markupSource.match(/\btb-[a-z0-9-]+\b/g) || []);
+  const invalidTabler = [];
+  for (const token of usedTabler) {
+    const relativeAsset = definedTabler.get(token);
+    if (!relativeAsset) {
+      invalidTabler.push(`${token} (missing mask)`);
+      continue;
+    }
+    const assetPath = path.join(tablerDir, path.basename(relativeAsset));
+    const svg = fs.existsSync(assetPath) ? fs.readFileSync(assetPath, 'utf8') : '';
+    if (!/<svg\b/i.test(svg) || !/<path\b/i.test(svg)) invalidTabler.push(`${token} (blank SVG)`);
+  }
+  for (const [token, relativeAsset] of definedTabler) {
+    const assetPath = path.join(tablerDir, path.basename(relativeAsset));
+    if (!fs.existsSync(assetPath)) invalidTabler.push(`${token} (missing file)`);
+  }
+  if (invalidTabler.length === 0 && definedTabler.size === 8) pass('8 个精选 Tabler mask 均有非空本地 SVG，并且使用 token 可解析');
+  else fail(`Tabler 图标门禁失败: ${invalidTabler.join(', ') || `expected 8 masks, got ${definedTabler.size}`}`);
+
+  const keyframes = new Set(
+    [...cssSource.matchAll(/@(?:-webkit-)?keyframes\s+([a-zA-Z_][\w-]*)/g)].map((match) => match[1]),
+  );
+  const animationKeywords = new Set([
+    'none', 'initial', 'inherit', 'unset', 'revert', 'normal', 'infinite',
+    'linear', 'ease', 'ease-in', 'ease-out', 'ease-in-out', 'step-start', 'step-end',
+    'forwards', 'backwards', 'both', 'running', 'paused', 'alternate',
+    'alternate-reverse', 'reverse', 'important',
+  ]);
+  const undefinedAnimations = new Set();
+  const animationDeclaration = /\banimation(-name)?\s*:\s*([^;}]+)/gi;
+  const animationSource = `${cssSource}\n${rendererFiles
+    .filter((abs) => abs.endsWith('.html'))
+    .map((abs) => fs.readFileSync(abs, 'utf8'))
+    .join('\n')}`;
+  for (const match of animationSource.matchAll(animationDeclaration)) {
+    if (/var\s*\(/i.test(match[2])) continue;
+    const isNameProperty = !!match[1];
+    for (const segment of match[2].split(',')) {
+      const tokens = segment.match(/[a-zA-Z_][\w-]*/g) || [];
+      const candidates = tokens.filter((token) => {
+        if (animationKeywords.has(token)) return false;
+        if (/^(?:ms|s|cubic-bezier|steps|frames)$/.test(token)) return false;
+        return !/^\d/.test(token);
+      });
+      const name = isNameProperty
+        ? candidates[0]
+        : candidates.find((token) => keyframes.has(token)) || candidates[0];
+      if (name && !keyframes.has(name)) undefinedAnimations.add(name);
+    }
+  }
+  if (undefinedAnimations.size === 0) pass(`全部 ${keyframes.size} 个 CSS animation 名称均有 keyframes`);
+  else fail(`发现未定义 animation: ${[...undefinedAnimations].sort().join(', ')}`);
+
+  const transitionAllHits = [];
+  for (const abs of rendererFiles) {
+    const rel = path.relative(ROOT, abs).replace(/\\/g, '/');
+    const source = fs.readFileSync(abs, 'utf8');
+    const lines = source.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const declaration = line.match(/\btransition(?:-property)?\s*:\s*([^;}]+)/i);
+      if (!declaration) return;
+      if (declaration[1].split(',').some((value) => /(^|\s)all(?:\s|$)/i.test(value.trim()))) {
+        transitionAllHits.push(`${rel}:${index + 1}`);
+      }
+    });
+  }
+  if (transitionAllHits.length === 0) pass('renderer 未使用 transition: all');
+  else fail(`renderer 仍使用 transition: all: ${transitionAllHits.slice(0, 20).join(', ')}`);
+
+  const pagesCss = readFile('src/renderer/css/pages.css') || '';
+  const criticalUnscopedSelectors = [
+    '.announcement-workspace',
+    '.announcement-detail-panel',
+    '.announcement-card',
+    '.activity-list',
+  ];
+  const duplicateSelectors = [];
+  for (const selector of criticalUnscopedSelectors) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const count = (pagesCss.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{`, 'g')) || []).length;
+    if (count > 1) duplicateSelectors.push(`${selector} x${count}`);
+  }
+  if (duplicateSelectors.length === 0) pass('公告/活动关键基础选择器不存在重复顶层定义');
+  else fail(`关键 CSS 选择器重复: ${duplicateSelectors.join(', ')}`);
+
+  const markupFiles = rendererFiles.filter((abs) => abs.endsWith('.html') || abs.endsWith('.js'));
+  const unnamedIconButtons = [];
+  const buttonPattern = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
+  for (const abs of markupFiles) {
+    const rel = path.relative(ROOT, abs).replace(/\\/g, '/');
+    const source = fs.readFileSync(abs, 'utf8');
+    for (const match of source.matchAll(buttonPattern)) {
+      const attrs = match[1];
+      const inner = match[2];
+      if (!/(?:class\s*=\s*['"][^'"]*\b(?:ph|tb)\b|<i\b[^>]*\b(?:ph|tb)[-\s])/i.test(inner)) continue;
+      const visibleText = inner
+        .replace(/<[^>]+>/g, '')
+        .replace(/&[a-zA-Z0-9#]+;/g, '')
+        .replace(/\$\{[^}]+\}/g, 'dynamic')
+        .trim();
+      if (visibleText) continue;
+      if (/\b(?:aria-label|aria-labelledby|title)\s*=\s*['"][^'"]+['"]/i.test(attrs)) continue;
+      const line = source.slice(0, match.index).split(/\r?\n/).length;
+      unnamedIconButtons.push(`${rel}:${line}`);
+    }
+  }
+  if (unnamedIconButtons.length === 0) pass('静态纯图标按钮全部具有 aria-label、aria-labelledby 或 tooltip');
+  else fail(`纯图标按钮缺少可访问名称: ${unnamedIconButtons.slice(0, 20).join(', ')}`);
+
+  if (
+    /min-inline-size:\s*36px/.test(iconCss)
+    && /min-block-size:\s*36px/.test(iconCss)
+  ) pass('纯图标控件共享触达区规则至少为 36x36px');
+  else fail('纯图标控件缺少 36x36px 共享触达区规则');
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  8. IPC 通道基本一致性
 // ═══════════════════════════════════════════════════════════════
 function checkIpcChannels() {
@@ -737,6 +906,7 @@ checkUpdateSystem();
 checkActivityFeed();
 checkActivityPresenceFeature();
 checkCurveLoadingSystem();
+checkUiQualityGates();
 checkIpcChannels();
 
 // ── 汇总 ─────────────────────────────────────────────────────

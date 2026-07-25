@@ -19,6 +19,7 @@
     enableExperimentalFeatures: false,
     enableExperimentalCurveLoaders: false,
     loadingCurveStyle: 'auto',
+    uiAppearanceProfile: 'classic',
   };
 
   const contracts = window.__NEKO_IPC_CONTRACTS__ || {};
@@ -84,6 +85,12 @@
       curvePreferences.enableExperimentalCurveLoaders = payload.enableExperimentalCurveLoaders === true;
     }
     if (payload.loadingCurveStyle) curvePreferences.loadingCurveStyle = payload.loadingCurveStyle;
+    if (payload.uiAppearanceProfile) {
+      const profile = payload.uiAppearanceProfile === 'quiet' ? 'quiet' : 'classic';
+      curvePreferences.uiAppearanceProfile = profile;
+      document.documentElement.dataset.uiProfile = profile;
+      try { localStorage.setItem('neko-ui-appearance-profile', profile); } catch {}
+    }
     loadingSystem?.applyPreferences?.(curvePreferences);
 
     setProgress(payload.pct);

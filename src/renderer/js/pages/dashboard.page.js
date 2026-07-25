@@ -22,8 +22,17 @@
     const viewSwapped = card.querySelector('.view-swapped');
     if (!viewDefault || !viewSwapped) return;
     card.dataset.viewState = swapped ? 'swapped' : 'default';
-    viewDefault.style.display = swapped ? 'none' : 'flex';
-    viewSwapped.style.display = swapped ? 'flex' : 'none';
+    const stack = card.querySelector('#replaceableViewStack, .dashboard-view-stack');
+    const setter = window._nekoUIHelpers?.setViewStackState;
+    const active = swapped ? viewSwapped : viewDefault;
+    if (stack && typeof setter === 'function') {
+      setter(stack, active, { selector: '[data-ui-view]', display: 'flex', duration: 220 });
+    } else {
+      viewDefault.style.display = swapped ? 'none' : 'flex';
+      viewSwapped.style.display = swapped ? 'flex' : 'none';
+      viewDefault.setAttribute?.('aria-hidden', swapped ? 'true' : 'false');
+      viewSwapped.setAttribute?.('aria-hidden', swapped ? 'false' : 'true');
+    }
   }
 
   function readLayoutFromStorage() {
@@ -143,6 +152,14 @@
     return document.documentElement.hasAttribute('data-theme');
   }
 
+  function isQuietProfile() {
+    return document.documentElement.dataset?.uiProfile === 'quiet';
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  }
+
   function setTrendChartStatus(message) {
     const wrap = document.querySelector('.chart-canvas-wrap');
     if (!wrap) return;
@@ -159,47 +176,87 @@
     status.textContent = message;
   }
 
-  function makeTrendChartData(metricsBuffer, rangeId) {
-    const pad = (n) => String(n).padStart(2, '0');
-    const now = Date.now();
-    const cfgMap = {
-      '1m': { totalMs: 60e3, buckets: 12 },
-      '1h': { totalMs: 3600e3, buckets: 60 },
-      '12h': { totalMs: 12 * 3600e3, buckets: 12 },
-    };
-    const { totalMs, buckets } = cfgMap[rangeId] || cfgMap['1m'];
-    const from = now - totalMs;
-    const bucketMs = totalMs / buckets;
-    const raw = metricsBuffer.filter((m) => m.timestamp >= from && m.timestamp <= now);
-    const earliest = raw.length > 0 ? raw[0].timestamp : now;
-    const labels = [];
-    const cpuData = [];
-    const memData = [];
+  const TREND_RANGE_CONFIG = Object.freeze({
+    '1m': Object.freeze({ totalMs: 60e3, buckets: 12 }),
+    '1h': Object.freeze({ totalMs: 3600e3, buckets: 60 }),
+    '12h': Object.freeze({ totalMs: 12 * 3600e3, buckets: 12 }),
+  });
 
-    for (let i = 0; i < buckets; i++) {
-      const bucketStart = from + i * bucketMs;
-      const bucketEnd = from + (i + 1) * bucketMs;
-      if (bucketEnd < earliest) continue;
-
-      const midpoint = bucketStart + bucketMs * 0.5;
-      const d = new Date(midpoint);
-      labels.push(rangeId === '1m'
-        ? `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-        : `${pad(d.getHours())}:${pad(d.getMinutes())}`);
-
-      const points = raw.filter((m) => m.timestamp >= bucketStart && m.timestamp < bucketEnd);
-      if (points.length > 0) {
-        const avg = (items) => items.reduce((sum, value) => sum + value, 0) / items.length;
-        cpuData.push(+(avg(points.map((m) => m.cpuPct ?? 0))).toFixed(1));
-        memData.push(+(avg(points.map((m) => m.memPct ?? 0))).toFixed(1));
-      } else {
-        cpuData.push(null);
-        memData.push(null);
-      }
-    }
-
-    return { labels, cpuData, memData };
+  function trendRangeConfig(rangeId) {
+    const config = TREND_RANGE_CONFIG[rangeId] || TREND_RANGE_CONFIG['1m'];
+    return { ...config, bucketMs: config.totalMs / config.buckets };
   }
+
+  function alignTrendBucket(timestamp, bucketMs) {
+    return Math.floor(Number(timestamp) / bucketMs) * bucketMs;
+  }
+
+  function formatTrendBucketLabel(timestamp, rangeId) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const d = new Date(timestamp);
+    return rangeId === '1m'
+      ? `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+      : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function projectionValues(projection) {
+    const average = (sum, count) => (count > 0 ? +(sum / count).toFixed(1) : null);
+    return {
+      labels: projection.bucketStarts.map((timestamp) => formatTrendBucketLabel(timestamp, projection.rangeId)),
+      cpuData: projection.cpuSums.map((sum, index) => average(sum, projection.counts[index])),
+      memData: projection.memSums.map((sum, index) => average(sum, projection.counts[index])),
+    };
+  }
+
+  function addMetricToProjection(projection, metric) {
+    const timestamp = Number(metric?.timestamp);
+    if (!Number.isFinite(timestamp) || projection.bucketStarts.length === 0) return -1;
+    const firstBucket = projection.bucketStarts[0];
+    const index = Math.floor((timestamp - firstBucket) / projection.bucketMs);
+    if (index < 0 || index >= projection.bucketStarts.length) return -1;
+    projection.counts[index] += 1;
+    projection.cpuSums[index] += Number(metric.cpuPct) || 0;
+    projection.memSums[index] += Number(metric.memPct) || 0;
+    return index;
+  }
+
+  function makeTrendChartData(metricsBuffer, rangeId, now = Date.now()) {
+    const { buckets, bucketMs } = trendRangeConfig(rangeId);
+    const currentBucket = alignTrendBucket(now, bucketMs);
+    const firstBucket = currentBucket - (buckets - 1) * bucketMs;
+    const projection = {
+      rangeId: TREND_RANGE_CONFIG[rangeId] ? rangeId : '1m',
+      bucketMs,
+      bucketStarts: Array.from({ length: buckets }, (_, index) => firstBucket + index * bucketMs),
+      counts: Array(buckets).fill(0),
+      cpuSums: Array(buckets).fill(0),
+      memSums: Array(buckets).fill(0),
+    };
+    (Array.isArray(metricsBuffer) ? metricsBuffer : []).forEach((metric) => {
+      const timestamp = Number(metric?.timestamp);
+      if (timestamp <= now) addMetricToProjection(projection, metric);
+    });
+    return { ...projectionValues(projection), projection };
+  }
+
+  const trendHoverLinePlugin = {
+    id: 'nekoTrendHoverLine',
+    afterDatasetsDraw(chart) {
+      const active = chart.tooltip?.getActiveElements?.() || [];
+      const x = active[0]?.element?.x;
+      const area = chart.chartArea;
+      if (!Number.isFinite(x) || !area) return;
+      const ctx = chart.ctx;
+      ctx.save?.();
+      ctx.beginPath?.();
+      ctx.moveTo?.(x, area.top);
+      ctx.lineTo?.(x, area.bottom);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = isLightTheme() ? 'rgba(30, 35, 42, 0.24)' : 'rgba(235, 238, 244, 0.26)';
+      ctx.stroke?.();
+      ctx.restore?.();
+    }
+  };
 
   const DashboardPage = {
     _inited: false,
@@ -211,6 +268,7 @@
     _healthStats: { total: 0, success: 0 },
     _trendChart: null,
     _trendRange: '1m',
+    _trendProjection: null,
     _metricsBuffer: [],
     _lastChartUpdateTs: 0,
     _themeColorRgb: { r: 6, g: 182, b: 212 },
@@ -304,20 +362,15 @@
       controls.className = 'widget-controls';
 
       if (card.id === 'replaceableCard') {
-        const replaceBtn = document.createElement('div');
+        const replaceBtn = document.createElement('button');
+        replaceBtn.type = 'button';
         replaceBtn.className = 'ctrl-btn danger';
         replaceBtn.innerHTML = '<i class="ph ph-arrows-left-right"></i>';
         replaceBtn.title = '切换卡片功能';
+        replaceBtn.setAttribute('aria-label', '切换卡片功能');
         replaceBtn.addEventListener('click', (event) => {
           event.stopPropagation();
-          card.style.opacity = '0';
-          card.style.transform = 'scale(0.95)';
-
-          setTimeout(() => {
-            setCardViewState(card, card.dataset.viewState !== 'swapped');
-            card.style.opacity = '1';
-            card.style.transform = 'scale(1)';
-          }, 300);
+          setCardViewState(card, card.dataset.viewState !== 'swapped');
         });
         controls.appendChild(replaceBtn);
       }
@@ -612,7 +665,7 @@
         document.querySelectorAll('#trendRangeGroup .toggle-btn').forEach((item) => {
           item.classList.toggle('active', item.dataset.range === range);
         });
-        this.updateTrendChart();
+        this.updateTrendChart('none', { forceProject: true });
       });
     },
 
@@ -626,23 +679,6 @@
       if (this._trendChart) return this._trendChart;
       setTrendChartStatus('');
 
-      const bodyStyles = getComputedStyle(document.body);
-      const rootStyles = getComputedStyle(document.documentElement);
-      const themeColor = bodyStyles.getPropertyValue('--theme-color').trim()
-        || rootStyles.getPropertyValue('--theme-color').trim()
-        || '#0ea5e9';
-      this._themeColorRgb = parseColorRgb(themeColor);
-      const { r, g, b } = this._themeColorRgb;
-      const light = isLightTheme();
-      Chart.defaults.color = light ? 'rgba(30, 60, 100, 0.72)' : 'rgba(195, 228, 248, 0.82)';
-      const tickColor = light ? 'rgba(30, 60, 100, 0.60)' : 'rgba(170, 210, 232, 0.68)';
-      const gridColor = light ? 'rgba(0, 0, 0, 0.07)' : 'rgba(255, 255, 255, 0.05)';
-      const legendColor = light ? 'rgba(15, 23, 42, 0.72)' : 'rgba(195, 228, 248, 0.82)';
-      const tooltipBg = light ? 'rgba(245, 250, 255, 0.97)' : 'rgba(6, 12, 24, 0.94)';
-      const tooltipTitle = light ? 'rgba(15, 23, 42, 0.55)' : 'rgba(190, 225, 248, 0.60)';
-      const tooltipBody = light ? 'rgba(15, 23, 42, 0.88)' : 'rgba(215, 240, 255, 0.92)';
-      const tooltipBorder = light ? 'rgba(0, 0, 0, 0.10)' : 'rgba(255, 255, 255, 0.07)';
-
       this._trendChart = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
@@ -651,30 +687,31 @@
             {
               label: 'CPU',
               data: [],
-              borderColor: themeColor,
-              backgroundColor: `rgba(${r},${g},${b},0.15)`,
-              fill: true,
+              borderColor: '#0ea5e9',
+              backgroundColor: 'transparent',
+              fill: false,
               tension: 0.46,
               cubicInterpolationMode: 'monotone',
               spanGaps: true,
               pointRadius: 0,
               pointHoverRadius: 0,
               pointHitRadius: 10,
-              borderWidth: 3,
+              borderWidth: 2,
             },
             {
               label: 'Memory',
               data: [],
-              borderColor: `rgba(${r},${g},${b},0.45)`,
-              backgroundColor: `rgba(${r},${g},${b},0.06)`,
-              fill: true,
+              borderColor: 'rgba(160, 166, 176, 0.82)',
+              backgroundColor: 'transparent',
+              fill: false,
               tension: 0.46,
               cubicInterpolationMode: 'monotone',
               spanGaps: true,
               pointRadius: 0,
               pointHoverRadius: 0,
               pointHitRadius: 10,
-              borderWidth: 3,
+              borderWidth: 2,
+              borderDash: [6, 4],
             },
           ],
         },
@@ -685,19 +722,24 @@
           animation: { duration: 0 },
           transitions: {
             resize: { animation: { duration: 0 } },
+            rollover: {
+              animations: {
+                x: { duration: 160, easing: 'easeOutCubic' },
+                y: { duration: 0 },
+              },
+            },
           },
           interaction: { mode: 'index', intersect: false },
           scales: {
             x: {
               grid: { display: false },
-              ticks: { color: tickColor, maxTicksLimit: 6, maxRotation: 0 },
+              ticks: { maxTicksLimit: 6, maxRotation: 0 },
             },
             y: {
               min: 0,
               max: 100,
-              grid: { color: gridColor },
+              grid: { display: false },
               ticks: {
-                color: tickColor,
                 callback: (v) => ({ 75: 'HIGH', 50: 'MID', 25: 'LOW' }[v] ?? null),
               },
             },
@@ -707,7 +749,6 @@
               position: 'top',
               align: 'start',
               labels: {
-                color: legendColor,
                 usePointStyle: true,
                 pointStyle: 'line',
                 boxWidth: 28,
@@ -717,10 +758,6 @@
               },
             },
             tooltip: {
-              backgroundColor: tooltipBg,
-              titleColor: tooltipTitle,
-              bodyColor: tooltipBody,
-              borderColor: tooltipBorder,
               borderWidth: 1,
               padding: 11,
               cornerRadius: 10,
@@ -730,55 +767,137 @@
             },
           },
         },
+        plugins: [trendHoverLinePlugin],
       });
-
+      this.applyTrendChartAppearance(false);
       return this._trendChart;
     },
 
-    updateTrendChart(updateMode = 'active') {
-      const chart = this.ensureTrendChart();
+    applyTrendChartAppearance(update = true) {
+      const chart = this._trendChart;
       if (!chart) return;
-      const { labels, cpuData, memData } = makeTrendChartData(this._metricsBuffer, this._trendRange);
-      chart.data.labels = labels;
-      chart.data.datasets[0].data = cpuData;
-      chart.data.datasets[1].data = memData;
-
+      const bodyStyles = getComputedStyle(document.body);
+      const rootStyles = getComputedStyle(document.documentElement);
+      const themeColor = bodyStyles.getPropertyValue('--theme-color').trim()
+        || rootStyles.getPropertyValue('--theme-color').trim()
+        || '#0ea5e9';
+      this._themeColorRgb = parseColorRgb(themeColor);
+      const { r, g, b } = this._themeColorRgb;
       const light = isLightTheme();
-      const tickColor = light ? 'rgba(30, 60, 100, 0.60)' : 'rgba(170, 210, 232, 0.68)';
-      const legendColor = light ? 'rgba(15, 23, 42, 0.72)' : 'rgba(195, 228, 248, 0.82)';
+      const quiet = isQuietProfile();
+      const tickColor = light ? 'rgba(48, 54, 62, 0.62)' : 'rgba(190, 196, 205, 0.68)';
+      const legendColor = light ? 'rgba(27, 29, 33, 0.76)' : 'rgba(225, 228, 234, 0.82)';
+      const neutralLine = light ? 'rgba(81, 88, 98, 0.78)' : 'rgba(184, 190, 199, 0.76)';
+      const tooltipBg = light ? 'rgba(255, 255, 255, 0.98)' : 'rgba(24, 27, 32, 0.98)';
+      const tooltipTitle = light ? 'rgba(27, 29, 33, 0.58)' : 'rgba(210, 214, 222, 0.62)';
+      const tooltipBody = light ? 'rgba(27, 29, 33, 0.92)' : 'rgba(242, 243, 245, 0.94)';
+      const tooltipBorder = light ? 'rgba(27, 29, 33, 0.13)' : 'rgba(242, 243, 245, 0.12)';
+
+      Chart.defaults.color = legendColor;
+      chart.options.scales.x.grid.display = false;
+      chart.options.scales.y.grid.display = false;
       chart.options.scales.x.ticks.color = tickColor;
       chart.options.scales.y.ticks.color = tickColor;
       chart.options.plugins.legend.labels.color = legendColor;
+      Object.assign(chart.options.plugins.tooltip, {
+        backgroundColor: tooltipBg,
+        titleColor: tooltipTitle,
+        bodyColor: tooltipBody,
+        borderColor: tooltipBorder,
+        cornerRadius: quiet ? 6 : 10,
+      });
 
-      const area = chart.chartArea;
-      if (area && area.bottom > area.top) {
-        const ctx = chart.ctx;
-        const makeGradient = (r, g, b, alpha) => {
-          const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+      const [cpu, memory] = chart.data.datasets;
+      cpu.borderColor = `rgb(${r},${g},${b})`;
+      cpu.borderWidth = quiet ? 2 : 3;
+      cpu.borderDash = [];
+      memory.borderWidth = quiet ? 2 : 3;
+      memory.borderDash = quiet ? [6, 4] : [];
+      if (quiet) {
+        cpu.fill = false;
+        cpu.backgroundColor = 'transparent';
+        memory.borderColor = neutralLine;
+        memory.fill = false;
+        memory.backgroundColor = 'transparent';
+      } else {
+        cpu.fill = true;
+        memory.fill = true;
+        memory.borderColor = `rgba(${r},${g},${b},0.45)`;
+        const area = chart.chartArea;
+        const makeGradient = (alpha) => {
+          if (!area || area.bottom <= area.top || !chart.ctx?.createLinearGradient) {
+            return `rgba(${r},${g},${b},${alpha})`;
+          }
+          const gradient = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
           gradient.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
           gradient.addColorStop(0.65, `rgba(${r},${g},${b},${+(alpha * 0.12).toFixed(3)})`);
           gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
           return gradient;
         };
-        const { r, g, b } = this._themeColorRgb || { r: 6, g: 182, b: 212 };
-        chart.data.datasets[0].borderColor = `rgb(${r},${g},${b})`;
-        chart.data.datasets[0].backgroundColor = makeGradient(r, g, b, 0.30);
-        chart.data.datasets[1].borderColor = `rgba(${r},${g},${b},0.45)`;
-        chart.data.datasets[1].backgroundColor = makeGradient(r, g, b, 0.12);
+        cpu.backgroundColor = makeGradient(0.30);
+        memory.backgroundColor = makeGradient(0.12);
       }
+      if (update) chart.update('none');
+    },
 
+    syncTrendProjectionToChart(updateMode = 'none') {
+      const chart = this.ensureTrendChart();
+      if (!chart || !this._trendProjection) return;
+      const { labels, cpuData, memData } = projectionValues(this._trendProjection);
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = cpuData;
+      chart.data.datasets[1].data = memData;
       chart.update(updateMode);
+    },
+
+    updateTrendChart(updateMode = 'none', { forceProject = false, now = Date.now() } = {}) {
+      const chart = this.ensureTrendChart();
+      if (!chart) return;
+      if (forceProject || !this._trendProjection || this._trendProjection.rangeId !== this._trendRange) {
+        this._trendProjection = makeTrendChartData(this._metricsBuffer, this._trendRange, now).projection;
+      }
+      this.applyTrendChartAppearance(false);
+      this.syncTrendProjectionToChart(updateMode);
     },
 
     rebuildTrendChartDeferred() {
       if (!this._trendChart) return;
       clearTimeout(this._rebuildTimer);
-      this._trendChart.destroy();
-      this._trendChart = null;
       this._rebuildTimer = setTimeout(() => {
-        this.ensureTrendChart();
-        this.updateTrendChart();
-      }, 120);
+        this.applyTrendChartAppearance(true);
+      }, 0);
+    },
+
+    addMetricToTrendProjection(metric) {
+      if (!this._trendProjection || this._trendProjection.rangeId !== this._trendRange) {
+        this._trendProjection = makeTrendChartData(this._metricsBuffer, this._trendRange, metric.timestamp).projection;
+        return { rolled: false, rebuilt: true };
+      }
+      const projection = this._trendProjection;
+      const targetBucket = alignTrendBucket(metric.timestamp, projection.bucketMs);
+      const lastBucket = projection.bucketStarts[projection.bucketStarts.length - 1];
+      let rolled = false;
+      if (targetBucket > lastBucket) {
+        const steps = Math.floor((targetBucket - lastBucket) / projection.bucketMs);
+        if (steps >= projection.bucketStarts.length) {
+          this._trendProjection = makeTrendChartData(this._metricsBuffer, this._trendRange, metric.timestamp).projection;
+          return { rolled: true, rebuilt: true };
+        }
+        for (let index = 0; index < steps; index += 1) {
+          projection.bucketStarts.shift();
+          projection.counts.shift();
+          projection.cpuSums.shift();
+          projection.memSums.shift();
+          const nextStart = projection.bucketStarts[projection.bucketStarts.length - 1] + projection.bucketMs;
+          projection.bucketStarts.push(nextStart);
+          projection.counts.push(0);
+          projection.cpuSums.push(0);
+          projection.memSums.push(0);
+        }
+        rolled = true;
+      }
+      addMetricToProjection(projection, metric);
+      return { rolled, rebuilt: false };
     },
 
     recordMetrics(metrics) {
@@ -792,14 +911,12 @@
       this._metricsBuffer.push(normalized);
       if (this._metricsBuffer.length > 8640) this._metricsBuffer.shift();
 
+      const projectionUpdate = this.addMetricToTrendProjection(normalized);
+
       const dashArea = $('mainDashboardArea');
       if (!dashArea || dashArea.style.display === 'none') return;
-      const throttleMs = { '1m': 5000, '1h': 60000, '12h': 3600000 }[this._trendRange] || 5000;
-      const now = Date.now();
-      if (now - this._lastChartUpdateTs >= throttleMs) {
-        this._lastChartUpdateTs = now;
-        this.updateTrendChart();
-      }
+      const updateMode = projectionUpdate.rolled && !prefersReducedMotion() ? 'rollover' : 'none';
+      this.syncTrendProjectionToChart(updateMode);
     },
 
     setMetricsHistory(history) {
@@ -813,7 +930,7 @@
           }))
         : [];
       this.ensureTrendChart();
-      this.updateTrendChart();
+      this.updateTrendChart('none', { forceProject: true, now });
     },
 
     getHealthStats() {

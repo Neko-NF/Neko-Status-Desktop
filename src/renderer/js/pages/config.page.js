@@ -164,7 +164,10 @@
       }
 
       if (validationResult?.warning === 'KEY_BOUND_TO_OTHER_DEVICE') {
-        saveBtn.innerHTML = originalHtml;
+        // Release the LoadingSystem overlay before asking for takeover. Directly
+        // replacing innerHTML would orphan its WeakMap state and leave a blank
+        // busy button when the dialog is cancelled.
+        setButtonFeedback(saveBtn, originalHtml);
         saveBtn.disabled = false;
         const userConfirmed = await this._deps.showTakeoverConfirmDialog();
         if (!userConfirmed) {

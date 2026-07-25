@@ -298,9 +298,10 @@ test('button busy state is idempotent and restores original content and accessib
   assert.equal(system.setButtonBusy(button, true, { label: '连接中…' }), true);
   assert.equal(button.disabled, true);
   assert.equal(button.getAttribute('aria-busy'), 'true');
-  assert.equal(button.children[1].textContent, '连接中…');
+  assert.equal(button.children[0].className, 'neko-button-busy-overlay');
+  assert.equal(button.children[0].children[1].textContent, '连接中…');
   assert.equal(system.setButtonBusy(button, true, { label: '仍在连接…' }), true);
-  assert.equal(button.children[1].textContent, '仍在连接…');
+  assert.equal(button.children[0].children[1].textContent, '仍在连接…');
 
   assert.equal(system.setButtonBusy(button, false), true);
   assert.equal(button.disabled, false);

@@ -373,6 +373,7 @@ function sendStartupUpdateStatus(payload) {
     enableExperimentalFeatures: configStore.get('enableExperimentalFeatures') === true,
     enableExperimentalCurveLoaders: configStore.get('enableExperimentalCurveLoaders') === true,
     loadingCurveStyle: configStore.get('loadingCurveStyle') || 'auto',
+    uiAppearanceProfile: configStore.get('uiAppearanceProfile') || 'classic',
   };
   pendingStartupStatus = themePayload;
   if (startupUpdateWindow && !startupUpdateWindow.isDestroyed() && startupUpdateWindow.webContents) {

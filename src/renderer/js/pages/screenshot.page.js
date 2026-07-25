@@ -4,6 +4,31 @@
 
   const $ = (id) => document.getElementById(id);
 
+  function setViewStackState(stack, activePanel, panels, options = {}) {
+      const setter = window._nekoUIHelpers?.setViewStackState;
+      if (typeof setter === 'function' && stack && activePanel) {
+          return setter(stack, activePanel, {
+              selector: '[data-ui-view]',
+              display: 'flex',
+              ...options,
+          });
+      }
+      panels.filter(Boolean).forEach((panel) => {
+          const active = panel === activePanel;
+          panel.style.display = active ? 'flex' : 'none';
+          panel.setAttribute?.('aria-hidden', active ? 'false' : 'true');
+          if ('inert' in panel) panel.inert = !active;
+      });
+      return true;
+  }
+
+  function setStableControlVisibility(control, visible) {
+      if (!control) return;
+      control.classList.toggle('is-control-hidden', !visible);
+      control.setAttribute?.('aria-hidden', visible ? 'false' : 'true');
+      if ('inert' in control) control.inert = !visible;
+  }
+
   function defaultDeps() {
       return {
           addLogLine: () => {},
@@ -30,49 +55,6 @@
       }
       this._initialized = true;
 
-      const historyFilterGroup = document.getElementById('historyFilterGroup');
-      const historyFilterPill = document.getElementById('historyFilterPill');
-      const historyTableBody = document.getElementById('historyTableBody');
-      
-      function syncFilterPill(activeBtn) {
-          if (!historyFilterPill || !activeBtn) return;
-          historyFilterPill.style.width = activeBtn.offsetWidth + 'px';
-          historyFilterPill.style.transform = `translateX(${activeBtn.offsetLeft - 4}px)`;
-      }
-      
-      if (historyFilterGroup && historyTableBody) {
-          // 初始化 pill 位置（需等字体渲染完毕）
-          requestAnimationFrame(() => {
-              syncFilterPill(historyFilterGroup.querySelector('.filter-segmented-btn.active'));
-          });
-      
-          window.addEventListener('resize', () => {
-              syncFilterPill(historyFilterGroup.querySelector('.filter-segmented-btn.active'));
-          });
-      
-          historyFilterGroup.addEventListener('click', (e) => {
-              const btn = e.target.closest('.filter-segmented-btn');
-              if (!btn) return;
-      
-              historyFilterGroup.querySelectorAll('.filter-segmented-btn').forEach(b => b.classList.remove('active'));
-              btn.classList.add('active');
-              syncFilterPill(btn);
-      
-              const filter = btn.dataset.filter;
-              Array.from(historyTableBody.querySelectorAll('tr')).forEach((row, i) => {
-                  const show = filter === 'all' || row.dataset.status === filter;
-                  if (show) {
-                      row.style.display = '';
-                      row.style.animationDelay = (i * 0.05) + 's';
-                      row.style.animation = 'none';
-                      row.offsetHeight; // force reflow
-                      row.style.animation = 'tableRowFadeIn 0.3s ease forwards';
-                  } else {
-                      row.style.display = 'none';
-                  }
-              });
-          });
-      }
       // ======== 截图与活动 - 活动流标签筛选 ======== //
       const activityTabGroup = document.getElementById('activityTabGroup');
       const activityList = document.getElementById('activityList');
@@ -86,17 +68,9 @@
               tab.classList.add('active');
       
               const filter = tab.dataset.tab;
-              Array.from(activityList.querySelectorAll('.activity-item')).forEach((item, i) => {
+              Array.from(activityList.querySelectorAll('.activity-item')).forEach((item) => {
                   const show = filter === 'all' || item.dataset.type === filter;
-                  if (show) {
-                      item.style.display = '';
-                      item.style.animation = 'none';
-                      item.offsetHeight; // force reflow
-                      item.style.animationDelay = (i * 0.05) + 's';
-                      item.style.animation = 'tableRowFadeIn 0.3s ease forwards';
-                  } else {
-                      item.style.display = 'none';
-                  }
+                  item.style.display = show ? '' : 'none';
               });
           });
       }
@@ -106,34 +80,32 @@
       const intervalSelector = document.getElementById('intervalSelector');
       const intervalCustomGroup = document.getElementById('intervalCustomGroup');
       const intervalAutoHint = document.getElementById('intervalAutoHint');
+      const intervalManualHint = document.getElementById('intervalManualHint');
+      const intervalModeControls = document.getElementById('intervalModeControls');
+      const screenshotIntervalStage = document.getElementById('screenshotIntervalStage');
       const customIntervalValue = document.getElementById('customIntervalValue');
       
-      function applyScreenshotMode(mode) {
+      function applyScreenshotMode(mode, options = {}) {
           const isInterval = mode === 'interval';
           const isAuto = mode === 'auto';
           const isManual = mode === 'manual';
-      
-          // 预设间隔按钮：仅定时模式
-          if (intervalSelector) {
-              intervalSelector.style.display = isInterval ? 'flex' : 'none';
-          }
-          // 自定义间隔输入：仅定时模式
-          if (intervalCustomGroup) {
-              intervalCustomGroup.style.display = isInterval ? 'flex' : 'none';
-          }
-          // 自动模式提示（随上报间隔）：仅自动模式
-          if (intervalAutoHint) {
-              intervalAutoHint.style.display = isAuto ? 'flex' : 'none';
-          }
-          // 立即截图按钮：仅手动模式
+
+          const activePanel = isInterval
+              ? intervalModeControls
+              : (isAuto ? intervalAutoHint : intervalManualHint);
+          setViewStackState(
+              screenshotIntervalStage,
+              activePanel,
+              [intervalModeControls, intervalAutoHint, intervalManualHint],
+              options,
+          );
+
           const captureBtn = document.getElementById('captureNowBtn');
-          if (captureBtn) {
-              captureBtn.style.display = isManual ? '' : 'none';
-          }
+          setStableControlVisibility(captureBtn, isManual);
       }
       
       // 初始化：自动模式（默认）
-      applyScreenshotMode('auto');
+      applyScreenshotMode('auto', { initial: true });
       
       if (screenshotModeGroup) {
           screenshotModeGroup.addEventListener('click', (e) => {

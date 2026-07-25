@@ -4,10 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neko Status - 开发者模式</title>
+    <script>document.documentElement.dataset.uiProfile = localStorage.getItem('neko-ui-appearance-profile') === 'quiet' ? 'quiet' : 'classic';</script>
     <link rel="stylesheet" href="../../node_modules/@phosphor-icons/web/src/regular/style.css">
     <link rel="stylesheet" href="./css/tokens.css">
     <link rel="stylesheet" href="./css/loading-system.css">
     <link rel="stylesheet" href="./css/developer-mode-panel.css">
+    <link rel="stylesheet" href="./css/appearance.css">
 </head>
 <body>
     <main class="dev-panel-shell">
@@ -131,7 +133,7 @@
                 <button class="dev-tool-btn" id="openMainDevToolsBtn" type="button" title="打开主界面 DevTools"><i class="ph ph-browser"></i><span>主界面 DevTools</span></button>
                 <button class="dev-tool-btn" id="openPanelDevToolsBtn" type="button" title="打开开发者侧窗 DevTools"><i class="ph ph-sidebar-simple"></i><span>侧窗 DevTools</span></button>
                 <button class="dev-tool-btn" id="reloadMainBtn" type="button"><i class="ph ph-arrow-clockwise"></i><span>重载主窗口</span></button>
-                <button class="dev-tool-btn" id="reloadPanelBtn" type="button"><i class="ph ph-arrows-clockwise"></i><span>重载面板</span></button>
+                <button class="dev-tool-btn" id="reloadPanelBtn" type="button"><i class="ph ph-arrow-clockwise"></i><span>重载面板</span></button>
                 <button class="dev-tool-btn" id="focusMainBtn" type="button"><i class="ph ph-crosshair-simple"></i><span>聚焦主窗口</span></button>
                 <button class="dev-tool-btn" id="clearCacheBtn" type="button"><i class="ph ph-broom"></i><span>清理缓存</span></button>
             </div>
@@ -145,31 +147,31 @@
             <div class="dev-switch-list">
                 <div class="dev-inline-setting">
                     <span>包含隐藏层</span>
-                    <button class="dev-switch" id="includeHiddenSwitch" type="button" aria-pressed="false">
+                    <button class="dev-switch" id="includeHiddenSwitch" type="button" title="包含隐藏层" aria-label="包含隐藏层" aria-pressed="false">
                         <span></span>
                     </button>
                 </div>
                 <div class="dev-inline-setting">
                     <span>智能更新源</span>
-                    <button class="dev-switch" id="updateSourceModeSwitch" type="button" aria-pressed="false">
+                    <button class="dev-switch" id="updateSourceModeSwitch" type="button" title="智能更新源" aria-label="智能更新源" aria-pressed="false">
                         <span></span>
                     </button>
                 </div>
                 <div class="dev-inline-setting">
                     <span>自动检查更新</span>
-                    <button class="dev-switch" id="autoCheckUpdateSwitch" type="button" aria-pressed="false">
+                    <button class="dev-switch" id="autoCheckUpdateSwitch" type="button" title="自动检查更新" aria-label="自动检查更新" aria-pressed="false">
                         <span></span>
                     </button>
                 </div>
                 <div class="dev-inline-setting">
                     <span>自动下载更新</span>
-                    <button class="dev-switch" id="autoDownloadSwitch" type="button" aria-pressed="false">
+                    <button class="dev-switch" id="autoDownloadSwitch" type="button" title="自动下载更新" aria-label="自动下载更新" aria-pressed="false">
                         <span></span>
                     </button>
                 </div>
             </div>
             <div class="dev-tool-grid dev-tool-grid-compact">
-                <button class="dev-tool-btn" id="runHealthCheckBtn" type="button"><i class="ph ph-heartbeat"></i><span>服务体检</span></button>
+                <button class="dev-tool-btn" id="runHealthCheckBtn" type="button"><i class="ph ph-stethoscope"></i><span>服务体检</span></button>
                 <button class="dev-tool-btn" id="runUpdateIntegrityBtn" type="button"><i class="ph ph-shield-check"></i><span>更新完整性</span></button>
             </div>
         </section>

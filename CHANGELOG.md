@@ -2,6 +2,16 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## 1.5.0-beta.1 - 2026-07-26
+
+- Added the experimental quiet appearance profile with persistent, gated selection, startup-safe local mirroring, classic fallback controls, and synchronized main-window, popup, startup-update, and developer-panel styling.
+- Reworked the desktop visual system across dashboard, Activity, announcements, authentication, settings, updates, streaming, screenshot, service, and device-status views with local icon assets, stronger focus semantics, responsive navigation, and local avatar fallbacks.
+- Stabilized CPU and memory trends by retaining Chart instances, using fixed time buckets, updating only the active bucket, preserving no-animation refreshes, and removing chart-area grid lines.
+- Added bounded, stable scrolling for search, application visibility, followers, blacklists, complex rules, announcement, history, and health-result lists; independent content cards now top-align without stretching their neighbours.
+- Updated UI Lab to default to an appearance preview and activate curve feedback only in its dedicated tab; added quiet-profile chart styling and appearance controls.
+- Made announcement and other dynamic list rendering preserve scroll position, selection, and keyboard focus while applying bounded enter, exit, and reorder motion that respects reduced-motion preferences.
+- Added visual regression infrastructure, baselines, scale/theme/reduced-motion coverage, and CI artifact upload for the UI matrix; expanded unit coverage for appearance gating, trend stability, list behaviour, accessibility, and rendering fallbacks.
+
 ## 1.4.1 - 2026-07-15
 
 - Reworked Activity connection health reporting around independent local IPC, receiver, publisher, provisioning, and lifecycle states, with stable degraded and recovery feedback instead of a single flickering connection flag.
