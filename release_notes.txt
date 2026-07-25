@@ -1,4 +1,4 @@
-# Neko Status v1.5.0-beta.1
+# Neko Status v1.5.0-beta.2
 
 > 这是预发布体验版本。经典界面仍为默认；沉静界面需要在实验性内容中手动开启。
 > 当前 Windows 安装包尚未进行代码签名，首次运行时可能出现 SmartScreen 提示。

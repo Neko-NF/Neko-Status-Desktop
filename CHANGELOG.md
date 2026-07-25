@@ -2,6 +2,10 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## 1.5.0-beta.2 - 2026-07-26
+
+- Made the optional personal Gitea Git-ref sync non-blocking so a temporary distribution-server outage cannot prevent GitHub from building and publishing a verified beta release.
+
 ## 1.5.0-beta.1 - 2026-07-26
 
 - Added the experimental quiet appearance profile with persistent, gated selection, startup-safe local mirroring, classic fallback controls, and synchronized main-window, popup, startup-update, and developer-panel styling.

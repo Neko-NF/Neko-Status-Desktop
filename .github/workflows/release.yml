@@ -42,6 +42,7 @@ jobs:
 
       - name: Smart sync Git refs to personal repository
         if: env.HAS_GITEA_MIRROR_TOKEN == 'true' || startsWith(env.GITEA_MIRROR_URL, 'git@') || startsWith(env.GITEA_MIRROR_URL, 'ssh://')
+        continue-on-error: true
         run: node scripts/sync-git-mirror.js
 
       - name: Validate release tag matches package version
