@@ -105,13 +105,12 @@
       fx();
     },
 
-    applyServiceState(isRunning) {
+    applyServiceState(isRunning, serviceState = (isRunning ? 'running' : 'stopped')) {
       const reporterStatusEl = $('reporterStatus');
       if (!reporterStatusEl) return;
-      reporterStatusEl.className = `svc-pill-status ${isRunning ? 'running' : 'error'}`;
-      reporterStatusEl.innerHTML = isRunning
-        ? '<i class="ph ph-check-circle"></i> 上报中'
-        : '<i class="ph ph-x-circle"></i> 已停止';
+      const labels = { running: '运行中', waiting_network: '等待网络', rate_limited: '限流等待', credential_invalid: '凭据失效', stopped: '已停止' };
+      reporterStatusEl.className = `svc-pill-status ${serviceState === 'running' ? 'running' : serviceState === 'credential_invalid' ? 'error' : ''}`;
+      reporterStatusEl.innerHTML = `<i class="ph ${serviceState === 'running' ? 'ph-check-circle' : serviceState === 'waiting_network' ? 'ph-cloud-slash' : serviceState === 'rate_limited' ? 'ph-timer' : 'ph-x-circle'}"></i> ${labels[serviceState] || labels.stopped}`;
     },
 
     bindReportToggle() {

@@ -1,0 +1,25 @@
+{
+  "diagnosticSchemaVersion": 1,
+  "consentPolicyVersion": 1,
+  "required": [
+    "reportId",
+    "diagnosticSchemaVersion",
+    "consentPolicyVersion",
+    "occurredAt",
+    "client",
+    "trigger",
+    "featureSections"
+  ],
+  "featureSections": {
+    "unknownKeys": "preserve",
+    "maxSections": 64
+  },
+  "limits": {
+    "maxReportBytes": 1048576,
+    "maxRecentLogs": 1000,
+    "localQueueCount": 20,
+    "localQueueBytes": 20971520,
+    "localQueueDays": 14,
+    "dedupHours": 6
+  }
+}

@@ -90,6 +90,7 @@
 
     function bindServiceEvents() {
       ipcClient.on(IPC_EVENTS.SERVICE_TICK, (data) => {
+        if (data.serviceState) applyServiceState(data.serviceState !== 'stopped' && data.serviceState !== 'credential_invalid', data.serviceState);
         consoleRuntime?.setLastTickSnapshot?.(data);
         updateDashboardCards(data);
         consoleRuntime?.updateTickStatus?.(data);
@@ -110,8 +111,8 @@
       });
 
       ipcClient.on(IPC_EVENTS.SERVICE_STATUS_CHANGED, (data) => {
-        applyServiceState(data.isRunning);
-        addDiagnosticEntry('守护进程', 'success', data.isRunning ? '上报服务已启动' : '上报服务已停止');
+        applyServiceState(data.isRunning, data.serviceState);
+        addDiagnosticEntry('守护进程', data.serviceState === 'credential_invalid' ? 'error' : 'success', `上报状态：${data.serviceState || (data.isRunning ? 'running' : 'stopped')}`);
         callService('syncMeta', 'syncMeta').catch(() => {});
       });
 

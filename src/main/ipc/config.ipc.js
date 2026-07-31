@@ -8,7 +8,7 @@ const { normalizeUiAppearanceProfile } = require('../config-store.helpers');
 const ACTIVITY_BINDING_KEYS = new Set(['serverMode', 'serverUrlProd', 'serverUrlLocal']);
 const ACTIVITY_RUNTIME_KEYS = new Set(['enableNotification', 'doNotDisturb']);
 
-function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
+function registerConfigIpc({ ipcMain, configStore, activityAgent, diagnosticsService }) {
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, (_, key) => {
     const validation = validateConfigKeyPayload(key);
     if (!validation.ok) return createIpcError('INVALID_CONFIG_KEY', validation.reason);
@@ -26,6 +26,10 @@ function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
           return createIpcError('EXPERIMENTAL_FEATURE_REQUIRED', 'quiet appearance requires experimental features');
         }
         configStore.set(key, normalizeUiAppearanceProfile(value));
+        return createIpcSuccess(true);
+      }
+      if (key === 'diagnosticsImprovementEnabled' && diagnosticsService) {
+        diagnosticsService.onConsentChanged(value === true);
         return createIpcSuccess(true);
       }
       if (key === 'enableExperimentalFeatures' && value === false) {
@@ -120,7 +124,14 @@ function registerConfigIpc({ ipcMain, configStore, activityAgent }) {
           enableActivityBackground: false,
         };
       }
+      const diagnosticsConsentChanged = Object.prototype.hasOwnProperty.call(values, 'diagnosticsImprovementEnabled');
+      const diagnosticsEnabled = values.diagnosticsImprovementEnabled === true;
+      if (diagnosticsConsentChanged) {
+        values = { ...values };
+        delete values.diagnosticsImprovementEnabled;
+      }
       configStore.setMany(values);
+      if (diagnosticsConsentChanged && diagnosticsService) diagnosticsService.onConsentChanged(diagnosticsEnabled);
       if (activityAgent?.isEnabled?.()
         && Object.keys(values).some((key) => ACTIVITY_RUNTIME_KEYS.has(key))) {
         await activityAgent.syncProfile();

@@ -30,12 +30,12 @@ function registerServiceIpc({
   ipcMain.handle(IPC_CHANNELS.SERVICE_START, () => {
     statusService.start();
     refreshTrayMenu();
-    return createIpcSuccess({ isRunning: statusService.isRunning });
+    return createIpcSuccess({ isRunning: statusService.isRunning, serviceState: statusService.serviceState });
   });
   ipcMain.handle(IPC_CHANNELS.SERVICE_STOP, () => {
     statusService.stop();
     refreshTrayMenu();
-    return createIpcSuccess({ isRunning: statusService.isRunning });
+    return createIpcSuccess({ isRunning: statusService.isRunning, serviceState: statusService.serviceState });
   });
   ipcMain.handle(IPC_CHANNELS.SERVICE_IS_RUNNING, () => createIpcSuccess(statusService.isRunning));
   ipcMain.handle(IPC_CHANNELS.SERVICE_RESTART, () => {

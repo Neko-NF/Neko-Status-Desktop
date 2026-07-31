@@ -2,6 +2,14 @@
 
 All notable project-level changes are tracked here. Keep `release_notes.txt` as the draft for the next GitHub Release, and move durable release history into this file after publishing.
 
+## Unreleased
+
+## 1.5.0-beta.3 - 2026-08-01
+
+- Added resilient desktop refresh sessions, cached-account offline state, encrypted credential migration, atomic configuration recovery, and indefinite weak-network status-report recovery without consuming internal watchdog restart limits.
+- Added the default-off, anomaly-only Software Improvement Program with versioned feature contributions, dual redaction, bounded/deduplicated offline queue, capability negotiation and CI contract gates.
+- Added explicit tray/window exit outbox delivery and runtime-session-aware dashboard disconnect reasons, plus Android OpenAPI/DTO/capability placeholders without enabling mobile collection or upload.
+
 ## 1.5.0-beta.2 - 2026-07-26
 
 - Made the optional personal Gitea Git-ref sync non-blocking so a temporary distribution-server outage cannot prevent GitHub from building and publishing a verified beta release.

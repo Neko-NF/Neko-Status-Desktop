@@ -212,6 +212,27 @@
 
       this.bindExperimentalSwitchDelegation();
 
+      $('stgDiagnosticsImprovementSwitch')?.addEventListener('click', async function handleDiagnosticsConsent(event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const cfg = await SettingsPage.config()?.getAll?.() || {};
+        const next = cfg.diagnosticsImprovementEnabled !== true;
+        if (next) {
+          const accepted = window.confirm(
+            '开启“软件增强改进计划”？\n\n授权策略 v1；仅异常触发。最大范围包含原始窗口标题、完整路径、应用/进程名、错误栈、系统硬件摘要、服务/网络状态、非敏感配置和最近 1000 条日志。\n\n永不上传截图/图像、文件或剪贴板内容、密码、Cookie、Authorization、Token/密钥、头像、邮箱或账号资料原文。单包 1 MiB，本地最多 20 包/20 MiB/14 天；关闭后立即删除未上传队列。',
+          );
+          if (!accepted) return;
+        }
+        const saved = await SettingsPage.config()?.set?.('diagnosticsImprovementEnabled', next);
+        if (saved && saved.ok === false) {
+          SettingsPage.notice(saved.message || '诊断授权保存失败', 'error');
+          return;
+        }
+        this.classList.toggle('on', next);
+        this.setAttribute('aria-checked', String(next));
+        SettingsPage.log('INFO', `软件增强改进计划 -> ${next ? '已授权（策略 v1）' : '已关闭并清理待上传队列'}`);
+      }, true);
+
       $('openExperimentalSettingsBtn')?.addEventListener('click', () => {
         document.querySelector('.nav-item[data-target="page-settings"]')?.click();
         setTimeout(() => $('settings-experimental')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);

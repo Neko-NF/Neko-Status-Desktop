@@ -866,10 +866,17 @@
       const me = await callAuth('getMe', 'authGetMe');
       if (me.success && me.user) {
         updateAuthUI(true, me.user);
+        if (me.sessionState === 'offline_cached') {
+          showAuthNotice('当前网络不可用，正在使用本地缓存账号；恢复网络后会自动续期', 'info');
+        }
       } else if (!me.success) {
-        // token 过期了
-        updateAuthUI(false, null);
-        showAuthNotice('登录已过期，请重新登录', 'info');
+        const terminal = ['AUTH_TOKEN_INVALID', 'AUTH_REFRESH_INVALID', 'AUTH_REFRESH_EXPIRED', 'AUTH_SESSION_REVOKED'].includes(me.code);
+        if (terminal || me.details?.sessionState === 'needs_login') {
+          updateAuthUI(false, null);
+          showAuthNotice('登录已失效，请重新登录', 'info');
+        } else {
+          showAuthNotice('暂时无法验证账号，继续使用本地缓存信息', 'info');
+        }
       }
       return;
     }

@@ -112,4 +112,57 @@ describe('registerAuthIpc', () => {
     assert.equal(dismissed.data, true);
     assert.equal(mocks.configStore.get('authPromptDismissed'), true);
   });
+
+  it('keeps the cached account for network, HTML and ambiguous 401 failures', async () => {
+    const error = new Error('upstream returned HTML');
+    error.status = 401;
+    error.trustedJson = false;
+    mocks.apiService.authGetMe = mock.fn(async () => { throw error; });
+
+    const result = await handlers['auth:me']();
+
+    assert.equal(result.ok, true);
+    assert.equal(result.data.sessionState, 'offline_cached');
+    assert.equal(result.data.user.username, 'alice');
+    assert.equal(mocks.configStore.get('authToken'), 'token');
+  });
+
+  it('clears the cached account only for a trusted terminal auth code', async () => {
+    const error = new Error('session revoked');
+    error.status = 401;
+    error.code = 'AUTH_SESSION_REVOKED';
+    error.trustedJson = true;
+    mocks.apiService.authGetMe = mock.fn(async () => { throw error; });
+
+    const result = await handlers['auth:me']();
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'AUTH_SESSION_REVOKED');
+    assert.equal(mocks.configStore.get('authToken'), '');
+    assert.equal(mocks.configStore.get('authUser'), null);
+  });
+
+  it('rotates refresh credentials after an expired access token', async () => {
+    mocks.configStore._data.authRefreshToken = 'refresh-old';
+    mocks.configStore._data.authClientInstanceId = 'instance-id';
+    const expired = new Error('expired');
+    expired.status = 401;
+    expired.code = 'AUTH_TOKEN_EXPIRED';
+    expired.trustedJson = true;
+    mocks.apiService.authGetMe = mock.fn(async () => { throw expired; });
+    mocks.apiService.authRefresh = mock.fn(async () => ({
+      success: true,
+      token: 'access-new',
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+      user: { id: 'u1', username: 'alice' },
+    }));
+
+    const result = await handlers['auth:me']();
+
+    assert.equal(result.ok, true);
+    assert.equal(result.data.refreshed, true);
+    assert.equal(mocks.configStore.get('authToken'), 'access-new');
+    assert.equal(mocks.configStore.get('authRefreshToken'), 'refresh-new');
+  });
 });

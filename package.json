@@ -1,6 +1,6 @@
 {
   "name": "neko-status-desktop",
-  "version": "1.5.0-beta.2",
+  "version": "1.5.0-beta.3",
   "description": "Neko Status Desktop Client — Windows 状态监控工具",
   "main": "src/main/main.js",
   "author": "NF Team",
@@ -27,7 +27,7 @@
     "release:gitea:dry-run": "node scripts/publish-gitea-release.js --dry-run",
     "repo:sync": "node scripts/sync-git-mirror.js",
     "repo:sync:dry-run": "node scripts/sync-git-mirror.js --dry-run",
-    "lint": "node scripts/verify.js",
+    "lint": "node scripts/verify.js && node scripts/verify-diagnostics-contract.js",
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:smoke": "node --test \"tests/smoke/*.test.js\"",
     "test:visual": "node tests/visual/run-visual-tests.js",

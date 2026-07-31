@@ -20,6 +20,12 @@ const configStore = require('./config-store');
 const os = require('os');
 const crypto = require('crypto');
 const packageJson = require('../../package.json');
+const { runtimeSessionId } = require('./runtime-session');
+const {
+  DEVICE_CREDENTIAL_ERROR_CODES,
+  calculateNetworkBackoffMs,
+  isNetworkFailure,
+} = require('./report-recovery-policy');
 const {
   DEVELOPER_SCREENSHOT_TUNING_DEFAULTS,
   normalizeDeveloperScreenshotTuning,
@@ -50,6 +56,10 @@ class StatusService {
     this._consecutiveFailures = 0;
     this._autoRestartCount = 0;
     this._watchdogTimer = null;
+    this._serviceState = 'stopped';
+    this._networkFailureCount = 0;
+    this._nextDelayMs = 10000;
+    this._configuredIntervalMs = 10000;
     this._startedAt = Date.now();
     this._screenshotTuning = normalizeDeveloperScreenshotTuning(DEVELOPER_SCREENSHOT_TUNING_DEFAULTS);
     this._screenshotTuningLoaded = false;
@@ -62,6 +72,8 @@ class StatusService {
   get lastResult() {
     return this._lastTickResult;
   }
+
+  get serviceState() { return this._serviceState; }
 
   /** 设置日志回调 */
   setLogCallback(fn) { this._onLog = fn; }
@@ -78,6 +90,8 @@ class StatusService {
       consecutiveFailures: this._consecutiveFailures,
       autoRestartCount: this._autoRestartCount,
       uptimeSec: this._isRunning ? Math.round((Date.now() - this._startedAt) / 1000) : 0,
+      serviceState: this._serviceState,
+      networkFailureCount: this._networkFailureCount,
     };
   }
 
@@ -130,37 +144,57 @@ class StatusService {
     if (this._onLog) this._onLog(level, msg, time);
   }
 
+  _setServiceState(state) {
+    if (this._serviceState === state) return;
+    this._serviceState = state;
+    if (this._onStatusChange) this._onStatusChange(this._isRunning, state);
+  }
+
+  _scheduleNext(delayMs) {
+    if (!this._isRunning) return;
+    if (this._timer) clearTimeout(this._timer);
+    this._timer = setTimeout(async () => {
+      this._timer = null;
+      await this._tick();
+      this._scheduleNext(this._nextDelayMs);
+    }, Math.max(0, delayMs));
+  }
+
   /** 启动上报服务 */
   start() {
     if (this._isRunning) return;
     this._isRunning = true;
     this._startedAt = Date.now();
     this._consecutiveFailures = 0;
+    this._networkFailureCount = 0;
 
     const intervalSeconds = Math.max(5, configStore.get('reportInterval') || 10);
+    this._configuredIntervalMs = intervalSeconds * 1000;
+    this._nextDelayMs = 0;
     this._log('INFO', `上报服务启动，间隔: ${intervalSeconds}s`);
 
-    if (this._onStatusChange) this._onStatusChange(true);
+    this._setServiceState('waiting_network');
+    if (this._onStatusChange) this._onStatusChange(true, this._serviceState);
 
     // 启动看门狗
     this._startWatchdog();
 
-    // 立即执行一次
-    this._tick();
-    this._timer = setInterval(() => this._tick(), intervalSeconds * 1000);
+    // 无重叠递归调度：只有本次完成后才安排下一次。
+    this._scheduleNext(0);
   }
 
   /** 停止上报服务 */
-  stop() {
+  stop(finalState = 'stopped') {
     if (!this._isRunning) return;
     this._isRunning = false;
     if (this._timer) {
-      clearInterval(this._timer);
+      clearTimeout(this._timer);
       this._timer = null;
     }
     this._stopWatchdog();
+    this._setServiceState(finalState);
     this._log('INFO', '上报服务已停止');
-    if (this._onStatusChange) this._onStatusChange(false);
+    if (this._onStatusChange) this._onStatusChange(false, this._serviceState);
   }
 
   /** 重启服务（应用新间隔设置时使用） */
@@ -209,8 +243,10 @@ class StatusService {
 
   /** 核心上报逻辑 */
   async _tick() {
+    this._nextDelayMs = this._configuredIntervalMs;
     const deviceKey = configStore.get('deviceKey');
     if (!deviceKey) {
+      this._setServiceState('credential_invalid');
       this._log('WARN', '设备密钥未配置，跳过上报（请在配置中填写密钥）');
       if (this._onTick) {
         this._onTick({ success: false, reason: 'no_key' });
@@ -401,6 +437,7 @@ class StatusService {
         deviceKey,
         deviceFingerprint: DEVICE_FINGERPRINT,
         clientVersion: CLIENT_VERSION,
+        runtimeSessionId,
         appName: reportAppName,
         packageName: reportPkgName,
         batteryLevel: battery.level,
@@ -453,74 +490,69 @@ class StatusService {
 
       // 上报成功 → 重置连续失败计数
       this._consecutiveFailures = 0;
+      this._networkFailureCount = 0;
+      this._setServiceState('running');
 
       // 处理密钥状态
       if (result) {
-        if (result.keyRevoked || result.code === 'KEY_REVOKED') {
-          this._log('ERROR', '设备密钥已被服务器撤销，服务停止');
-          if (this._onKeyStatus) this._onKeyStatus('KEY_REVOKED', result.message || '密钥已被其他设备使用');
-          this.stop();
-          configStore.set('deviceKey', '');
-        } else if (result.code === 'DEVICE_NOT_FOUND') {
-          this._log('ERROR', '设备已被服务端删除，服务停止');
-          if (this._onKeyStatus) this._onKeyStatus('DEVICE_NOT_FOUND', result.message || '设备不存在');
-          this.stop();
-          configStore.set('deviceKey', '');
-        } else if (result.takeover && result.takeover.occurred) {
+        if (result.takeover && result.takeover.occurred) {
           this._log('WARN', '设备接管发生');
           if (this._onKeyStatus) this._onKeyStatus('TAKEOVER_SUCCESS', '设备已成功接管');
         }
       }
 
     } catch (err) {
-      // 5xx 瞬时错误（代理网关异常等）→ 仅警告，不计入连续失败
-      if (err.transient) {
-        this._log('WARN', err.message);
-        if (this._onTick) {
-          this._onTick({ success: false, error: err.message, transient: true, timestamp: new Date() });
-        }
+      if (err.status === 429) {
+        const retryAfter = err.retryAfter || 60;
+        this._log('WARN', `被服务器限流（429），${retryAfter}s 后恢复`);
+        this._setServiceState('rate_limited');
+        this._nextDelayMs = retryAfter * 1000;
+        if (this._onTick) this._onTick({ success: false, error: err.message, serviceState: this._serviceState, retryAfter, timestamp: new Date() });
+        return;
+      }
+
+      if (await this._confirmCredentialInvalid(err, deviceKey)) {
+        this._log('ERROR', `设备凭据已由验证接口确认失效（${err.code}），上报服务已停止`);
+        if (this._onKeyStatus) this._onKeyStatus(err.code, err.message);
+        configStore.set('deviceKey', '');
+        this.stop('credential_invalid');
+        if (this._onTick) this._onTick({ success: false, error: err.message, serviceState: this._serviceState, timestamp: new Date() });
+        return;
+      }
+
+      if (isNetworkFailure(err)) {
+        this._networkFailureCount += 1;
+        this._nextDelayMs = calculateNetworkBackoffMs(this._networkFailureCount);
+        this._setServiceState('waiting_network');
+        this._log('WARN', `网络暂不可用，约 ${Math.ceil(this._nextDelayMs / 1000)}s 后重试：${err.message}`);
+        if (this._onTick) this._onTick({ success: false, error: err.message, network: true, serviceState: this._serviceState, timestamp: new Date() });
         return;
       }
 
       this._consecutiveFailures++;
-      this._log('ERROR', `上报失败 (连续第 ${this._consecutiveFailures} 次): ${err.message}`);
-      if (this._onTick) {
-        this._onTick({ success: false, error: err.message, timestamp: new Date() });
+      this._log('ERROR', `内部上报异常 (连续第 ${this._consecutiveFailures} 次): ${err.message}`);
+      if (this._onTick) this._onTick({ success: false, error: err.message, internal: true, serviceState: this._serviceState, timestamp: new Date() });
+      if (this._consecutiveFailures >= 3) {
+        this._tryAutoRestart(`连续内部异常 ${this._consecutiveFailures} 次`);
       }
+    }
+  }
 
-      // 非致命性网络错误 → 交给看门狗自动恢复
-      const isFatal = err.status === 401 || err.status === 403 || (err.status === 404 && err.code === 'DEVICE_NOT_FOUND');
-      if (!isFatal && this._consecutiveFailures >= 3) {
-        this._tryAutoRestart(`连续上报失败 ${this._consecutiveFailures} 次`);
-        return;
-      }
-
-      // 完整的错误码处理
-      if (err.status === 401) {
-        this._log('ERROR', `设备密钥无效（401），上报服务已停止`);
-        if (this._onKeyStatus) this._onKeyStatus('INVALID_KEY', err.message);
-        this.stop();
-        configStore.set('deviceKey', '');
-      } else if (err.status === 403) {
-        const code = err.code || 'KEY_REVOKED';
-        this._log('ERROR', `设备密钥无效（403 - ${code}），上报服务已停止`);
-        if (this._onKeyStatus) this._onKeyStatus(code, err.message);
-        this.stop();
-        if (code === 'KEY_REVOKED') configStore.set('deviceKey', '');
-      } else if (err.status === 404 && err.code === 'DEVICE_NOT_FOUND') {
-        this._log('ERROR', '设备不存在（404），上报服务已停止');
-        if (this._onKeyStatus) this._onKeyStatus('DEVICE_NOT_FOUND', err.message);
-        this.stop();
-        configStore.set('deviceKey', '');
-      } else if (err.status === 429) {
-        const retryAfter = err.retryAfter || 60;
-        this._log('WARN', `被服务器限流（429），${retryAfter}s 后恢复`);
-        this.stop();
-        setTimeout(() => {
-          this._log('INFO', '限流等待结束，恢复上报服务');
-          this.start();
-        }, retryAfter * 1000);
-      }
+  async _confirmCredentialInvalid(error, deviceKey) {
+    if (!error?.trustedJson || !DEVICE_CREDENTIAL_ERROR_CODES.has(error.code)) return false;
+    try {
+      const verification = await apiService.validateDeviceKey(deviceKey, DEVICE_FINGERPRINT);
+      const confirmed = verification?.valid === false
+        && ['KEY_NOT_FOUND', 'KEY_INVALID_FORMAT'].includes(verification.errorCode);
+      if (!confirmed) error.transient = true;
+      return confirmed;
+    } catch (verificationError) {
+      const confirmed = verificationError?.trustedJson === true
+        && ['KEY_REVOKED', 'KEY_NOT_FOUND'].includes(verificationError.code);
+      // A failed or contradictory verification must remain recoverable and
+      // must not consume the watchdog's internal restart budget.
+      if (!confirmed) error.transient = true;
+      return confirmed;
     }
   }
 }

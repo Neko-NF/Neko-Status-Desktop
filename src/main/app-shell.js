@@ -32,6 +32,7 @@ function createAppShell(deps) {
     activityAgent,
     startupPage,
     requestActivityQuit,
+    diagnosticsService,
   } = deps;
 
   function getAssetPath(...relativePaths) {
@@ -86,6 +87,7 @@ function createAppShell(deps) {
     sendToRenderer(IPC_EVENTS.APP_INIT, {
       config: configStore.getAll(),
       isRunning: statusService.isRunning,
+      serviceState: statusService.serviceState,
       version: APP_VERSION,
       deviceName: os.hostname(),
       platform: os.platform(),
@@ -292,10 +294,18 @@ function createAppShell(deps) {
 
     mainWindow.webContents.on('render-process-gone', (_event, details) => {
       console.error('[MainWindow] renderer process gone:', details?.reason || 'unknown');
+      diagnosticsService?.capture?.({
+        type: 'renderer_exit', featureId: 'core.renderer', errorCode: 'RENDERER_GONE',
+        severity: 'critical', message: details?.reason || 'renderer process gone',
+      }, { reason: details?.reason, exitCode: details?.exitCode }).catch(() => {});
     });
 
     mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
       console.error('[MainWindow] failed to load renderer:', errorCode, errorDescription);
+      diagnosticsService?.capture?.({
+        type: 'renderer_load_failure', featureId: 'core.renderer', errorCode: 'RENDERER_LOAD_FAILED',
+        severity: 'critical', message: errorDescription || 'renderer load failed',
+      }, { reason: errorDescription, exitCode: errorCode }).catch(() => {});
     });
 
     mainWindow.on('closed', () => {
@@ -328,7 +338,8 @@ function createAppShell(deps) {
 
       const action = configStore.get('closeAction');
       if (action === 'exit') {
-        setIsQuitting(true);
+        event.preventDefault();
+        requestActivityQuit?.(true, 'window_close');
         return;
       }
 
@@ -354,8 +365,7 @@ function createAppShell(deps) {
       if (choice === 0) {
         mainWindow.hide();
       } else {
-        setIsQuitting(true);
-        app.quit();
+        requestActivityQuit?.(true, 'window_close');
       }
     });
 
@@ -423,12 +433,12 @@ function createAppShell(deps) {
     );
     if (activityEnabled && configStore.get('enableActivityBackground') === true) {
       template.push({ label: '退出客户端，后台继续', click: () => requestActivityQuit?.(false) });
-      template.push({ label: '退出全部（本次）', click: () => requestActivityQuit?.(true) });
+      template.push({ label: '退出全部（本次）', click: () => requestActivityQuit?.(true, 'tray') });
     } else {
       template.push({
         label: '退出',
         click: () => {
-          if (requestActivityQuit) requestActivityQuit(true);
+          if (requestActivityQuit) requestActivityQuit(true, 'tray');
           else { setIsQuitting(true); app.quit(); }
         },
       });

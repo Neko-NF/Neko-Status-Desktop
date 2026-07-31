@@ -77,8 +77,9 @@
       if (metaEl && meta != null) metaEl.textContent = meta;
     }
 
-    function updateServiceStatus(isRunning) {
-      setConsoleStatus('Service', isRunning ? 'Running' : 'Stopped', 'Reporter service', isRunning ? 'ok' : 'warn');
+    function updateServiceStatus(isRunning, serviceState = (isRunning ? 'running' : 'stopped')) {
+      const labels = { running: 'Running', waiting_network: 'Waiting network', rate_limited: 'Rate limited', credential_invalid: 'Credential invalid', stopped: 'Stopped' };
+      setConsoleStatus('Service', labels[serviceState] || serviceState, 'Reporter service', serviceState === 'running' ? 'ok' : serviceState === 'credential_invalid' ? 'error' : 'warn');
     }
 
     function updateUploadStatus() {

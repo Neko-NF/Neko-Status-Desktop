@@ -52,7 +52,7 @@
       const badge = document.querySelector('.device-badge');
       if (!badge || !data.deviceName) return;
       badge.innerHTML = `<div class="status-dot" id="deviceStatusDot"></div>${escapeHtml(data.deviceName)}`;
-      applyServiceState(data.isRunning);
+      applyServiceState(data.isRunning, data.serviceState);
     }
 
     function bindUpdateSourceControls(cfg) {
@@ -183,6 +183,11 @@
 
       const incognitoSwitch = document.getElementById('stgIncognitoSwitch');
       if (incognitoSwitch) incognitoSwitch.classList.toggle('on', !!cfg.enableIncognito);
+      const diagnosticsSwitch = document.getElementById('stgDiagnosticsImprovementSwitch');
+      if (diagnosticsSwitch) {
+        diagnosticsSwitch.classList.toggle('on', cfg.diagnosticsImprovementEnabled === true && cfg.diagnosticsConsentPolicyVersion === 1);
+        diagnosticsSwitch.setAttribute('aria-checked', String(cfg.diagnosticsImprovementEnabled === true && cfg.diagnosticsConsentPolicyVersion === 1));
+      }
       setIncognitoScopeUI(cfg.incognitoScope || 'screenshot');
 
       const blurAllSwitch = document.getElementById('blurAllSwitch');
@@ -552,7 +557,7 @@
       addLogLine('INFO', `Neko Status v${data.version} 初始化完成`);
       addLogLine('INFO', `设备: ${data.deviceName} | 平台: ${data.platform}`);
 
-      applyServiceState(data.isRunning);
+      applyServiceState(data.isRunning, data.serviceState);
       await syncLastServiceResult();
       await syncPendingInstall();
       syncDeviceBadge(data);

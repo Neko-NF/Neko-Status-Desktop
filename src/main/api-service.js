@@ -4,6 +4,7 @@
  */
 const configStore = require('./config-store');
 const os = require('os');
+const { parseRetryAfterSeconds } = require('./report-recovery-policy');
 
 /** 构建带超时的 AbortSignal */
 function withTimeout(ms) {
@@ -25,8 +26,44 @@ function createHttpError(response, json, text, fallbackMessage) {
   const message = json?.message || json?.error || fallbackMessage || `Request failed HTTP ${response.status}`;
   const err = new Error(message);
   err.status = response.status;
+  if (json?.code) err.code = json.code;
   if (text) err.body = text.substring(0, 300);
   return err;
+}
+
+function isTrustedJsonResponse(response, expectedUrl, json) {
+  if (!json || !response.headers.get('content-type')?.toLowerCase().includes('application/json')) return false;
+  try {
+    return new URL(response.url).origin === new URL(expectedUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+async function authJsonRequest(pathname, { method = 'POST', token = '', body } = {}) {
+  const url = new URL(pathname, configStore.getServerUrl()).toString();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: withTimeout(15000),
+  });
+  const { text, json } = await readJsonResponse(response);
+  if (!response.ok) {
+    const error = createHttpError(response, json, text, `认证请求失败 HTTP ${response.status}`);
+    if (!isTrustedJsonResponse(response, url, json)) delete error.code;
+    error.trustedJson = isTrustedJsonResponse(response, url, json);
+    throw error;
+  }
+  if (!isTrustedJsonResponse(response, url, json)) {
+    const error = new Error('服务端返回了非 JSON 或非可信来源的响应');
+    error.status = response.status;
+    error.trustedJson = false;
+    throw error;
+  }
+  return json;
 }
 
 async function streamRequest(pathname, { method = 'GET', deviceKey, query, body } = {}) {
@@ -85,6 +122,7 @@ async function reportStatusV2(params) {
     deviceKey,
     deviceFingerprint = '',
     clientVersion = '',
+    runtimeSessionId = '',
     appName = '',
     packageName = '',
     batteryLevel = 0,
@@ -104,6 +142,7 @@ async function reportStatusV2(params) {
     deviceFingerprint,
     clientVersion,
     appVersion: clientVersion,
+    runtimeSessionId,
     appName,
     packageName,
     status,
@@ -140,32 +179,22 @@ async function reportStatusV2(params) {
     signal: withTimeout(15000),
   });
 
-  if (response.status === 401) {
-    const body = await response.json().catch(() => ({}));
-    const err = new Error(body.message || '设备密钥无效');
-    err.code = body.code || 'INVALID_KEY';
-    err.status = 401;
-    throw err;
-  }
-
-  if (response.status === 403) {
-    const body = await response.json().catch(() => ({}));
-    const err = new Error(body.message || '设备密钥无效或已被撤销');
-    err.code = body.code || 'KEY_REVOKED';
-    err.status = 403;
-    throw err;
-  }
-
-  if (response.status === 404) {
-    const body = await response.json().catch(() => ({}));
-    const err = new Error(body.message || '设备不存在');
-    err.code = body.code || 'DEVICE_NOT_FOUND';
-    err.status = 404;
+  if (response.status === 401 || response.status === 403 || response.status === 404) {
+    const { text, json: body } = await readJsonResponse(response);
+    const err = new Error(body?.message || '设备密钥无效');
+    if (isTrustedJsonResponse(response, `${serverUrl}/api/v2/status/report`, body)) {
+      err.code = body.code;
+      err.trustedJson = true;
+    } else {
+      err.trustedJson = false;
+      err.body = text.substring(0, 200);
+    }
+    err.status = response.status;
     throw err;
   }
 
   if (response.status === 429) {
-    const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+    const retryAfter = parseRetryAfterSeconds(response.headers.get('Retry-After'));
     const err = new Error('请求频率过高，请稍后重试');
     err.code = 'RATE_LIMITED';
     err.status = 429;
@@ -440,6 +469,12 @@ module.exports = {
   authGetMe,
   authUpdateProfile,
   authGenerateDeviceKey,
+  authSessionUpgrade,
+  authRefresh,
+  authLogout,
+  reportLifecycleEvent,
+  getDiagnosticsCapabilities,
+  uploadDiagnosticReport,
   streamGetOrInitKey,
   streamResetKey,
   streamGetStatus,
@@ -462,32 +497,41 @@ async function validateDeviceKey(deviceKey, fingerprint) {
   const params = new URLSearchParams();
   if (fingerprint) params.set('fingerprint', fingerprint);
 
-  const response = await fetch(`${serverUrl}/api/device/validate?${params.toString()}`, {
+  const url = `${serverUrl}/api/device/validate?${params.toString()}`;
+  const response = await fetch(url, {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${deviceKey}` },
     signal: withTimeout(10000),
   });
 
-  const json = await response.json().catch(() => ({}));
+  const { text, json } = await readJsonResponse(response);
+  const trustedJson = isTrustedJsonResponse(response, url, json);
 
   if (response.status === 403) {
-    const err = new Error(json.message || '密钥已被撤销');
-    err.code = json.errorCode || 'KEY_REVOKED';
+    const err = new Error(json?.message || '密钥已被撤销');
+    if (trustedJson) err.code = json?.errorCode;
+    err.trustedJson = trustedJson;
     err.status = 403;
     throw err;
   }
 
   if (response.status === 404) {
-    const err = new Error(json.message || '密钥不存在');
-    err.code = json.errorCode || 'KEY_NOT_FOUND';
+    const err = new Error(json?.message || '密钥不存在');
+    if (trustedJson) err.code = json?.errorCode;
+    err.trustedJson = trustedJson;
     err.status = 404;
     throw err;
   }
 
   if (!response.ok) {
-    throw new Error(json.message || `验证失败 HTTP ${response.status}`);
+    const err = new Error(json?.message || `验证失败 HTTP ${response.status}`);
+    err.status = response.status;
+    err.trustedJson = trustedJson;
+    err.body = text.substring(0, 200);
+    throw err;
   }
 
+  if (!trustedJson) throw new Error('设备验证接口返回非可信 JSON');
   return json;
 }
 
@@ -530,24 +574,10 @@ async function validateDeviceKeyAt(deviceKey, serverUrl) {
  * @param {string} password
  * @returns {Promise<{success: boolean, token?: string, user?: object, message?: string}>}
  */
-async function authLogin(username, password) {
-  const serverUrl = configStore.getServerUrl();
-  const response = await fetch(`${serverUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-    signal: withTimeout(15000),
+async function authLogin(username, password, session = {}) {
+  return authJsonRequest('/api/auth/login', {
+    body: { username, password, ...session },
   });
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const err = new Error(json.message || `登录失败 HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-
-  return json;
 }
 
 /**
@@ -556,24 +586,10 @@ async function authLogin(username, password) {
  * @param {string} password
  * @returns {Promise<{success: boolean, token?: string, user?: object, message?: string}>}
  */
-async function authRegister(username, password) {
-  const serverUrl = configStore.getServerUrl();
-  const response = await fetch(`${serverUrl}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-    signal: withTimeout(15000),
+async function authRegister(username, password, session = {}) {
+  return authJsonRequest('/api/auth/register', {
+    body: { username, password, ...session },
   });
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const err = new Error(json.message || `注册失败 HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-
-  return json;
 }
 
 /**
@@ -582,21 +598,55 @@ async function authRegister(username, password) {
  * @returns {Promise<{success: boolean, user?: object}>}
  */
 async function authGetMe(token) {
-  const serverUrl = configStore.getServerUrl();
-  const response = await fetch(`${serverUrl}/api/auth/me`, {
-    method: 'GET',
-    headers: { 'Authorization': `Bearer ${token}` },
-    signal: withTimeout(10000),
+  return authJsonRequest('/api/auth/me', { method: 'GET', token });
+}
+
+async function authSessionUpgrade(token, session = {}) {
+  return authJsonRequest('/api/auth/session/upgrade', { token, body: session });
+}
+
+async function authRefresh(refreshToken, session = {}) {
+  return authJsonRequest('/api/auth/refresh', { body: { refreshToken, ...session } });
+}
+
+async function authLogout(refreshToken) {
+  return authJsonRequest('/api/auth/logout', { body: { refreshToken } });
+}
+
+async function reportLifecycleEvent(deviceKey, event) {
+  const url = new URL('/api/v2/status/lifecycle', configStore.getServerUrl()).toString();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${deviceKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(event),
+    signal: withTimeout(1200),
   });
+  const { text, json } = await readJsonResponse(response);
+  if (!response.ok) throw createHttpError(response, json, text, `生命周期事件上报失败 HTTP ${response.status}`);
+  if (!isTrustedJsonResponse(response, url, json)) throw new Error('生命周期接口返回非可信 JSON');
+  return json;
+}
 
-  const json = await response.json().catch(() => ({}));
+async function getDiagnosticsCapabilities() {
+  const url = new URL('/api/v2/diagnostics/capabilities', configStore.getServerUrl()).toString();
+  const response = await fetch(url, { signal: withTimeout(10000) });
+  const { text, json } = await readJsonResponse(response);
+  if (!response.ok) throw createHttpError(response, json, text, `诊断能力探测失败 HTTP ${response.status}`);
+  if (!isTrustedJsonResponse(response, url, json)) throw new Error('诊断能力接口返回非可信 JSON');
+  return json;
+}
 
-  if (!response.ok) {
-    const err = new Error(json.message || `获取用户信息失败 HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-
+async function uploadDiagnosticReport(credential, report) {
+  const url = new URL('/api/v2/diagnostics/reports', configStore.getServerUrl()).toString();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(report),
+    signal: withTimeout(15000),
+  });
+  const { text, json } = await readJsonResponse(response);
+  if (!response.ok) throw createHttpError(response, json, text, `诊断上传失败 HTTP ${response.status}`);
+  if (!isTrustedJsonResponse(response, url, json)) throw new Error('诊断上传接口返回非可信 JSON');
   return json;
 }
 
@@ -607,26 +657,7 @@ async function authGetMe(token) {
  * @returns {Promise<{success: boolean, user?: object, message?: string}>}
  */
 async function authUpdateProfile(token, data) {
-  const serverUrl = configStore.getServerUrl();
-  const response = await fetch(`${serverUrl}/api/auth/profile`, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-    signal: withTimeout(15000),
-  });
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const err = new Error(json.message || `更新个人信息失败 HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-
-  return json;
+  return authJsonRequest('/api/auth/profile', { method: 'PUT', token, body: data });
 }
 
 /**
@@ -636,26 +667,7 @@ async function authUpdateProfile(token, data) {
  * @returns {Promise<{success: boolean, deviceKey?: string, deviceId?: number, isExisting?: boolean}>}
  */
 async function authGenerateDeviceKey(token, data) {
-  const serverUrl = configStore.getServerUrl();
-  const response = await fetch(`${serverUrl}/api/auth/device-key`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-    signal: withTimeout(15000),
-  });
-
-  const json = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const err = new Error(json.message || `设备密钥操作失败 HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-
-  return json;
+  return authJsonRequest('/api/auth/device-key', { token, body: data });
 }
 
 /**

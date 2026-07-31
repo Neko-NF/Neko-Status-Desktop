@@ -3,11 +3,20 @@ const {
   validateAuthCredentialsPayload,
   validateAuthUpdateProfilePayload,
 } = require('../../shared/schemas');
+const crypto = require('crypto');
+const { version: clientVersion } = require('../../../package.json');
 
-function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, activityAgent }) {
+const TERMINAL_AUTH_CODES = new Set([
+  'AUTH_TOKEN_INVALID',
+  'AUTH_REFRESH_INVALID',
+  'AUTH_REFRESH_EXPIRED',
+  'AUTH_SESSION_REVOKED',
+]);
+
+function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, activityAgent, diagnosticsService }) {
   // Keep renderer compatibility in data while preserving the shared IPC envelope.
   function authOk(data = {}) { return createIpcSuccess({ success: true, ...data }); }
-  function authFail(message, code = 'AUTH_FAILED') { return createIpcError(code, message); }
+  function authFail(message, code = 'AUTH_FAILED', details) { return createIpcError(code, message, details); }
 
   function sameUser(left, right) {
     return left !== undefined && left !== null && right !== undefined && right !== null
@@ -34,7 +43,12 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
     }
   }
 
-  async function commitAuthSession(token, user, { isLocal = false } = {}) {
+  async function commitAuthSession(token, user, {
+    isLocal = false,
+    refreshToken = '',
+    accessTokenExpiresAt = '',
+    refreshTokenExpiresAt = '',
+  } = {}) {
     const previousUser = configStore.get('authUser');
     const previousToken = configStore.get('authToken');
     const boundUserId = previousUser?.id ?? configStore.get('activityBoundUserId');
@@ -54,6 +68,10 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
 
     const next = {
       authToken: token,
+      authRefreshToken: refreshToken,
+      authAccessTokenExpiresAt: accessTokenExpiresAt,
+      authRefreshTokenExpiresAt: refreshTokenExpiresAt,
+      authSessionState: 'authenticated',
       authUser: user,
       activityBoundUserId: nextUserId ?? null,
       activityDeviceId: switchedUser ? null : configStore.get('activityDeviceId'),
@@ -71,6 +89,12 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
 
   async function invalidateAuthSession(reason = 'credential_invalid') {
     const previousUser = configStore.get('authUser');
+    if (TERMINAL_AUTH_CODES.has(reason)) {
+      diagnosticsService?.capture?.({
+        type: 'unrecoverable_auth', featureId: 'core.auth', errorCode: 'AUTH_SESSION_UNRECOVERABLE',
+        severity: 'error', message: reason,
+      }, { sessionState: 'needs_login', serverMode: configStore.get('serverMode'), authErrorCode: reason }).catch(() => {});
+    }
     if (activityAgent) {
       try { await activityAgent.revoke(reason); }
       catch (error) { console.warn('[Auth] Activity 会话撤销失败:', error.message); }
@@ -78,6 +102,10 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
     activityAgent?.resetActivitySessionCache?.();
     configStore.setMany({
       authToken: '',
+      authRefreshToken: '',
+      authAccessTokenExpiresAt: '',
+      authRefreshTokenExpiresAt: '',
+      authSessionState: 'needs_login',
       authUser: null,
       activityBoundUserId: previousUser?.id ?? configStore.get('activityBoundUserId') ?? null,
       activityDeviceId: null,
@@ -154,6 +182,43 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       : (err.message || fallback);
   }
 
+  function getSessionMetadata() {
+    let clientInstanceId = configStore.get('authClientInstanceId');
+    if (!clientInstanceId) {
+      clientInstanceId = crypto.randomUUID();
+      configStore.set('authClientInstanceId', clientInstanceId);
+    }
+    return { clientInstanceId, clientVersion };
+  }
+
+  async function commitRemoteResult(result) {
+    const token = result.accessToken || result.token;
+    if (!token || !result.user) throw new Error('服务端没有返回完整会话');
+    await commitAuthSession(token, result.user, {
+      refreshToken: result.refreshToken || '',
+      accessTokenExpiresAt: result.accessTokenExpiresAt || '',
+      refreshTokenExpiresAt: result.refreshTokenExpiresAt || '',
+    });
+  }
+
+  async function refreshRemoteSession() {
+    const refreshToken = configStore.get('authRefreshToken');
+    if (!refreshToken || typeof apiService.authRefresh !== 'function') return null;
+    const result = await apiService.authRefresh(refreshToken, getSessionMetadata());
+    await commitRemoteResult(result);
+    return result;
+  }
+
+  async function upgradeLegacySession() {
+    if (configStore.get('authRefreshToken') || typeof apiService.authSessionUpgrade !== 'function') return;
+    const result = await apiService.authSessionUpgrade(configStore.get('authToken'), getSessionMetadata());
+    await commitRemoteResult(result);
+  }
+
+  function isTerminalAuthError(error) {
+    return error?.trustedJson === true && TERMINAL_AUTH_CODES.has(error.code);
+  }
+
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (_, payload) => {
     const validation = validateAuthCredentialsPayload(payload);
     if (!validation.ok) return createIpcError('INVALID_AUTH_PAYLOAD', validation.reason);
@@ -164,9 +229,9 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       return localLogin(username, password);
     }
     try {
-      const result = await apiService.authLogin(username, password);
+      const result = await apiService.authLogin(username, password, getSessionMetadata());
       if (result.success && result.token) {
-        await commitAuthSession(result.token, result.user);
+        await commitRemoteResult(result);
         return authOk(result);
       }
       return authFail(result.message || '登录失败');
@@ -189,9 +254,9 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       return localRegister(username, password);
     }
     try {
-      const result = await apiService.authRegister(username, password);
+      const result = await apiService.authRegister(username, password, getSessionMetadata());
       if (result.success && result.token) {
-        await commitAuthSession(result.token, result.user);
+        await commitRemoteResult(result);
         return authOk(result);
       }
       return authFail(result.message || '注册失败');
@@ -211,15 +276,32 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
     try {
       const result = await apiService.authGetMe(token);
       if (result.success && result.user) {
-        configStore.set('authUser', result.user);
-        return authOk(result);
+        configStore.setMany({ authUser: result.user, authSessionState: 'authenticated' });
+        try { await upgradeLegacySession(); }
+        catch (upgradeError) { console.warn('[Auth] 旧 JWT 升级暂未完成:', upgradeError.message); }
+        return authOk({ ...result, sessionState: 'authenticated' });
       }
       return authFail(result.message || '获取用户信息失败');
     } catch (err) {
-      if (err.status === 401) {
-        await invalidateAuthSession();
+      if ((err.code === 'AUTH_TOKEN_EXPIRED' || err.code === 'AUTH_TOKEN_INVALID') && configStore.get('authRefreshToken')) {
+        try {
+          const refreshed = await refreshRemoteSession();
+          return authOk({ user: refreshed.user, sessionState: 'authenticated', refreshed: true });
+        } catch (refreshError) {
+          if (isTerminalAuthError(refreshError)) {
+            await invalidateAuthSession(refreshError.code);
+            return authFail(refreshError.message, refreshError.code, { sessionState: 'needs_login' });
+          }
+          configStore.set('authSessionState', 'offline_cached');
+          return authOk({ user: configStore.get('authUser'), sessionState: 'offline_cached', cached: true });
+        }
       }
-      return authFail(err.message);
+      if (isTerminalAuthError(err)) {
+        await invalidateAuthSession(err.code);
+        return authFail(err.message, err.code, { sessionState: 'needs_login' });
+      }
+      configStore.set('authSessionState', 'offline_cached');
+      return authOk({ user: configStore.get('authUser'), sessionState: 'offline_cached', cached: true });
     }
   });
 
@@ -245,21 +327,27 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
         }
       }
 
-      const result = await apiService.authUpdateProfile(token, data);
+      const result = await apiService.authUpdateProfile(token, { ...data, ...getSessionMetadata() });
       if (result.success && result.user) {
-        configStore.set('authUser', result.user);
+        if (result.accessToken || result.token) await commitRemoteResult(result);
+        else configStore.set('authUser', result.user);
         return authOk(result);
       }
       return authFail(result.message || '更新用户信息失败');
     } catch (err) {
-      if (err.status === 401 && !data.newPassword) {
+      if (isTerminalAuthError(err) && !data.newPassword) {
         await invalidateAuthSession();
       }
-      return authFail(err.status === 401 ? '当前登录状态已失效，请重新登录' : err.message);
+      return authFail(isTerminalAuthError(err) ? '当前登录状态已失效，请重新登录' : err.message, err.code || 'AUTH_FAILED');
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async () => {
+    const refreshToken = configStore.get('authRefreshToken');
+    if (refreshToken && typeof apiService.authLogout === 'function') {
+      try { await apiService.authLogout(refreshToken); }
+      catch (error) { console.warn('[Auth] 服务端注销暂未确认，将继续本地注销:', error.message); }
+    }
     await invalidateAuthSession('logout');
     return authOk();
   });
@@ -282,7 +370,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
       }
       return authFail(result.message || '生成设备密钥失败');
     } catch (err) {
-      if (err.status === 401) {
+      if (isTerminalAuthError(err)) {
         await invalidateAuthSession();
       }
       return authFail(err.message);
@@ -292,6 +380,7 @@ function registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, 
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, () => createIpcSuccess({
     isLoggedIn: !!configStore.get('authToken'),
     user: configStore.get('authUser'),
+    sessionState: configStore.get('authSessionState') || (configStore.get('authToken') ? 'offline_cached' : 'needs_login'),
     promptDismissed: configStore.get('authPromptDismissed'),
     serverConfigured: configStore.get('serverConfigured'),
     serverMode: configStore.get('serverMode'),

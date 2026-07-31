@@ -235,15 +235,15 @@
   // ══════════════════════════════════════════════════════════════
   //  服务状态指示器更新
   // ══════════════════════════════════════════════════════════════
-  function applyServiceState(isRunning) {
-    consoleRuntime?.updateServiceStatus?.(isRunning);
-    dashboardPage()?.applyServiceState?.(isRunning);
-    servicePage()?.applyServiceState?.(isRunning);
+  function applyServiceState(isRunning, serviceState = (isRunning ? 'running' : 'stopped')) {
+    consoleRuntime?.updateServiceStatus?.(isRunning, serviceState);
+    dashboardPage()?.applyServiceState?.(isRunning, serviceState);
+    servicePage()?.applyServiceState?.(isRunning, serviceState);
 
     // 顶栏状态点 — 需动态查询，因 app:init 会重建 badge innerHTML
     const dot = document.getElementById('deviceStatusDot');
     if (dot) {
-      dot.classList.toggle('error', !isRunning);
+      dot.classList.toggle('error', !isRunning || serviceState === 'credential_invalid');
     }
   }
 

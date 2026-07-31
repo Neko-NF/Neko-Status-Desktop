@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "features": [
+    { "source": "src/main/config-store.js", "diagnostics": "contribution", "featureId": "core.config" },
+    { "source": "src/main/status-service.js", "diagnostics": "contribution", "featureId": "core.status-report" },
+    { "source": "src/main/startup-update-gate.js", "diagnostics": "contribution", "featureId": "core.update" },
+    { "source": "src/main/app-shell.js", "diagnostics": "contribution", "featureId": "core.renderer" },
+    { "source": "src/renderer/js/pages/auth.page.js", "diagnostics": "contribution", "featureId": "core.auth" },
+    { "source": "src/renderer/js/pages/update.page.js", "diagnostics": "contribution", "featureId": "core.update" },
+    { "source": "src/renderer/js/pages/service.page.js", "diagnostics": "contribution", "featureId": "core.status-report" },
+    { "source": "src/main/diagnostics-service.js", "diagnostics": "none", "reason": "诊断基础设施不得递归诊断自身上传失败" },
+    { "source": "src/main/lifecycle-service.js", "diagnostics": "none", "reason": "最小生命周期链路独立于改进计划" },
+    { "source": "src/main/api-service.js", "diagnostics": "none", "reason": "传输层错误由调用功能贡献项分类" },
+    { "source": "src/main/stream-service.js", "diagnostics": "none", "reason": "本版本直播模块没有异常上传触发器" },
+    { "source": "src/renderer/js/pages/ui-lab.page.js", "diagnostics": "none", "reason": "仅本地实验 UI" },
+    { "source": "src/renderer/js/pages/stream.page.js", "diagnostics": "none", "reason": "由直播后续版本定义贡献" },
+    { "source": "src/renderer/js/pages/settings.page.js", "diagnostics": "none", "reason": "设置页仅承载授权 UI" },
+    { "source": "src/renderer/js/pages/screenshot.page.js", "diagnostics": "none", "reason": "截图属于永久禁止诊断类别" },
+    { "source": "src/renderer/js/pages/device-status.page.js", "diagnostics": "none", "reason": "只展示状态上报快照" },
+    { "source": "src/renderer/js/pages/dashboard.page.js", "diagnostics": "none", "reason": "只展示状态上报快照" },
+    { "source": "src/renderer/js/pages/config.page.js", "diagnostics": "contribution", "featureId": "core.config" },
+    { "source": "src/renderer/js/pages/announcement.page.js", "diagnostics": "none", "reason": "公告读取失败不属于本轮异常触发" },
+    { "source": "src/renderer/js/pages/activity.page.js", "diagnostics": "none", "reason": "Activity 使用独立本地健康诊断且本轮不上传" },
+    { "source": "src/renderer/js/pages/about.page.js", "diagnostics": "none", "reason": "静态信息页面" }
+  ]
+}

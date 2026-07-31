@@ -937,20 +937,22 @@
       return { ...this._healthStats };
     },
 
-    applyServiceState(isRunning) {
+    applyServiceState(isRunning, serviceState = (isRunning ? 'running' : 'stopped')) {
       this._serviceRunning = !!isRunning;
+
+      const labels = { running: '运行中', waiting_network: '等待网络', rate_limited: '限流等待', credential_invalid: '凭据失效', stopped: '已停止' };
 
       const cardStatusValue = document.querySelector('#card-status .metric-value');
       if (cardStatusValue) {
-        cardStatusValue.textContent = isRunning ? '在线上报中' : '服务已停止';
+        cardStatusValue.textContent = labels[serviceState] || labels.stopped;
       }
 
       const trendSpan = document.querySelector('#card-status .metric-trend span');
       if (trendSpan) {
-        trendSpan.innerHTML = isRunning
+        trendSpan.innerHTML = serviceState === 'running'
           ? '<i class="ph ph-check-circle"></i> 服务运行平稳'
-          : '<i class="ph ph-warning-circle"></i> 服务未运行';
-        trendSpan.classList.toggle('text-error', !isRunning);
+          : `<i class="ph ph-warning-circle"></i> ${labels[serviceState] || labels.stopped}`;
+        trendSpan.classList.toggle('text-error', serviceState === 'credential_invalid' || serviceState === 'stopped');
       }
 
       const toggleBtn = $('reportToggleBtn');

@@ -45,6 +45,8 @@ if (!app.isPackaged && process.env.NEKO_PARENT_DEV_WATCH !== '1') {
 
 // ─── 核心服务 ────────────────────────────────────────────────────────
 const configStore   = require('./config-store');
+const lifecycleService = require('./lifecycle-service');
+const diagnosticsService = require('./diagnostics-service');
 const statusService = require('./status-service');
 const systemUtils   = require('./system-utils');
 const apiService    = require('./api-service');
@@ -156,6 +158,20 @@ let isQuitting = false;
 let privacyPickerWindow = null;
 let startupUpdateWindow = null;
 let pendingStartupStatus = null;
+
+process.on('uncaughtExceptionMonitor', (error) => {
+  diagnosticsService.capture({
+    type: 'unhandled_exception', featureId: 'core.renderer', errorCode: 'UNHANDLED_EXCEPTION',
+    severity: 'critical', message: error?.message || String(error), stack: error?.stack || '',
+  }, { reason: 'main_process_uncaught_exception' }).catch(() => {});
+});
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  diagnosticsService.capture({
+    type: 'unhandled_rejection', featureId: 'core.renderer', errorCode: 'UNHANDLED_EXCEPTION',
+    severity: 'error', message: error.message, stack: error.stack || '',
+  }, { reason: 'main_process_unhandled_rejection' }).catch(() => {});
+});
 
 const CACHE_DIR_NAMES = [
   'Cache',
@@ -299,11 +315,16 @@ const appShell = createAppShell({
   setPrivacyPickerWindow: (value) => { privacyPickerWindow = value; },
   activityAgent,
   startupPage: STARTUP_PAGE,
-  requestActivityQuit: (exitAll) => {
+  requestActivityQuit: async (exitAll, source = null) => {
     activityExitAllRequested = exitAll === true;
     isQuitting = true;
+    if (exitAll === true && source) {
+      try { await lifecycleService.recordUserExit(source); }
+      catch (error) { console.warn('[Lifecycle] 退出事件已保留在 outbox:', error.message); }
+    }
     app.quit();
   },
+  diagnosticsService,
 });
 
 const {
@@ -483,7 +504,7 @@ function showNotification(title, body) {
 // ═══════════════════════════════════════════════════════════════════════
 function setupIPC() {
   // ── 配置存取 ──────────────────────────────────────────────────────────
-  registerConfigIpc({ ipcMain, configStore, activityAgent });
+  registerConfigIpc({ ipcMain, configStore, activityAgent, diagnosticsService });
 
   // ── 上报服务、开机自启、进程信息、权限检测与体检 ──────────────────────
   registerServiceIpc({
@@ -522,7 +543,7 @@ function setupIPC() {
   registerStreamIpc({ ipcMain, streamService });
 
   // ── 用户认证 ──────────────────────────────────────────────────────────
-  registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, activityAgent });
+  registerAuthIpc({ ipcMain, os, configStore, statusService, apiService, activityAgent, diagnosticsService });
 
   // ── 用户关注、应用规则与原生后台代理 ──────────────────────────────────
   registerActivityIpc({ ipcMain, configStore, activityAgent });
@@ -626,6 +647,10 @@ async function autoDownloadUpdate(result) {
       const installError = await launchInstaller(filePath, { silent: true });
       if (installError) {
         console.error('[AutoDL] installer launch failed:', installError);
+        diagnosticsService.capture({
+          type: 'critical_update_failure', featureId: 'core.update', errorCode: 'UPDATE_CRITICAL_FAILURE',
+          severity: 'critical', message: installError,
+        }, { stage: 'forced_installer_launch', version: result.latestVersion }).catch(() => {});
         const pendingInstall = { version: result.latestVersion, filePath, sha256 };
         configStore.set('pendingInstall', pendingInstall);
         _autoDownloadState = { stage: 'ready', ...pendingInstall };
@@ -648,6 +673,10 @@ async function autoDownloadUpdate(result) {
     }
   } catch (err) {
     console.error('[AutoDL] 后台下载失败:', err.message);
+    diagnosticsService.capture({
+      type: 'critical_update_failure', featureId: 'core.update', errorCode: 'UPDATE_CRITICAL_FAILURE',
+      severity: result.forceUpdate ? 'critical' : 'error', message: err.message, stack: err.stack || '',
+    }, { stage: 'background_download', version: result.latestVersion }).catch(() => {});
     _autoDownloadState = null;
     sendToRenderer(IPC_EVENTS.UPDATE_AUTO_DOWNLOAD_FAILED, { version: result.latestVersion, error: err.message });
   }
@@ -1073,29 +1102,28 @@ async function checkForUpdates(options = {}) {
   return await checkSourceForUpdates(source, channel, options);
 }
 
-const dns = require('dns');
-const { promisify } = require('util');
-const dnsLookup = promisify(dns.lookup);
-
-async function waitForNetwork(timeoutMs = 30000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      await dnsLookup('api.github.com');
-      return true;
-    } catch {
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-  return false;
-}
-
 // ═══════════════════════════════════════════════════════════════════════
 //  应 用 生 命 周 期
 // ═══════════════════════════════════════════════════════════════════════
 app.whenReady().then(async () => {
   traceStartup('whenReady entered', `packaged=${app.isPackaged}`);
   ensureWindowsAppIdentity();
+  lifecycleService.ensureOutbox();
+  lifecycleService.flush().catch((error) => console.warn('[Lifecycle] 启动补传失败:', error.message));
+  diagnosticsService.initialize({ statusService });
+  const recovery = configStore.getRecoveryStatus();
+  if (recovery) {
+    if (recovery.source === 'corrupt') {
+      dialog.showErrorBox('Neko Status 配置恢复失败', `${recovery.message}\n\n原文件已隔离：\n${(recovery.isolated || []).join('\n') || '隔离路径不可用'}`);
+    } else {
+      dialog.showMessageBox({ type: 'warning', title: 'Neko Status 配置已恢复', message: recovery.message });
+    }
+    diagnosticsService.capture({
+      type: 'config_recovery', featureId: 'core.config',
+      errorCode: recovery.source === 'corrupt' ? 'CONFIG_UNRECOVERABLE' : 'CONFIG_RECOVERED',
+      severity: recovery.source === 'corrupt' ? 'critical' : 'warning', message: recovery.message,
+    }, { recoverySource: recovery.source, isolatedCount: recovery.isolated?.length || 0 }).catch(() => {});
+  }
   if (STARTUP_PAGE) {
     configStore.set('lastPage', 'page-activity');
   }
@@ -1120,6 +1148,12 @@ app.whenReady().then(async () => {
       isPackaged: app.isPackaged,
     });
     traceStartup('startup gate result', JSON.stringify(startupUpdate || {}));
+    if (startupUpdate.reason === 'installer-launch-failed') {
+      diagnosticsService.capture({
+        type: 'critical_update_failure', featureId: 'core.update', errorCode: 'UPDATE_CRITICAL_FAILURE',
+        severity: 'critical', message: startupUpdate.error || startupUpdate.reason,
+      }, { stage: 'startup_installer_launch', version: startupUpdate.version || '' }).catch(() => {});
+    }
     if (startupUpdate.action === 'installing') return;
     closeStartupUpdateWindow();
   }
@@ -1148,14 +1182,26 @@ app.whenReady().then(async () => {
 
   // StatusService 日志/Tick/状态变更 → 推送到渲染进程
   statusService.setLogCallback((level, msg, time) => {
+    diagnosticsService.recordLog(level, msg, time);
     sendToRenderer(IPC_EVENTS.LOG_ENTRY, { level, msg, time });
   });
   statusService.setTickCallback((data) => {
+    if (data.network && statusService.getRecoveryStats().networkFailureCount >= 6) {
+      diagnosticsService.capture({
+        type: 'continuous_transport_failure', featureId: 'core.status-report',
+        errorCode: 'STATUS_CONTINUOUS_FAILURE', severity: 'warning', message: data.error,
+      }, statusService.getRecoveryStats()).catch(() => {});
+    } else if (data.internal) {
+      diagnosticsService.capture({
+        type: 'internal_error', featureId: 'core.status-report',
+        errorCode: 'STATUS_INTERNAL_ERROR', severity: 'error', message: data.error,
+      }, statusService.getRecoveryStats()).catch(() => {});
+    }
     sendToRenderer(IPC_EVENTS.SERVICE_TICK, data);
     refreshTrayMenu();
   });
-  statusService.setStatusChangeCallback((isRunning) => {
-    sendToRenderer(IPC_EVENTS.SERVICE_STATUS_CHANGED, { isRunning });
+  statusService.setStatusChangeCallback((isRunning, serviceState) => {
+    sendToRenderer(IPC_EVENTS.SERVICE_STATUS_CHANGED, { isRunning, serviceState });
     refreshTrayMenu();
     showNotification('服务状态变更', isRunning ? '上报服务已启动' : '上报服务已停止');
   });
@@ -1169,12 +1215,8 @@ app.whenReady().then(async () => {
   if (isAutoStart) {
     const delayMs = configStore.get('startupDelayMs') || 5000;
     console.log(`[Main] 开机自启，延迟 ${delayMs}ms 后启动`);
-    setTimeout(async () => {
-      // 等待网络就绪
-      const networkReady = await waitForNetwork(30000);
-      if (!networkReady) {
-        console.log('[Main] 网络等待超时，仍尝试启动服务');
-      }
+    setTimeout(() => {
+      // 延迟结束后立即进入服务；弱网恢复由状态服务自身无限退避处理。
       if (configStore.get('minimizeOnAutoStart')) {
         if (mainWindow) {
           mainWindow.show();
